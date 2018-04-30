@@ -44,6 +44,10 @@ Variable names are usually descriptive, but sometimes shortened names are used f
 Operators are padded with spaces on either side.
 
     bounds.left = (grip->bounds.left + grip->bounds.right) / 2 - 4;
+    
+A space should be placed between a cast and its expression.
+
+    int x = (float) y;
 
 Although the operating system is written in C++, most C++ features are avoided.
 However, the kernel uses a lot of member functions.
