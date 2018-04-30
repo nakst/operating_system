@@ -4,11 +4,12 @@
 #define LIST_VIEW_DEFAULT_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
+// TODO Fix horizontal margins with scrolling.
+// TODO Allow margins to be customised.
+
 // TODO Hover/select.
 // TODO Keyboard controls.
 // TODO Click/double-click/right-click.
-// TODO Custom paint.
-// TODO Columns.
 // TODO Custom controls.
 // TODO Dragging.
 // TODO Tile view.
@@ -54,7 +55,7 @@ static UIImage listViewSelected            = {{14 + 228, 14 + 241, 59, 72}, {14 
 static UIImage listViewSelected2           = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 3, 14 + 241 - 3, 28 + 59 + 3, 28 + 72 - 3}};
 static UIImage listViewLastClicked         = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
 static UIImage listViewSelectionBox        = {{14 + 228 - 14, 14 + 231 - 14, 42 + 59 - 14, 42 + 62 - 14}, {14 + 228 + 1 - 14, 14 + 228 + 2 - 14, 42 + 59 + 1 - 14, 42 + 59 + 2 - 14}};
-static UIImage listViewColumnHeaderDivider = {{212, 213, 45, 70}, {122, 122, 45, 45}};
+static UIImage listViewColumnHeaderDivider = {{212, 213, 45, 70}, {212, 212, 45, 45}};
 static UIImage listViewColumnHeader        = {{206, 212, 45, 70}, {206, 212, 45, 70}, OS_DRAW_MODE_STRECH};
 static UIImage listViewBorder		   = {{237, 240, 87, 90}, {238, 239, 88, 89}};
 
@@ -85,8 +86,6 @@ OSRectangle ListViewGetContentBounds(ListView *list) {
 	if (list->showScrollbarY) {
 		contentBounds.right -= SCROLLBAR_SIZE;
 	}
-
-	// OSPrint("CB: %d->%d\n", contentBounds.top, contentBounds.bottom);
 
 	return contentBounds;
 }
@@ -170,8 +169,6 @@ void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t index, si
 }
 
 void ListViewUpdate(ListView *list) {
-	// OSPrint("totalY = %d\n", list->totalY);
-
 	list->showScrollbarX = list->showScrollbarY = false;
 
 	OSRectangle contentBounds = ListViewGetContentBounds(list);
@@ -244,8 +241,6 @@ void ListViewScrollVertically(ListView *list, int newScrollY) {
 		list->scrollY = baseNewScrollY;
 		return;
 	}
-
-	// OSPrint("SCROLLY %d -> %d\n", oldScrollY, newScrollY);
 
 	int constantHeight = 0;
 
@@ -382,16 +377,41 @@ void ListViewScrollVertically(ListView *list, int newScrollY) {
 	}
 
 	list->scrollY = baseNewScrollY;
+}
 
-#if 0
-	if (list->scrollY != list->firstVisibleItem * 21 + list->offsetIntoFirstVisibleItem) {
-		OSPrint("bad positions!!!!\n");
-	}
-#endif
+void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage *message, int row, int column, OSRectangle rowClip) {
+	OSRectangle textRegion = OS_MAKE_RECTANGLE(cellBounds.left + 4, cellBounds.right - 8, cellBounds.top + 2, cellBounds.bottom - 2);
 
-	if (list->visibleItemCount == 0) {
-		EnterDebugger();
+	OSMessage m;
+
+	m.type = OS_NOTIFICATION_PAINT_CELL;
+	m.paintCell.index = row;
+	m.paintCell.column = column;
+	m.paintCell.surface = message->paint.surface;
+	m.paintCell.clip = rowClip;
+	m.paintCell.bounds = textRegion;
+
+	if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED) {
+		return;
 	}
+
+	m.type = OS_NOTIFICATION_GET_ITEM;
+	m.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT;
+	m.listViewItem.index = row;
+	m.listViewItem.column = column;
+
+	if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
+		OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+	}
+
+	OSString string;
+	string.buffer = m.listViewItem.text;
+	string.bytes = m.listViewItem.textBytes;
+
+	DrawString(message->paint.surface, textRegion, &string, 
+			OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+			column ? LIST_VIEW_SECONDARY_TEXT_COLOR : LIST_VIEW_PRIMARY_TEXT_COLOR, -1, 0, 
+			OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, rowClip, 0);
 }
 
 void ListViewPaint(ListView *list, OSMessage *message) {
@@ -410,6 +430,32 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 			&& list->columns && !list->repaintCustomOnly) {
 		OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, headerBounds,
 				listViewColumnHeader.region, listViewColumnHeader.border, listViewColumnHeader.drawMode, 0xFF, headerClip);
+
+		int x = list->margin.left + headerBounds.left - list->scrollX;
+
+		for (uintptr_t i = 0; i < list->columnCount; i++) {
+			OSListViewColumn *column = list->columns + i;
+
+			OSRectangle columnBounds = OS_MAKE_RECTANGLE(x, x + column->width, headerBounds.top, headerBounds.bottom);
+			OSRectangle dividerPosition = OS_MAKE_RECTANGLE(x + column->width - 4, x + column->width - 3, headerBounds.top, headerBounds.bottom);
+
+			OSRectangle textRegion = OS_MAKE_RECTANGLE(
+					columnBounds.left + 4, columnBounds.right - 4, columnBounds.top + 2, columnBounds.bottom - 1);
+
+			OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, dividerPosition,
+					listViewColumnHeaderDivider.region, listViewColumnHeaderDivider.border, listViewColumnHeaderDivider.drawMode, 0xFF, headerClip);
+
+			OSString string; 
+			string.buffer = column->title;
+			string.bytes = column->titleBytes;
+
+			DrawString(message->paint.surface, textRegion, &string, 
+					OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
+					LIST_VIEW_COLUMN_TEXT_COLOR, -1, 0, 
+					OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, headerClip, 0);
+
+			x += column->width;
+		}
 	}
 
 	if (ClipRectangle(contentBounds, message->paint.clip, &contentClip)) {
@@ -430,17 +476,6 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 			}
 
 			OSMessage m = {};
-			m.type = OS_NOTIFICATION_GET_ITEM;
-			m.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT;
-			m.listViewItem.index = i;
-
-			if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
-				OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
-			}
-
-			OSString string;
-			string.buffer = m.listViewItem.text;
-			string.bytes = m.listViewItem.textBytes;
 
 			OSRectangle row = OS_MAKE_RECTANGLE(
 					contentBounds.left + list->margin.left, 
@@ -450,6 +485,7 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 
 			OSRectangle rowClip;
 			ClipRectangle(contentClip, row, &rowClip);
+			OSFillRectangle(message->paint.surface, rowClip, OSColor(LIST_VIEW_BACKGROUND_COLOR));
 
 			m.type = OS_NOTIFICATION_PAINT_ITEM;
 			m.paintItem.index = i;
@@ -460,12 +496,20 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 			OSCallbackResponse response = OSForwardMessage(list, list->notificationCallback, &m);
 			
 			if (response == OS_CALLBACK_NOT_HANDLED) {
-				OSFillRectangle(message->paint.surface, rowClip, OSColor(LIST_VIEW_BACKGROUND_COLOR));
+				int x = row.left - list->scrollX;
 
-				DrawString(message->paint.surface, row, &string, 
-						OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
-						LIST_VIEW_PRIMARY_TEXT_COLOR, -1, 0, 
-						OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, rowClip, 0);
+				if (list->columns) {
+					for (uintptr_t j = 0; j < list->columnCount; j++) {
+						OSListViewColumn *column = list->columns + j;
+
+						OSRectangle cellBounds = OS_MAKE_RECTANGLE(x, x + column->width, row.top, row.bottom);
+						ListViewPaintCell(list, cellBounds, message, i, j, rowClip);
+
+						x += column->width;
+					}
+				} else {
+					ListViewPaintCell(list, row, message, i, 0, rowClip);
+				}
 
 				y += item->height;
 			}
@@ -527,7 +571,6 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 
 			if (height < contentBounds.bottom - contentBounds.top) {
 				int newScrollY = list->scrollY - (contentBounds.bottom - contentBounds.top - height) + list->margin.bottom;
-				// OSPrint("Adjust scroll y to be %d\n", newScrollY);
 
 				if (newScrollY >= 0) {
 					ListViewScrollVertically(list, newScrollY);
@@ -611,8 +654,8 @@ OSObject OSCreateListView(unsigned flags) {
 	list->scrollbarY->parent = list;
 	list->scrollbarY->layout = OS_CELL_FILL;
 
-	list->margin.left = 20;
-	list->margin.right = 20;
+	list->margin.left = 15;
+	list->margin.right = 15;
 	list->margin.top = 7;
 	list->margin.bottom = 7;
 

@@ -587,6 +587,7 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_CONVERT_Y_TO_INDEX	= 0x200A,
 	OS_NOTIFICATION_MEASURE_HEIGHT		= 0x200B,
 	OS_NOTIFICATION_PAINT_ITEM		= 0x200C,
+	OS_NOTIFICATION_PAINT_CELL		= 0x200D,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -729,6 +730,13 @@ typedef struct OSMessage {
 			OSRectangle clip;
 			int32_t index;
 		} paintItem;
+
+		struct {
+			OSHandle surface;
+			OSRectangle bounds;
+			OSRectangle clip;
+			int32_t index, column;
+		} paintCell;
 
 		struct {
 			uintptr_t index;
@@ -1002,6 +1010,7 @@ OS_EXTERN_C OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, 
 OS_EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
 OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion, int blur);
 OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize);
+OS_EXTERN_C void OSDrawProgressBar(OSHandle surface, OSRectangle bounds, float progress, OSRectangle clip);
 
 // You shouldn't need to call either of these...
 OS_EXTERN_C void OSRedrawAll();

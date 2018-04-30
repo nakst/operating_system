@@ -3011,6 +3011,18 @@ OSRectangle OSGetControlBounds(OSObject _control) {
 	return control->bounds;
 }
 
+void OSDrawProgressBar(OSHandle surface, OSRectangle bounds, float progress, OSRectangle clip) {
+	OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, bounds, 
+			progressBarBackground.region, progressBarBackground.border, progressBarBackground.drawMode, 0xFF, clip);
+
+	OSRectangle filled = OS_MAKE_RECTANGLE(
+			bounds.left + 1, bounds.left + 1 + (int) (progress * (bounds.right - bounds.left - 2)),
+			bounds.top + 1, bounds.bottom - 1);
+
+	OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, filled, 
+			progressBarFilled.region, progressBarFilled.border, progressBarFilled.drawMode, 0xFF, clip);
+}
+
 static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 	ProgressBar *control = (ProgressBar *) _object;

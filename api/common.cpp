@@ -429,6 +429,10 @@ void OSClipDrawSourceRegion(OSRectangle *source, OSRectangle *border, OSRectangl
 	if (clip->top < destination->top) clip->top = destination->top;
 	if (clip->bottom > destination->bottom) clip->bottom = destination->bottom;
 
+	if (destination->right <= destination->left) {
+		return;
+	}
+
 	// Fix the source region based on the scaling.
 	switch (mode) {
 		case OS_DRAW_MODE_STRECH: {

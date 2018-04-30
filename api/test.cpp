@@ -51,7 +51,7 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
 			switch (message->listViewItem.column) {
 				case 0: {
-					message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s (%d/%d)", word->length, word->text, index + 1, wordCount);
+					message->listViewItem.textBytes = OSFormatString(buffer, 1024, "%s", word->length, word->text);
 				} break;
 
 				case 1: {
@@ -73,7 +73,7 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		}
 
 		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
-			message->listViewItem.height = 50;
+			message->listViewItem.height = 25;
 		}
 	} else if (message->type == OS_NOTIFICATION_SET_ITEM) {
 		uintptr_t index = message->listViewItem.index;
@@ -86,6 +86,8 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		for (uintptr_t i = 0; i < wordCount; i++) {
 			words[i].selected = false;
 		}
+	} else if (message->type == OS_NOTIFICATION_PAINT_CELL && message->paintCell.column == 2) {
+		OSDrawProgressBar(message->paintCell.surface, message->paintCell.bounds, (float) message->paintCell.index / (float) wordCount, message->paintCell.clip);
 	} else {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
@@ -198,7 +200,7 @@ void CreateList(OSObject content) {
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
 	OSListViewInsert(listView, 0, wordCount/* / 16*/);
 
-	// OSListViewSetColumns(listView, columns, sizeof(columns)/sizeof(columns[0]));
+	OSListViewSetColumns(listView, columns, sizeof(columns)/sizeof(columns[0]));
 #else
 	(void) content;
 #endif
