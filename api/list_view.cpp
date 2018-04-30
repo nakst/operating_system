@@ -438,6 +438,10 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 				OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 			}
 
+			OSString string;
+			string.buffer = m.listViewItem.text;
+			string.bytes = m.listViewItem.textBytes;
+
 			OSRectangle row = OS_MAKE_RECTANGLE(
 					contentBounds.left + list->margin.left, 
 					contentBounds.right - list->margin.right,
@@ -453,13 +457,9 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 			m.paintItem.clip = rowClip;
 			m.paintItem.bounds = row;
 
-			OSCallbackResponse response = OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED;
+			OSCallbackResponse response = OSForwardMessage(list, list->notificationCallback, &m);
 			
 			if (response == OS_CALLBACK_NOT_HANDLED) {
-				OSString string;
-				string.buffer = m.listViewItem.text;
-				string.bytes = m.listViewItem.textBytes;
-
 				OSFillRectangle(message->paint.surface, rowClip, OSColor(LIST_VIEW_BACKGROUND_COLOR));
 
 				DrawString(message->paint.surface, row, &string, 
@@ -516,8 +516,6 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 
 		ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem + list->visibleItemCount, list->itemCount - list->visibleItemCount - list->firstVisibleItem);
 
-		// TODO Update to be vertical margin aware.
-#if 0
 		{
 			int height = -list->offsetIntoFirstVisibleItem;
 
@@ -528,7 +526,7 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 			OSRectangle contentBounds = ListViewGetContentBounds(list);
 
 			if (height < contentBounds.bottom - contentBounds.top) {
-				int newScrollY = list->scrollY - (contentBounds.bottom - contentBounds.top - height);
+				int newScrollY = list->scrollY - (contentBounds.bottom - contentBounds.top - height) + list->margin.bottom;
 				// OSPrint("Adjust scroll y to be %d\n", newScrollY);
 
 				if (newScrollY >= 0) {
@@ -538,7 +536,6 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 				}
 			}
 		}
-#endif
 
 		done:;
 		ListViewUpdate(list);
