@@ -87,7 +87,7 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 			words[i].selected = false;
 		}
 	} else if (message->type == OS_NOTIFICATION_PAINT_CELL && message->paintCell.column == 2) {
-		OSDrawProgressBar(message->paintCell.surface, message->paintCell.bounds, (float) message->paintCell.index / (float) wordCount, message->paintCell.clip);
+		OSDrawProgressBar(message->paintCell.surface, message->paintCell.bounds, (float) message->paintCell.index / (float) wordCount, message->paintCell.clip, true);
 	} else {
 		return OS_CALLBACK_NOT_HANDLED;
 	}

@@ -276,7 +276,7 @@ void BuildCrossCompiler() {
 			fclose(file);
 		}
 
-		printf("\nThe build has successfully completed.\n");
+		printf("\nThe build has completed successfully.\n");
 	}
 
 	return;

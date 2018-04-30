@@ -1010,7 +1010,7 @@ OS_EXTERN_C OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, 
 OS_EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
 OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion, int blur);
 OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize);
-OS_EXTERN_C void OSDrawProgressBar(OSHandle surface, OSRectangle bounds, float progress, OSRectangle clip);
+OS_EXTERN_C void OSDrawProgressBar(OSHandle surface, OSRectangle bounds, float progress, OSRectangle clip, bool blue);
 
 // You shouldn't need to call either of these...
 OS_EXTERN_C void OSRedrawAll();

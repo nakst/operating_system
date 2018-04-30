@@ -125,6 +125,7 @@ static UIImage inactiveDialogBorder43	= {{16 + 10 + 3, 16 + 10 + 3 + 3, 181, 181
 static UIImage progressBarBackground 	= {{34, 62, 0, 16}, {36, 60, 8, 14}, OS_DRAW_MODE_STRECH};
 static UIImage progressBarDisabled 	= {{29 + 34, 29 + 62, 0, 16}, {29 + 36, 29 + 60, 8, 14}, OS_DRAW_MODE_STRECH};
 static UIImage progressBarFilled 	= {{1 + 29 + 29 + 34, 29 + 29 + 62 - 1, 1, 15}, {29 + 29 + 36, 29 + 29 + 60, 8, 14}, OS_DRAW_MODE_STRECH};
+static UIImage progressBarFilledBlue 	= {{29 + 1 + 29 + 29 + 34, 29 + 29 + 29 + 62 - 1, 1, 15}, {29 + 29 + 29 + 36, 29 + 29 + 29 + 60, 8, 14}, OS_DRAW_MODE_STRECH};
 static UIImage progressBarMarquee 	= {{95, 185, 17, 30}, {95, 185, 24, 29}, OS_DRAW_MODE_STRECH};
 
 static UIImage buttonNormal		= {{0 * 9 + 0, 0 * 9 + 8, 88, 109}, {0 * 9 + 3, 0 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
@@ -3011,16 +3012,20 @@ OSRectangle OSGetControlBounds(OSObject _control) {
 	return control->bounds;
 }
 
-void OSDrawProgressBar(OSHandle surface, OSRectangle bounds, float progress, OSRectangle clip) {
+void OSDrawProgressBar(OSHandle surface, OSRectangle bounds, float progress, OSRectangle clip, bool blue) {
 	OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, bounds, 
 			progressBarBackground.region, progressBarBackground.border, progressBarBackground.drawMode, 0xFF, clip);
+
+	if (progress > 0.99) progress = 1;
 
 	OSRectangle filled = OS_MAKE_RECTANGLE(
 			bounds.left + 1, bounds.left + 1 + (int) (progress * (bounds.right - bounds.left - 2)),
 			bounds.top + 1, bounds.bottom - 1);
 
+	UIImage image = blue ? progressBarFilledBlue : progressBarFilled;
+
 	OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, filled, 
-			progressBarFilled.region, progressBarFilled.border, progressBarFilled.drawMode, 0xFF, clip);
+			image.region, image.border, image.drawMode, 0xFF, clip);
 }
 
 static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage *message) {
@@ -3048,6 +3053,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 
 				if (control->maximum) {
 					float progress = (float) (control->value - control->minimum) / (float) (control->maximum - control->minimum);
+					if (progress > 0.99) progress = 1;
 					OSRectangle filled = OS_MAKE_RECTANGLE(
 							control->bounds.left + 1, control->bounds.left + 1 + (int) (progress * (control->bounds.right - control->bounds.left - 2)),
 							control->bounds.top + 1, control->bounds.bottom - 1);
