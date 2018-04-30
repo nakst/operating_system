@@ -4,9 +4,6 @@
 #define LIST_VIEW_DEFAULT_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
-// TODO Fix horizontal margins with scrolling.
-// TODO Allow margins to be customised.
-
 // TODO Hover/select.
 // TODO Keyboard controls.
 // TODO Click/double-click/right-click.
@@ -14,6 +11,7 @@
 // TODO Dragging.
 // TODO Tile view.
 // TODO Clear scrollbar corner.
+// TODO More efficient repositing on scroll when delta > contentHeight.
 
 uint32_t LIST_VIEW_COLUMN_TEXT_COLOR = 0x4D6278;
 uint32_t LIST_VIEW_PRIMARY_TEXT_COLOR = 0x000000;
@@ -40,8 +38,10 @@ struct ListView : Control {
 
 	int totalX, totalY;
 	int scrollX, scrollY;
+	int oldScrollX, oldScrollY;
 	Scrollbar *scrollbarX, *scrollbarY;
 	bool showScrollbarX, showScrollbarY;
+	int oldContentWidth, oldContentHeight;
 
 	OSRectangle layoutClip;
 	OSRectangle margin;
@@ -169,6 +169,8 @@ void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t index, si
 }
 
 void ListViewUpdate(ListView *list) {
+	bool hadScrollbarX = list->showScrollbarX;
+
 	list->showScrollbarX = list->showScrollbarY = false;
 
 	OSRectangle contentBounds = ListViewGetContentBounds(list);
@@ -177,12 +179,26 @@ void ListViewUpdate(ListView *list) {
 		return;
 	}
 
+	bool dh = false, dv = false;
+
 	if (list->totalX > contentBounds.right - contentBounds.left) {
 		contentBounds.bottom -= SCROLLBAR_SIZE;
+		dh = true;
 	}
 
 	if (list->totalY > contentBounds.bottom - contentBounds.top) {
 		contentBounds.right -= SCROLLBAR_SIZE;
+		dv = true;
+	}
+
+	if (list->totalX > contentBounds.right - contentBounds.left) {
+		list->showScrollbarX = true;
+		if (!dh) contentBounds.bottom -= SCROLLBAR_SIZE;
+	}
+
+	if (list->totalY > contentBounds.bottom - contentBounds.top) {
+		list->showScrollbarY = true;
+		if (!dv) contentBounds.right -= SCROLLBAR_SIZE;
 	}
 
 	OSMessage m;
@@ -199,8 +215,11 @@ void ListViewUpdate(ListView *list) {
 		OSSendMessage(list->scrollbarX, &m);
 		OSSetScrollbarMeasurements(list->scrollbarX, list->totalX, contentBounds.right - contentBounds.left);
 		OSSetScrollbarPosition(list->scrollbarX, list->scrollX, false);
-
-		list->showScrollbarX = true;
+	} else if (hadScrollbarX) {
+		// If the horizontal scrollbar has been hidden, we need to add additional visible items at the end of the list.
+		ListViewInsertItemsIntoVisibleItemsList(list, 
+				list->firstVisibleItem + list->visibleItemCount, 
+				list->itemCount - list->visibleItemCount - list->firstVisibleItem);
 	}
 
 	if (list->totalY > contentBounds.bottom - contentBounds.top) {
@@ -212,9 +231,12 @@ void ListViewUpdate(ListView *list) {
 		OSSendMessage(list->scrollbarY, &m);
 		OSSetScrollbarMeasurements(list->scrollbarY, list->totalY, contentBounds.bottom - contentBounds.top);
 		OSSetScrollbarPosition(list->scrollbarY, list->scrollY, false);
-
-		list->showScrollbarY = true;
 	}
+
+	list->oldScrollX = list->scrollX;
+	list->oldScrollY = list->scrollY;
+	list->oldContentWidth = contentBounds.right - contentBounds.left;
+	list->oldContentHeight = contentBounds.bottom - contentBounds.top;
 }
 
 void ListViewScrollVertically(ListView *list, int newScrollY) {
@@ -478,8 +500,8 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 			OSMessage m = {};
 
 			OSRectangle row = OS_MAKE_RECTANGLE(
-					contentBounds.left + list->margin.left, 
-					contentBounds.right - list->margin.right,
+					contentBounds.left + (list->columns ? 0 : list->margin.left), 
+					contentBounds.right - (list->columns ? 0 : list->margin.right),
 					contentBounds.top + marginOffset + y,
 					contentBounds.top + marginOffset + y + item->height);
 
@@ -496,7 +518,7 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 			OSCallbackResponse response = OSForwardMessage(list, list->notificationCallback, &m);
 			
 			if (response == OS_CALLBACK_NOT_HANDLED) {
-				int x = row.left - list->scrollX;
+				int x = row.left - list->scrollX + list->margin.left;
 
 				if (list->columns) {
 					for (uintptr_t j = 0; j < list->columnCount; j++) {
@@ -654,10 +676,11 @@ OSObject OSCreateListView(unsigned flags) {
 	list->scrollbarY->parent = list;
 	list->scrollbarY->layout = OS_CELL_FILL;
 
-	list->margin.left = 15;
-	list->margin.right = 15;
-	list->margin.top = 7;
-	list->margin.bottom = 7;
+	bool smallMargins = flags & OS_CREATE_LIST_VIEW_BORDER;
+	list->margin.left = smallMargins ? 7 : 15;
+	list->margin.right = smallMargins ? 7 : 15;
+	list->margin.top = smallMargins ? 4 : 7;
+	list->margin.bottom = smallMargins ? 4 : 7;
 
 	list->totalX = list->margin.left + list->margin.right;
 	list->totalY = list->margin.top + list->margin.bottom;

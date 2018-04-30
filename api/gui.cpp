@@ -4197,6 +4197,81 @@ static OSCallbackResponse ScrollbarButtonPressed(OSObject object, OSMessage *mes
 	return OS_CALLBACK_HANDLED;
 }
 
+static void RelayoutScrollbar(Scrollbar *grid) {
+	OSMessage message;
+	message.type = OS_MESSAGE_LAYOUT;
+	message.layout.force = true;
+	message.layout.clip = grid->inputBounds;
+
+	if (grid->orientation) {
+		message.layout.left = grid->bounds.left;
+		message.layout.right = grid->bounds.right;
+
+		message.layout.top = grid->bounds.top;
+		message.layout.bottom = message.layout.top + SCROLLBAR_SIZE;
+		OSSendMessage(grid->objects[0], &message);
+
+		if (!grid->enabled) {
+			message.layout.top = 0;
+			message.layout.bottom = 0;
+			OSSendMessage(grid->objects[1], &message);
+			OSSendMessage(grid->objects[3], &message);
+
+			message.layout.top = grid->bounds.top + SCROLLBAR_SIZE;
+			message.layout.bottom = grid->bounds.bottom - SCROLLBAR_SIZE;
+			OSSendMessage(grid->objects[4], &message);
+		} else {
+			int x = grid->bounds.top + SCROLLBAR_SIZE + grid->position + grid->size;
+			message.layout.top = grid->bounds.top + SCROLLBAR_SIZE + grid->position;
+			message.layout.bottom = x;
+			OSSendMessage(grid->objects[1], &message);
+			message.layout.bottom = message.layout.top;
+			message.layout.top = grid->bounds.top + SCROLLBAR_SIZE;
+			OSSendMessage(grid->objects[3], &message);
+			message.layout.top = x;
+			message.layout.bottom = grid->bounds.bottom - SCROLLBAR_SIZE;
+			OSSendMessage(grid->objects[4], &message);
+		}
+
+		message.layout.bottom = grid->bounds.bottom;
+		message.layout.top = message.layout.bottom - SCROLLBAR_SIZE;
+		OSSendMessage(grid->objects[2], &message);
+	} else {
+		message.layout.top = grid->bounds.top;
+		message.layout.bottom = grid->bounds.bottom;
+
+		message.layout.left = grid->bounds.left;
+		message.layout.right = message.layout.left + SCROLLBAR_SIZE;
+		OSSendMessage(grid->objects[0], &message);
+
+		if (!grid->enabled) {
+			message.layout.left = 0;
+			message.layout.right = 0;
+			OSSendMessage(grid->objects[1], &message);
+			OSSendMessage(grid->objects[3], &message);
+
+			message.layout.left = grid->bounds.left + SCROLLBAR_SIZE;
+			message.layout.right = grid->bounds.right - SCROLLBAR_SIZE;
+			OSSendMessage(grid->objects[4], &message);
+		} else {
+			int x = grid->bounds.left + SCROLLBAR_SIZE + grid->position + grid->size;
+			message.layout.left = grid->bounds.left + SCROLLBAR_SIZE + grid->position;
+			message.layout.right = x;
+			OSSendMessage(grid->objects[1], &message);
+			message.layout.right = message.layout.left;
+			message.layout.left = grid->bounds.left + SCROLLBAR_SIZE;
+			OSSendMessage(grid->objects[3], &message);
+			message.layout.left = x;
+			message.layout.right = grid->bounds.right - SCROLLBAR_SIZE;
+			OSSendMessage(grid->objects[4], &message);
+		}
+
+		message.layout.right = grid->bounds.right;
+		message.layout.left = message.layout.right - SCROLLBAR_SIZE;
+		OSSendMessage(grid->objects[2], &message);
+	}
+}
+
 void OSSetScrollbarPosition(OSObject object, int newPosition, bool sendValueChangedNotification) {
 	Scrollbar *scrollbar = (Scrollbar *) object;
 
@@ -4214,11 +4289,7 @@ void OSSetScrollbarPosition(OSObject object, int newPosition, bool sendValueChan
 			ScrollbarPositionChanged(scrollbar);
 		}
 
-		{
-			OSMessage message;
-			message.type = OS_MESSAGE_CHILD_UPDATED;
-			OSSendMessage(scrollbar, &message);
-		}
+		RelayoutScrollbar(scrollbar);
 	}
 }
 
@@ -4290,8 +4361,7 @@ static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *me
 				grid->bounds = OS_MAKE_RECTANGLE(
 						message->layout.left, message->layout.right,
 						message->layout.top, message->layout.bottom);
-
-				OSRectangle clip = message->layout.clip;
+				grid->inputBounds = message->layout.clip;
 
 				StandardCellLayout(grid);
 
@@ -4304,81 +4374,7 @@ static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *me
 
 				// OSPrint("layout scrollbar %x\n", object);
 
-				{
-					OSMessage message;
-					message.type = OS_MESSAGE_LAYOUT;
-					message.layout.force = true;
-					message.layout.clip = clip;
-
-					if (grid->orientation) {
-						message.layout.left = grid->bounds.left;
-						message.layout.right = grid->bounds.right;
-
-						message.layout.top = grid->bounds.top;
-						message.layout.bottom = message.layout.top + SCROLLBAR_SIZE;
-						OSSendMessage(grid->objects[0], &message);
-
-						if (!grid->enabled) {
-							message.layout.top = 0;
-							message.layout.bottom = 0;
-							OSSendMessage(grid->objects[1], &message);
-							OSSendMessage(grid->objects[3], &message);
-
-							message.layout.top = grid->bounds.top + SCROLLBAR_SIZE;
-							message.layout.bottom = grid->bounds.bottom - SCROLLBAR_SIZE;
-							OSSendMessage(grid->objects[4], &message);
-						} else {
-							int x = grid->bounds.top + SCROLLBAR_SIZE + grid->position + grid->size;
-							message.layout.top = grid->bounds.top + SCROLLBAR_SIZE + grid->position;
-							message.layout.bottom = x;
-							OSSendMessage(grid->objects[1], &message);
-							message.layout.bottom = message.layout.top;
-							message.layout.top = grid->bounds.top + SCROLLBAR_SIZE;
-							OSSendMessage(grid->objects[3], &message);
-							message.layout.top = x;
-							message.layout.bottom = grid->bounds.bottom - SCROLLBAR_SIZE;
-							OSSendMessage(grid->objects[4], &message);
-						}
-
-						message.layout.bottom = grid->bounds.bottom;
-						message.layout.top = message.layout.bottom - SCROLLBAR_SIZE;
-						OSSendMessage(grid->objects[2], &message);
-					} else {
-						message.layout.top = grid->bounds.top;
-						message.layout.bottom = grid->bounds.bottom;
-
-						message.layout.left = grid->bounds.left;
-						message.layout.right = message.layout.left + SCROLLBAR_SIZE;
-						OSSendMessage(grid->objects[0], &message);
-
-						if (!grid->enabled) {
-							message.layout.left = 0;
-							message.layout.right = 0;
-							OSSendMessage(grid->objects[1], &message);
-							OSSendMessage(grid->objects[3], &message);
-
-							message.layout.left = grid->bounds.left + SCROLLBAR_SIZE;
-							message.layout.right = grid->bounds.right - SCROLLBAR_SIZE;
-							OSSendMessage(grid->objects[4], &message);
-						} else {
-							int x = grid->bounds.left + SCROLLBAR_SIZE + grid->position + grid->size;
-							message.layout.left = grid->bounds.left + SCROLLBAR_SIZE + grid->position;
-							message.layout.right = x;
-							OSSendMessage(grid->objects[1], &message);
-							message.layout.right = message.layout.left;
-							message.layout.left = grid->bounds.left + SCROLLBAR_SIZE;
-							OSSendMessage(grid->objects[3], &message);
-							message.layout.left = x;
-							message.layout.right = grid->bounds.right - SCROLLBAR_SIZE;
-							OSSendMessage(grid->objects[4], &message);
-						}
-
-						message.layout.right = grid->bounds.right;
-						message.layout.left = message.layout.right - SCROLLBAR_SIZE;
-						OSSendMessage(grid->objects[2], &message);
-					}
-
-				}
+				RelayoutScrollbar(grid);
 
 				result = OS_CALLBACK_HANDLED;
 			}
@@ -4440,12 +4436,6 @@ void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewpo
 		OSEnableControl(scrollbar->objects[4], true);
 	}
 
-	{
-		OSMessage message;
-		message.type = OS_MESSAGE_CHILD_UPDATED;
-		OSSendMessage(scrollbar, &message);
-	}
-
 	RepaintControl(scrollbar->objects[0]);
 	RepaintControl(scrollbar->objects[1]);
 	RepaintControl(scrollbar->objects[2]);
@@ -4454,6 +4444,8 @@ void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewpo
 
 	if (scrollbar->automaticallyUpdatePosition) {
 		ScrollbarPositionChanged(scrollbar);
+	} else {
+		RelayoutScrollbar(scrollbar);
 	}
 }
 
