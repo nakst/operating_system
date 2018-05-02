@@ -130,22 +130,24 @@ void Run(int emulator, int drive, int memory, int cores, int log, bool gdb) {
 	}
 }
 
-void BuildCrossCompiler() {
+void BuildCrossCompiler(bool skipQuestions) {
 	char yes[1024];
 
 	{
-		printf("\nThe build system could not detect a GCC cross compiler in your PATH.\n");
-		printf("Have you already built a GCC cross compiler compatible with the build system?\n\n");
+		if (!skipQuestions) {
+			printf("\nThe build system could not detect a GCC cross compiler in your PATH.\n");
+			printf("Have you already built a GCC cross compiler compatible with the build system?\n\n");
 
-		printf("Type 'yes' or 'no'.\n");
-		scanf("%s", yes);
+			printf("Type 'yes' or 'no'.\n");
+			scanf("%s", yes);
 
-		if (!strcmp(yes, "yes")) {
-			printf("\nPlease enter the ABSOLUTE path of the bin/ folder, containing the binutils and GCC executables.\n");
-			scanf("%s", compilerPath);
+			if (!strcmp(yes, "yes")) {
+				printf("\nPlease enter the ABSOLUTE path of the bin/ folder, containing the binutils and GCC executables.\n");
+				scanf("%s", compilerPath);
 
-			printf("\nUpdating config...\n");
-			return;
+				printf("\nUpdating config...\n");
+				return;
+			}
 		}
 
 		printf("\nThe build system will now automatically build a cross compiler for you.\n");
@@ -309,6 +311,13 @@ void LoadConfig(Token attribute, Token section, Token name, Token value, int eve
 	}
 }
 
+void SaveConfig() {
+	FILE *file = fopen("build_system_config.dat", "w");
+	fprintf(file, "[build_system]\naccepted_license = true;\n");
+	if (strlen(compilerPath)) fprintf(file, "compiler_path = \"%s\";\n", compilerPath);
+	fclose(file);
+}
+
 int main(int argc, char **argv) {
 	(void) argc;
 	(void) argv;
@@ -344,17 +353,12 @@ int main(int argc, char **argv) {
 	bool restart = false;
 
 	if (system("x86_64-elf-gcc --version > /dev/null")) {
-		BuildCrossCompiler();
+		BuildCrossCompiler(false);
 		restart = true;
 		printf("Please restart the build system.\n");
 	}
 
-	{
-		FILE *file = fopen("build_system_config.dat", "w");
-		fprintf(file, "[build_system]\naccepted_license = true;\n");
-		if (strlen(compilerPath)) fprintf(file, "compiler_path = \"%s\";\n", compilerPath);
-		fclose(file);
-	}
+	SaveConfig();
 
 	if (restart) {
 		return 0;
@@ -439,6 +443,11 @@ int main(int argc, char **argv) {
 		} else if (0 == memcmp(l, "python ", 7) || 0 == memcmp(l, "p ", 2)) {
 			sprintf(buffer, "python -c \"print(%s)\"", 1 + strchr(l, ' '));
 			system(buffer);
+		} else if (0 == memcmp(l, "build-cross", 11)) {
+			BuildCrossCompiler(true);
+			SaveConfig();
+			printf("Please restart the build system.\n");
+			return 0;
 		} else if (0 == strcmp(l, "help") || 0 == strcmp(l, "h")) {
 			printf("(b ) build - Unoptimised build\n");
 			printf("(o ) optimise - Optimised build\n");
@@ -458,6 +467,7 @@ int main(int argc, char **argv) {
 			printf("(p ) python - Execute a Lua expression.\n");
 			printf("(c ) compile - Compile the kernel and programs.\n");
 			printf("(  ) reset-config - Reset the build system's config file.\n");
+			printf("(  ) build-cross - Build a GCC cross compiler for building the OS.\n");
 		} else {
 			printf("Unrecognised command '%s'. Enter 'help' to get a list of commands.\n", l);
 		}

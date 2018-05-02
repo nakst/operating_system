@@ -2,6 +2,7 @@
 // 	Timeout related things happen.
 // 	-> Setting AHCI_COMMAND_COUNT to 1 seems to fix it?
 // 	-> Nope. Using ATA for now with VirtualBox...
+// TODO REWRITE THIS (AGAIN).
 
 #ifndef IMPLEMENTATION
 
