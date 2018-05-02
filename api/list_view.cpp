@@ -4,6 +4,7 @@
 #define LIST_VIEW_DEFAULT_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
+// TODO Bookmark list in file manager is broken.
 // TODO Getting the selection box to actually select items.
 // TODO Column resizing.
 

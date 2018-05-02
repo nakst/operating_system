@@ -62,18 +62,10 @@ OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) 
 						"Error code: %d (user defined error)", code);
 			}
 
-			OSWindowSpecification specification = {};
-			specification.width = 320;
-			specification.height = 200;
-			specification.minimumWidth = 160;
-			specification.minimumHeight = 100;
-			specification.title = (char *) "Program Crashed";
-			specification.titleBytes = OSCStringLength(specification.title);
-			OSObject window = OSCreateWindow(&specification);
-
-			OSObject content = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
-			OSSetRootGrid(window, content);
-			OSAddControl(content, 0, 0, OSCreateLabel(crashMessage, crashMessageLength), 0);
+			OSShowDialogAlert(OSLiteral("Program Crashed"),
+					OSLiteral("A program has crashed."),
+					crashMessage, crashMessageLength,
+					OS_ICON_ERROR, OS_INVALID_OBJECT);
 
 			response = OS_CALLBACK_HANDLED;
 		} break;
@@ -154,6 +146,17 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center, uintptr_t 
 }
 
 extern "C" void ProgramEntry() {
+	OSHandle handle = OSOpenSharedMemory(1, OSLiteral("DesktopInstance"), OS_OPEN_SHARED_MEMORY_FAIL_IF_FOUND);
+
+	if (handle == OS_INVALID_HANDLE) {
+		OSShowDialogAlert(OSLiteral("Desktop Multiple Processes"),
+				OSLiteral("You attempted to launch multiple desktop processes."),
+				OSLiteral("Only one desktop process can exist per user account."),
+				OS_ICON_ERROR, OS_INVALID_OBJECT);
+		OSProcessMessages();
+		return;
+	}
+
 	LoadImageIntoSurface((char *) "/OS/Visual Styles/Default.png", OS_SURFACE_UI_SHEET, false);
 	LoadImageIntoSurface((char *) "/OS/Icons/Tango Icons 16x16.png", OS_SURFACE_UI_SHEET, false, 512, 0);
 

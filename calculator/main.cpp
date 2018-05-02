@@ -180,7 +180,9 @@ EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) 
 				if (precedence < 4) {
 					EvaluateResult e = EVALUATE(4);
 					if (e.error) goto error;
-					if (e.value == 0) goto error;
+					// if (e.value == 0) goto error;
+					// TODO Temporary.
+					if (e.value == 0) OSCrashProcess(OS_FATAL_ERROR_PROCESSOR_EXCEPTION);
 					number /= e.value;
 				} else {
 					string = string2;

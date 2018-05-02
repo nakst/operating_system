@@ -1267,7 +1267,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			if (control->window->defaultFocus == control) control->window->defaultFocus = nullptr;
 			if (control->window->focus == control) OSRemoveFocusedControl(control->window, true);
 
-			OSHeapFree(control->text.buffer);
+			GUIFree(control->text.buffer);
 			GUIFree(control);
 		} break;
 
@@ -1645,7 +1645,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		control->cursor = control->style == OS_TEXTBOX_STYLE_COMMAND ? OS_CURSOR_NORMAL : OS_CURSOR_TEXT;
 		control->window->cursor = (OSCursorStyle) control->cursor;
 
-		OSHeapFree(control->previousString.buffer);
+		GUIFree(control->previousString.buffer);
 		control->previousString.buffer = nullptr;
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
 		control->caretBlink = false;
@@ -1716,10 +1716,10 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		if (message->command.command == osCommandPaste) {
 			int bytes = ClipboardTextBytes();
 			char *old = control->text.buffer;
-			control->text.buffer = (char *) OSHeapAllocate(control->text.bytes + bytes, false);
+			control->text.buffer = (char *) GUIAllocate(control->text.bytes + bytes, false);
 			OSCopyMemory(control->text.buffer, old, control->caret.byte);
 			OSCopyMemory(control->text.buffer + control->caret.byte + bytes, old + control->caret.byte, control->text.bytes - control->caret.byte);
-			OSHeapFree(old);
+			GUIFree(old);
 			char *c = control->text.buffer + control->caret.byte;
 			char *d = c;
 			OSSyscall(OS_SYSCALL_PASTE_TEXT, bytes, (uintptr_t) c, 0, 0);
@@ -1748,7 +1748,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	} else if (message->type == OS_MESSAGE_TEXT_UPDATED) {
 		control->caret = control->caret2;
 	} else if (message->type == OS_MESSAGE_DESTROY) {
-		OSHeapFree(control->previousString.buffer);
+		GUIFree(control->previousString.buffer);
 	} else if (message->type == OS_MESSAGE_KEY_TYPED) {
 		control->caretBlink = false;
 		control->window->caretBlinkPause = CARET_BLINK_PAUSE;
@@ -1926,10 +1926,10 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			char data[4];
 			int bytes = utf8_encode(message->keyboard.shift ? isc : ic, data);
 			char *old = control->text.buffer;
-			control->text.buffer = (char *) OSHeapAllocate(control->text.bytes + bytes, false);
+			control->text.buffer = (char *) GUIAllocate(control->text.bytes + bytes, false);
 			OSCopyMemory(control->text.buffer, old, control->caret.byte);
 			OSCopyMemory(control->text.buffer + control->caret.byte + bytes, old + control->caret.byte, control->text.bytes - control->caret.byte);
-			OSHeapFree(old);
+			GUIFree(old);
 			OSCopyMemory(control->text.buffer + control->caret.byte, data, bytes);
 			control->text.characters += 1;
 			control->caret.character++;
