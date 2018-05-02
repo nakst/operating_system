@@ -5,8 +5,6 @@
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
 // TODO Getting the selection box to actually select items.
-// TODO Fine-tune item border merging.
-
 // TODO Keyboard controls.
 // TODO Click/double-click/right-click.
 // TODO Custom controls.
@@ -60,6 +58,7 @@ struct ListView : Control {
 };
 
 static UIImage listViewHighlight           = {{228, 241, 59, 72}, {228 + 3, 241 - 3, 59 + 3, 72 - 3}, OS_DRAW_MODE_STRECH};
+static UIImage listViewLastClickedHighlight= {{228, 241, 14 + 59, 14 + 72}, {228 + 3, 241 - 3, 14 + 59 + 3, 14 + 72 - 3}, OS_DRAW_MODE_STRECH};
 static UIImage listViewSelected            = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 3, 14 + 241 - 3, 59 + 3, 72 - 3}, OS_DRAW_MODE_STRECH};
 static UIImage listViewSelected2           = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 3, 14 + 241 - 3, 28 + 59 + 3, 28 + 72 - 3}, OS_DRAW_MODE_STRECH};
 static UIImage listViewSelected3           = {{14 + 228, 14 + 241, 28 + 59 - 14, 28 + 72 - 14}, {14 + 228 + 3, 14 + 241 - 3, 28 + 59 + 3 - 14, 28 + 72 - 3 - 14}, OS_DRAW_MODE_STRECH};
@@ -459,6 +458,76 @@ void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage *messag
 			OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, rowClip, 0);
 }
 
+bool ListViewGetBorderImage(ListView *list, uintptr_t i, UIImage *image) {
+	if (i == list->itemCount) {
+		return false;
+	}
+
+	bool selected = false;
+	bool listFocus = list->window->focus == list;
+	bool focus = list->focusedItem == i && listFocus;
+
+	OSMessage m;
+	m.type = OS_NOTIFICATION_GET_ITEM;
+	m.listViewItem.index = i;
+	m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+
+	if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED) {
+		selected = m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
+	}
+
+	if ((focus || list->highlightItem == i) && selected) {
+		*image = !listFocus ? listViewSelected2 : listViewSelected3;
+	} else if (list->highlightItem == i) {
+		*image = focus ? listViewLastClickedHighlight : listViewHighlight;
+	} else if (selected) {
+		*image = !listFocus ? listViewSelected2 : listViewSelected;
+	} else if (focus) {
+		*image = listViewLastClicked;
+	} else {
+		return false;
+	}
+
+	return true;
+}
+
+void ListViewDrawSeparator(ListView *list, uintptr_t after, uintptr_t before, OSHandle surface, OSRectangle row, OSRectangle clip) {
+	UIImage afterImage, beforeImage;
+	bool afterFound = ListViewGetBorderImage(list, after, &afterImage);
+	bool beforeFound = ListViewGetBorderImage(list, before, &beforeImage);
+
+	if (afterFound) {
+		afterImage.region.bottom = afterImage.region.top + 1;
+		afterImage.border.top = afterImage.region.top;
+		afterImage.border.bottom = afterImage.region.top;
+	}
+
+	if (beforeFound) {
+		beforeImage.region.bottom = beforeImage.region.top + 1;
+		beforeImage.border.top = beforeImage.region.top;
+		beforeImage.border.bottom = beforeImage.region.top;
+	}
+
+	{
+		OSRectangle r;
+		ClipRectangle(row, clip, &r);
+		OSFillRectangle(surface, r, OSColor(LIST_VIEW_BACKGROUND_COLOR));
+	}
+
+	if (afterFound && beforeFound) {
+		OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
+				beforeImage.region, beforeImage.border, beforeImage.drawMode, 0x80, clip);
+		OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
+				afterImage.region, afterImage.border, afterImage.drawMode, 0x80, clip);
+	} else if (afterFound) {
+		OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
+				afterImage.region, afterImage.border, afterImage.drawMode, 0xFF, clip);
+	} else if (beforeFound) {
+		OSDrawSurfaceClipped(surface, OS_SURFACE_UI_SHEET, row,
+				beforeImage.region, beforeImage.border, beforeImage.drawMode, 0xFF, clip);
+	} 
+}
+
 void ListViewPaint(ListView *list, OSMessage *message) {
 	OSRectangle contentBounds = ListViewGetContentBounds(list);
 	OSRectangle contentClip;
@@ -523,91 +592,59 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 
 		ListViewItem *item;
 
-		UIImage endBorderImage;
-		bool hasEndBorder = false;
+		OSRectangle row;
+
+		if (list->columns) {
+			row = OS_MAKE_RECTANGLE(
+					contentBounds.left + list->margin.left - list->scrollX, 
+					contentBounds.left + list->totalX - list->margin.right - list->scrollX,
+					0, 0);
+		} else {
+			row = OS_MAKE_RECTANGLE(
+					contentBounds.left + list->margin.left, 
+					contentBounds.right - list->margin.right,
+					0, 0);
+		}
 
 		for (uintptr_t i = list->firstVisibleItem; i < list->firstVisibleItem + list->visibleItemCount; i++, y += item->height) {
 			item = list->visibleItems + (i - list->firstVisibleItem);
 
-			if (!item->repaint && list->repaintCustomOnly && !hasEndBorder) {
+			if (!item->repaint && list->repaintCustomOnly
+					&& (i == list->firstVisibleItem || !(item - 1)->repaint)) {
 				continue;
-			} else {
-				item->repaint = false;
 			}
 
 			OSMessage m = {};
 
-			OSRectangle row;
+			row.top = contentBounds.top + marginOffset + y;
+			row.bottom = contentBounds.top + marginOffset + y + item->height;
 
-			if (list->columns) {
-				row = OS_MAKE_RECTANGLE(
-					contentBounds.left + list->margin.left - list->scrollX, 
-					contentBounds.left + list->totalX - list->margin.right - list->scrollX,
-					contentBounds.top + marginOffset + y,
-					contentBounds.top + marginOffset + y + item->height);
-			} else {
-				row = OS_MAKE_RECTANGLE(
-					contentBounds.left + list->margin.left, 
-					contentBounds.right - list->margin.right,
-					contentBounds.top + marginOffset + y,
-					contentBounds.top + marginOffset + y + item->height);
+			ListViewDrawSeparator(list, i == 0 ? list->itemCount : i - 1, i, message->paint.surface, 
+					OS_MAKE_RECTANGLE(row.left - 3, row.right + 3, row.top, row.top + 1), contentClip);
+
+			if (!item->repaint && list->repaintCustomOnly) {
+				continue;
 			}
 
 			OSRectangle rowClip;
 			ClipRectangle(contentClip, row, &rowClip);
 
-			OSRectangle row2 = OS_MAKE_RECTANGLE(row.left - 3, row.right + 3, row.top, row.bottom);
+			OSRectangle row2 = OS_MAKE_RECTANGLE(row.left - 3, row.right + 3, row.top + 1, row.bottom);
 			OSRectangle row2Clip;
 			ClipRectangle(contentClip, row2, &row2Clip);
 			OSFillRectangle(message->paint.surface, row2Clip, OSColor(LIST_VIEW_BACKGROUND_COLOR));
 
 			{
 				UIImage image;
-				bool found = true;
-				bool selected = false;
-				bool listFocus = list->window->focus == list;
-				bool focus = list->focusedItem == i && listFocus;
-
-				m.type = OS_NOTIFICATION_GET_ITEM;
-				m.listViewItem.index = i;
-				m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
-
-				if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED) {
-					selected = m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
-				}
-
-				if ((focus || list->highlightItem == i) && selected) {
-					image = !listFocus ? listViewSelected2 : listViewSelected3;
-				} else if (list->highlightItem == i) {
-					image = listViewHighlight;
-				} else if (selected) {
-					image = !listFocus ? listViewSelected2 : listViewSelected;
-				} else if (focus) {
-					image = listViewLastClicked;
-				} else {
-					found = false;
-				}
+				bool found = ListViewGetBorderImage(list, i, &image);
 
 				if (found) {
-					hasEndBorder = true;
-					endBorderImage = image;
-					endBorderImage.region.top = endBorderImage.region.bottom - 1;
-					endBorderImage.border.top = endBorderImage.region.top;
-					endBorderImage.border.bottom = endBorderImage.region.top;
-
-					if (i != list->itemCount - 1) {
-						image.region.bottom--;
-					}
+					image.region.top++;
+					image.region.bottom--;
 				
 					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, row2,
 							image.region, image.border, image.drawMode, 0xFF, contentClip);
-				} else if (hasEndBorder) {
-					hasEndBorder = false;
-
-					OSRectangle rectangle = OS_MAKE_RECTANGLE(row2.left, row2.right, row2.top, row2.top + 1);
-					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, rectangle,
-							endBorderImage.region, endBorderImage.border, endBorderImage.drawMode, 0xFF, contentClip);
-				}
+				} 
 			}
 
 			m.type = OS_NOTIFICATION_PAINT_ITEM;
@@ -634,6 +671,15 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 					ListViewPaintCell(list, row, message, i, 0, rowClip, nullptr);
 				}
 			}
+
+			if (i == list->itemCount - 1) {
+				ListViewDrawSeparator(list, i, list->itemCount, message->paint.surface, 
+						OS_MAKE_RECTANGLE(row2.left, row2.right, row.bottom, row.bottom + 1), contentClip);
+			}
+		}
+
+		for (uintptr_t i = 0; i < list->visibleItemCount; i++) {
+			list->visibleItems[i].repaint = false;
 		}
 
 		if (list->draggingSelectionBox) {

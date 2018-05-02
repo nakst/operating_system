@@ -903,7 +903,7 @@ void Instance::Initialise() {
 	statusLabel = OSCreateLabel(OSLiteral(""));
 	OSAddControl(statusBar, 1, 0, statusLabel, OS_FLAGS_DEFAULT);
 
-	LoadFolder(OSLiteral("/"));
+	LoadFolder(OSLiteral("/OS"));
 	OSSetFocusedControl(folderListing, true);
 
 	OSEndGUIAllocationBlock();
