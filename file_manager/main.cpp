@@ -851,7 +851,7 @@ void Instance::Initialise() {
 	thisItem.thisItem = this;
 	global.instances.InsertEnd(&thisItem);
 
-	OSStartGUIAllocationBlock(16384);
+	OSStartGUIAllocationBlock(32768);
 
 	window = OSCreateWindow(mainWindow);
 	OSSetInstance(window, this);

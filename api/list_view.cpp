@@ -5,8 +5,10 @@
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
 // TODO Getting the selection box to actually select items.
+// TODO Column resizing.
+
 // TODO Keyboard controls.
-// TODO Click/double-click/right-click.
+// TODO Right-click.
 // TODO Custom controls.
 // TODO Dragging.
 // TODO Tile view.
@@ -734,6 +736,10 @@ void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			return;
 		}
 
+		if (!(list->flags & OS_CREATE_LIST_VIEW_ANY_SELECTIONS)) {
+			return;
+		}
+
 		int y = -list->offsetIntoFirstVisibleItem;
 		int marginOffset = list->scrollY < list->margin.top ? (list->margin.top - list->scrollY) : 0;
 
@@ -764,6 +770,10 @@ void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			y += item->height;
 		}
 	} else if (message->type == OS_MESSAGE_START_DRAG) {
+		if (!(list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
+			return;
+		}
+
 		list->selectionBoxAnchor = OS_MAKE_POINT(
 				message->mouseDragged.originalPositionX + list->scrollX + list->margin.left, 
 				message->mouseDragged.originalPositionY + list->scrollY + list->margin.top);
@@ -773,6 +783,10 @@ void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 		list->draggingSelectionBox = false;
 		RepaintControl(list);
 	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
+		if (!(list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
+			return;
+		}
+
 		OSPoint currentPoint = OS_MAKE_POINT(
 				message->mouseDragged.newPositionX + list->scrollX + list->margin.left, 
 				message->mouseDragged.newPositionY + list->scrollY + list->margin.top);
@@ -795,15 +809,19 @@ void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 
 		RepaintControl(list);
 	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
+		if (!(list->flags & OS_CREATE_LIST_VIEW_ANY_SELECTIONS)) {
+			return;
+		}
+
 		OSMessage m;
 
-		if (!message->mousePressed.ctrl) {
+		if (!message->mousePressed.ctrl || !(list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
 			m.type = OS_NOTIFICATION_DESELECT_ALL;
 			OSForwardMessage(list, list->notificationCallback, &m);
 		}
 
 		if (list->highlightItem != (uintptr_t) -1) {
-			int from = message->mousePressed.shift ? list->shiftAnchorItem : list->highlightItem;
+			int from = (message->mousePressed.shift && (list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) ? list->shiftAnchorItem : list->highlightItem;
 			int to = list->highlightItem;
 
 			for (int i = from; from < to ? i <= to : i >= to; i += from < to ? 1 : -1) {
@@ -830,6 +848,11 @@ void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 
 			if (!message->mousePressed.shift) {
 				list->shiftAnchorItem = to;
+			}
+
+			if (message->mousePressed.clickChainCount == 2) { 
+				m.type = OS_NOTIFICATION_CHOOSE_ITEM;
+				OSForwardMessage(list, list->notificationCallback, &m);
 			}
 		}
 	}

@@ -191,8 +191,8 @@ void CreateList(OSObject content) {
 #endif
 
 #if 1
-#if 0
-	listView = OSCreateListView(OS_FLAGS_DEFAULT | OS_CREATE_LIST_VIEW_SINGLE_SELECT);
+#if 1
+	listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_SINGLE_SELECT);
 #else
 	listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_MULTI_SELECT);
 #endif
