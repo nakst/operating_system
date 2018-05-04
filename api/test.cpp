@@ -82,10 +82,6 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
 			word->selected = message->listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
 		}
-	} else if (message->type == OS_NOTIFICATION_DESELECT_ALL) {
-		for (uintptr_t i = 0; i < wordCount; i++) {
-			words[i].selected = false;
-		}
 	} else if (message->type == OS_NOTIFICATION_PAINT_CELL && message->paintCell.column == 2) {
 		OSDrawProgressBar(message->paintCell.surface, message->paintCell.bounds, (float) message->paintCell.index / (float) wordCount, message->paintCell.clip, true);
 	} else {
@@ -192,9 +188,9 @@ void CreateList(OSObject content) {
 
 #if 1
 #if 1
-	listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_SINGLE_SELECT);
+	listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_SINGLE_SELECT, 0);
 #else
-	listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_MULTI_SELECT);
+	listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_MULTI_SELECT, 0);
 #endif
 	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);

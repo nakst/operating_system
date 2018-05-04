@@ -42,6 +42,9 @@ struct Instance {
 	size_t pathForwardHistoryBytes[PATH_HISTORY_MAX];
 	uintptr_t pathForwardHistoryPosition;
 
+	uintptr_t sortColumn;
+	bool sortDescending;
+
 	void Initialise();
 
 #define LOAD_FOLDER_BACKWARDS (1)
@@ -76,7 +79,7 @@ Global global;
 
 OSListViewColumn folderListingColumns[] = {
 #define COLUMN_NAME (0)
-	{ OSLiteral("Name"), 270, 100, OS_LIST_VIEW_COLUMN_PRIMARY | OS_LIST_VIEW_COLUMN_ICON, },
+	{ OSLiteral("Name"), 270, 100, OS_LIST_VIEW_COLUMN_PRIMARY | OS_LIST_VIEW_COLUMN_ICON | OS_LIST_VIEW_COLUMN_SORT_ASCENDING, },
 #define COLUMN_DATE_MODIFIED (1)
 	{ OSLiteral("Date modified"), 120, 50, OS_FLAGS_DEFAULT, },
 #define COLUMN_TYPE (2)
@@ -152,8 +155,81 @@ int CompareStrings(char *s1, char *s2, size_t length1, size_t length2) {
 	return 0;
 }
 
+int GetFileType(char *name, size_t bytes) {
+	int lastSeparator = 0;
+
+	for (intptr_t i = bytes - 1; i >= 0; i--) {
+		if (name[i] == '.') {
+			lastSeparator = i;
+			break;
+		}
+	}
+
+	name += lastSeparator;
+	bytes -= lastSeparator;
+
+#define MATCH_EXTENSION(a) (OSCStringLength(name) == bytes && 0 == OSCompareBytes((void *) (a), name, bytes))
+
+#define FILE_CLASS_EXECUTABLE (0x1000)
+#define FILE_CLASS_IMAGE (0x2000)
+#define FILE_CLASS_TEXT (0x4000)
+#define FILE_CLASS_FONT (0x8000)
+#define FILE_CLASS_MISC (0x10000)
+
+	if (MATCH_EXTENSION(".esx")) {
+#define FILE_TYPE_EXECUTABLE (FILE_CLASS_EXECUTABLE | 1)
+		return FILE_TYPE_EXECUTABLE;
+	} else if (MATCH_EXTENSION(".esx_symbols")) {
+#define FILE_TYPE_DEBUGGER_DATA (FILE_CLASS_EXECUTABLE | 2)
+		return FILE_TYPE_DEBUGGER_DATA;
+	} else if (MATCH_EXTENSION(".png")) {
+#define FILE_TYPE_PNG_IMAGE (FILE_CLASS_IMAGE | 1)
+		return FILE_TYPE_PNG_IMAGE;
+	} else if (MATCH_EXTENSION(".jpg")) {
+#define FILE_TYPE_JPG_IMAGE (FILE_CLASS_IMAGE | 2)
+		return FILE_TYPE_JPG_IMAGE;
+	} else if (MATCH_EXTENSION(".ttf")) {
+#define FILE_TYPE_TTF_FONT (FILE_CLASS_FONT | 1)
+		return FILE_TYPE_TTF_FONT;
+	} else if (MATCH_EXTENSION(".a")) {
+#define FILE_TYPE_STATIC_LIBRARY (FILE_CLASS_MISC | 1)
+		return FILE_TYPE_STATIC_LIBRARY;
+	} else if (MATCH_EXTENSION(".h")) {
+#define FILE_TYPE_C_HEADER (FILE_CLASS_TEXT | 1)
+		return FILE_TYPE_C_HEADER;
+	} else if (MATCH_EXTENSION(".txt")) {
+#define FILE_TYPE_PLAIN_TEXT (FILE_CLASS_TEXT | 2)
+		return FILE_TYPE_PLAIN_TEXT;
+	} else {
+#define FILE_TYPE_UNKNOWN (0)
+		return FILE_TYPE_UNKNOWN;
+	}
+}
+
+const char *GetFileType(int index) {
+	if (index == FILE_TYPE_EXECUTABLE) {
+		return "Executable";
+	} else if (index == FILE_TYPE_DEBUGGER_DATA) {
+		return "Debugger data";
+	} else if (index == FILE_TYPE_PNG_IMAGE) {
+		return "PNG image";
+	} else if (index == FILE_TYPE_JPG_IMAGE) {
+		return "JPG image";
+	} else if (index == FILE_TYPE_TTF_FONT) {
+		return "TTF font";
+	} else if (index == FILE_TYPE_STATIC_LIBRARY) {
+		return "Static library";
+	} else if (index == FILE_TYPE_C_HEADER) {
+		return "C/C++ header";
+	} else if (index == FILE_TYPE_PLAIN_TEXT) {
+		return "Plain text";
+	} else {
+		return "File";
+	}
+}
+
 int SortFolder(const void *_a, const void *_b, void *argument) {
-	(void) argument;
+	Instance *instance = (Instance *) argument;
 
 	FolderChild *a = (FolderChild *) _a;
 	FolderChild *b = (FolderChild *) _b;
@@ -164,12 +240,40 @@ int SortFolder(const void *_a, const void *_b, void *argument) {
 		return -1;
 	}
 
-	char *s1 = a->data.name;
-	char *s2 = b->data.name;
-	size_t length1 = a->data.nameLengthBytes;
-	size_t length2 = b->data.nameLengthBytes;
+	int result = 0;
 
-	return CompareStrings(s1, s2, length1, length2);
+	switch (instance->sortColumn) {
+		case COLUMN_NAME: {
+			result = CompareStrings(a->data.name, b->data.name, a->data.nameLengthBytes, b->data.nameLengthBytes);
+		} break;
+
+		case COLUMN_TYPE: {
+			if (a->data.information.type == OS_NODE_FILE) {
+				char *s1 = (char *) GetFileType(GetFileType(a->data.name, a->data.nameLengthBytes));
+				char *s2 = (char *) GetFileType(GetFileType(b->data.name, b->data.nameLengthBytes));
+				result = CompareStrings(s1, s2, OSCStringLength(s1), OSCStringLength(s2));
+			}
+		} break;
+
+		case COLUMN_SIZE: {
+			if (a->data.information.type == OS_NODE_FILE) {
+				if (a->data.information.fileSize > b->data.information.fileSize) {
+					result = 1;
+				} else if (a->data.information.fileSize < b->data.information.fileSize) {
+					result = -1;
+				} else {
+					result = 0;
+				}
+			}
+		} break;
+	}
+
+	if (!result && instance->sortColumn) {
+		// If the two strings were equal, then fallback by sorting by their names.
+		result = CompareStrings(a->data.name, b->data.name, a->data.nameLengthBytes, b->data.nameLengthBytes);
+	}
+
+	return result * (instance->sortDescending ? -1 : 1);
 }
 
 OSCallbackResponse CommandNew(OSObject object, OSMessage *message) {
@@ -349,10 +453,6 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 			return OS_CALLBACK_HANDLED;
 		} break;
 
-		case OS_NOTIFICATION_DESELECT_ALL: {
-			return OS_CALLBACK_REJECTED;
-		} break;
-
 		case OS_NOTIFICATION_SET_ITEM: {
 			uintptr_t index = message->listViewItem.index;
 			Bookmark *bookmark = global.bookmarks + index;
@@ -372,79 +472,6 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 	}
 }
 
-int GetFileType(char *name, size_t bytes) {
-	int lastSeparator = 0;
-
-	for (intptr_t i = bytes - 1; i >= 0; i--) {
-		if (name[i] == '.') {
-			lastSeparator = i;
-			break;
-		}
-	}
-
-	name += lastSeparator;
-	bytes -= lastSeparator;
-
-#define MATCH_EXTENSION(a) (OSCStringLength(name) == bytes && 0 == OSCompareBytes((void *) (a), name, bytes))
-
-#define FILE_CLASS_EXECUTABLE (0x1000)
-#define FILE_CLASS_IMAGE (0x2000)
-#define FILE_CLASS_TEXT (0x4000)
-#define FILE_CLASS_FONT (0x8000)
-#define FILE_CLASS_MISC (0x10000)
-
-	if (MATCH_EXTENSION(".esx")) {
-#define FILE_TYPE_EXECUTABLE (FILE_CLASS_EXECUTABLE | 1)
-		return FILE_TYPE_EXECUTABLE;
-	} else if (MATCH_EXTENSION(".esx_symbols")) {
-#define FILE_TYPE_DEBUGGER_DATA (FILE_CLASS_EXECUTABLE | 2)
-		return FILE_TYPE_DEBUGGER_DATA;
-	} else if (MATCH_EXTENSION(".png")) {
-#define FILE_TYPE_PNG_IMAGE (FILE_CLASS_IMAGE | 1)
-		return FILE_TYPE_PNG_IMAGE;
-	} else if (MATCH_EXTENSION(".jpg")) {
-#define FILE_TYPE_JPG_IMAGE (FILE_CLASS_IMAGE | 2)
-		return FILE_TYPE_JPG_IMAGE;
-	} else if (MATCH_EXTENSION(".ttf")) {
-#define FILE_TYPE_TTF_FONT (FILE_CLASS_FONT | 1)
-		return FILE_TYPE_TTF_FONT;
-	} else if (MATCH_EXTENSION(".a")) {
-#define FILE_TYPE_STATIC_LIBRARY (FILE_CLASS_MISC | 1)
-		return FILE_TYPE_STATIC_LIBRARY;
-	} else if (MATCH_EXTENSION(".h")) {
-#define FILE_TYPE_C_HEADER (FILE_CLASS_TEXT | 1)
-		return FILE_TYPE_C_HEADER;
-	} else if (MATCH_EXTENSION(".txt")) {
-#define FILE_TYPE_PLAIN_TEXT (FILE_CLASS_TEXT | 2)
-		return FILE_TYPE_PLAIN_TEXT;
-	} else {
-#define FILE_TYPE_UNKNOWN (0)
-		return FILE_TYPE_UNKNOWN;
-	}
-}
-
-const char *GetFileType(int index) {
-	if (index == FILE_TYPE_EXECUTABLE) {
-		return "Executable";
-	} else if (index == FILE_TYPE_DEBUGGER_DATA) {
-		return "Debugger data";
-	} else if (index == FILE_TYPE_PNG_IMAGE) {
-		return "PNG image";
-	} else if (index == FILE_TYPE_JPG_IMAGE) {
-		return "JPG image";
-	} else if (index == FILE_TYPE_TTF_FONT) {
-		return "TTF font";
-	} else if (index == FILE_TYPE_STATIC_LIBRARY) {
-		return "Static library";
-	} else if (index == FILE_TYPE_C_HEADER) {
-		return "C/C++ header";
-	} else if (index == FILE_TYPE_PLAIN_TEXT) {
-		return "Plain text";
-	} else {
-		return "File";
-	}
-}
-
 OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *message) {
 	Instance *instance = (Instance *) message->context;
 	(void) object;
@@ -454,6 +481,10 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 			uintptr_t index = message->listViewItem.index;
 			FolderChild *child = instance->folderChildren + index;
 			OSDirectoryChild *data = &child->data;
+
+			if (index >= instance->folderChildCount) {
+				OSCrashProcess(OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS);
+			}
 
 			// OSPrint("asking for %d, %d\n", index, message->listViewItem.column);
 
@@ -528,16 +559,13 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 			return OS_CALLBACK_HANDLED;
 		} break;
 
-		case OS_NOTIFICATION_DESELECT_ALL: {
-			for (uintptr_t i = 0; i < instance->folderChildCount; i++) {
-				instance->folderChildren[i].state &= ~(OS_LIST_VIEW_ITEM_SELECTED);
-			}
-
-			return OS_CALLBACK_HANDLED;
-		} break;
-
 		case OS_NOTIFICATION_SET_ITEM: {
 			uintptr_t index = message->listViewItem.index;
+
+			if (index >= instance->folderChildCount) {
+				OSCrashProcess(OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS);
+			}
+
 			FolderChild *child = instance->folderChildren + index;
 			child->state = (child->state & ~((uint16_t) message->listViewItem.mask)) | (message->listViewItem.state & message->listViewItem.mask);
 
@@ -569,6 +597,34 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 
 				instance->LoadFolder(existingPath, existingPathBytes, folderName, folderNameBytes);
 			}
+
+			return OS_CALLBACK_HANDLED;
+		} break;
+
+		case OS_NOTIFICATION_SET_ITEM_RANGE: {
+			if (message->listViewItemRange.indexFrom < 0 || message->listViewItemRange.indexFrom > (int) instance->folderChildCount
+					|| message->listViewItemRange.indexTo < 0 || message->listViewItemRange.indexTo > (int) instance->folderChildCount) {
+				OSCrashProcess(OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS);
+			}
+
+			for (int i = message->listViewItemRange.indexFrom; i < message->listViewItemRange.indexTo; i++) {
+				FolderChild *child = instance->folderChildren + i;
+
+				child->state &= ~message->listViewItemRange.mask;
+				child->state |= message->listViewItemRange.mask & message->listViewItemRange.state;
+			}
+
+			return OS_CALLBACK_HANDLED;
+		} break;
+
+		case OS_NOTIFICATION_SORT_COLUMN: {
+			OSListViewReset(instance->folderListing);
+
+			instance->sortColumn = message->listViewColumn.index;
+			instance->sortDescending = message->listViewColumn.descending;
+			OSSort(instance->folderChildren, instance->folderChildCount, sizeof(FolderChild), SortFolder, instance);
+
+			OSListViewInsert(instance->folderListing, 0, instance->folderChildCount);
 
 			return OS_CALLBACK_HANDLED;
 		} break;
@@ -763,7 +819,7 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	}
 
 	// Sort the folder.
-	OSSort(folderChildren, folderChildCount, sizeof(FolderChild), SortFolder, nullptr);
+	OSSort(folderChildren, folderChildCount, sizeof(FolderChild), SortFolder, this);
 
 	for (uintptr_t i = 0; i < folderChildCount; i++) {
 		// OSPrint("[ %s, %d\n", folderChildren[i].data.nameLengthBytes, folderChildren[i].data.name, folderChildren[i].data.information.fileSize);
@@ -865,13 +921,13 @@ void Instance::Initialise() {
 	OSAddGrid(rootLayout, 0, 1, toolbar2, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 	OSAddGrid(rootLayout, 0, 5, statusBar, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
-	bookmarkList = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT | OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT);
+	bookmarkList = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT | OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT, OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT);
 	OSSetObjectNotificationCallback(bookmarkList, OS_MAKE_CALLBACK(ProcessBookmarkListingNotification, this));
 	OSAddControl(contentSplit, 0, 0, bookmarkList, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	OSSetProperty(bookmarkList, OS_GUI_OBJECT_PROPERTY_SUGGESTED_WIDTH, (void *) 160);
 	OSListViewInsert(bookmarkList, 0, global.bookmarkCount);
 
-	folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT | OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT);
+	folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT | OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT | OS_CREATE_LIST_VIEW_SORTABLE, OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT);
 	OSSetObjectNotificationCallback(folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, this));
 	OSAddControl(contentSplit, 2, 0, folderListing, OS_CELL_FILL);
 	OSListViewSetColumns(folderListing, folderListingColumns, sizeof(folderListingColumns) / sizeof(folderListingColumns[0]));

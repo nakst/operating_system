@@ -9,7 +9,7 @@
 // TODO Custom controls.
 // TODO Dragging.
 // TODO Tile view.
-// TODO More efficient repositing on scroll when delta > contentHeight.
+// TODO More efficient repositioning on scroll when delta > contentHeight.
 
 uint32_t LIST_VIEW_COLUMN_TEXT_COLOR = 0x4D6278;
 uint32_t LIST_VIEW_PRIMARY_TEXT_COLOR = 0x000000;
@@ -55,9 +55,12 @@ struct ListView : Control {
 
 	bool draggingSelectionBox,
 	     draggingSplitter,
-	     ctrlHeldInLastLeftClick;
+	     ctrlHeldInLastLeftClick,
+	     pressingColumnHeader;
 
 	bool receivedLayout;
+
+	int constantHeight;
 };
 
 static UIImage listViewHighlight           = {{228, 241, 59, 72}, {228 + 3, 241 - 3, 59 + 3, 72 - 3}, OS_DRAW_MODE_STRECH};
@@ -71,7 +74,7 @@ static UIImage listViewSelectionBox        = {{14 + 228 - 14, 14 + 231 - 14, 42 
 static UIImage listViewColumnHeaderDivider = {{212, 213, 45, 70}, {212, 212, 45, 45}};
 static UIImage listViewColumnHeader        = {{206, 212, 45, 70}, {206, 212, 45, 70}, OS_DRAW_MODE_STRECH};
 static UIImage listViewColumnHeaderHover   = {{7 + 206, 7 + 212, 45, 70}, {1 + 7 + 206, 7 + 212 - 1, 45, 70}, OS_DRAW_MODE_STRECH};
-// static UIImage listViewColumnHeaderPressed = {{14 + 206, 14 + 212, 45, 70}, {1 + 14 + 206, 14 + 212 - 1, 45, 70}, OS_DRAW_MODE_STRECH};
+static UIImage listViewColumnHeaderPressed = {{14 + 206, 14 + 212, 45, 70}, {1 + 14 + 206, 14 + 212 - 1, 45, 70}, OS_DRAW_MODE_STRECH};
 static UIImage listViewBorder		   = {{237, 240, 87, 90}, {238, 239, 88, 89}};
 
 #else
@@ -273,21 +276,11 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 		return;
 	}
 
-	int constantHeight = 0;
+	int constantHeight = list->constantHeight;
 
 	OSMessage m = {};
 	m.type = OS_NOTIFICATION_GET_ITEM;
 	m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
-
-	if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
-		m.listViewItem.index = 0;
-		OSForwardMessage(list, list->notificationCallback, &m);
-		constantHeight = m.listViewItem.height;
-
-		if (constantHeight == OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT) {
-			constantHeight = LIST_VIEW_DEFAULT_ROW_HEIGHT;
-		}
-	}
 
 	OSRectangle contentBounds = ListViewGetContentBounds(list);
 
@@ -579,9 +572,10 @@ static void ListViewPaint(ListView *list, OSMessage *message) {
 					listViewColumnHeaderDivider.region, listViewColumnHeaderDivider.border, listViewColumnHeaderDivider.drawMode, 0xFF, headerClip);
 
 			if (i == list->highlightColumn) {
+				UIImage image = list->pressingColumnHeader ? listViewColumnHeaderPressed : listViewColumnHeaderHover;
 				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, 
 						OS_MAKE_RECTANGLE(columnBounds.left - 4, columnBounds.right - 3, columnBounds.top, columnBounds.bottom),
-						listViewColumnHeaderHover.region, listViewColumnHeaderHover.border, listViewColumnHeaderHover.drawMode, 0xFF, headerClip);
+						image.region, image.border, image.drawMode, 0xFF, headerClip);
 			}
 
 			OSString string; 
@@ -592,6 +586,16 @@ static void ListViewPaint(ListView *list, OSMessage *message) {
 					OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
 					LIST_VIEW_COLUMN_TEXT_COLOR, -1, 0, 
 					OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, headerClip, 0);
+
+			if (column->flags & OS_LIST_VIEW_COLUMN_SORT_ASCENDING) {
+				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, 
+						OS_MAKE_RECTANGLE(columnBounds.right - 18, columnBounds.right - 9, columnBounds.top + 3, columnBounds.top + 12),
+						smallArrowUpNormal.region, smallArrowUpNormal.border, smallArrowUpNormal.drawMode, 0x80, headerClip);
+			} else if (column->flags & OS_LIST_VIEW_COLUMN_SORT_DESCENDING) {
+				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, 
+						OS_MAKE_RECTANGLE(columnBounds.right - 18, columnBounds.right - 9, columnBounds.top + 3, columnBounds.top + 12),
+						smallArrowDownNormal.region, smallArrowDownNormal.border, smallArrowDownNormal.drawMode, 0x80, headerClip);
+			}
 
 			x += column->width;
 		}
@@ -711,6 +715,11 @@ static void ListViewPaint(ListView *list, OSMessage *message) {
 static void ListViewSetRange(ListView *list, int from, int to, uint16_t mask, uint16_t state) {
 	if (from >= to) return;
 
+	if (from < 0) from = 0; 
+	if (from >= (int) list->itemCount) from = list->itemCount;
+	if (to < 0) to = 0; 
+	if (to >= (int) list->itemCount) to = list->itemCount;
+
 	OSMessage m;
 
 	m.type = OS_NOTIFICATION_SET_ITEM_RANGE;
@@ -742,18 +751,7 @@ static void ListViewSelectionBoxChanged(ListView *list, OSRectangle oldBox, OSRe
 	int rowLeft = list->columns ? contentBounds.left + list->margin.left - list->scrollX : contentBounds.left + list->margin.left;
 	int rowRight = list->columns ? contentBounds.left + list->totalX - list->margin.right - list->scrollX : contentBounds.right - list->margin.right;
 
-	int constantHeight = 0;
-
-	OSMessage m = {};
-	m.type = OS_NOTIFICATION_GET_ITEM;
-	m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
-	m.listViewItem.index = 0;
-	OSForwardMessage(list, list->notificationCallback, &m);
-	constantHeight = m.listViewItem.height;
-
-	if (constantHeight == OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT) {
-		constantHeight = LIST_VIEW_DEFAULT_ROW_HEIGHT;
-	}
+	int constantHeight = list->constantHeight;
 
 	int y = contentBounds.top - (list->firstVisibleItem * constantHeight + list->offsetIntoFirstVisibleItem);
 	y += list->scrollY < list->margin.top ? (list->margin.top - list->scrollY) : 0;
@@ -773,11 +771,26 @@ static void ListViewSelectionBoxChanged(ListView *list, OSRectangle oldBox, OSRe
 		toNew = (newBox.bottom - y) / constantHeight + list->firstVisibleItem;
 	}
 
+	OSMessage m = {};
+
 	if (moveS2ToS) {
 		if (list->ctrlHeldInLastLeftClick) {
+			if (fromNew < 0) fromNew = 0; 
+			if (fromNew >= (int) list->itemCount) fromNew = list->itemCount - 1;
+			if (toNew < 0) toNew = 0; 
+			if (toNew >= (int) list->itemCount) toNew = list->itemCount - 1;
+
 			m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2;
 
 			for (int i = fromNew; i <= toNew; i++) {
+				if (i < 0) {
+					continue;
+				}
+
+				if (i >= (int) list->itemCount) {
+					break;
+				}
+
 				m.type = OS_NOTIFICATION_GET_ITEM;
 				m.listViewItem.state = 0;
 				m.listViewItem.index = i;
@@ -799,7 +812,8 @@ static void ListViewSelectionBoxChanged(ListView *list, OSRectangle oldBox, OSRe
 		return;
 	}
 
-	if (toNew == -1) {
+	if (toNew == -1 && toOld == -1) {
+	} else if (toNew == -1) {
 		ListViewSetRange(list, fromOld, toOld + 1, OS_LIST_VIEW_ITEM_SELECTED_2, 0);
 	} else if (toOld == -1) {
 		ListViewSetRange(list, fromNew, toNew + 1, OS_LIST_VIEW_ITEM_SELECTED_2, OS_LIST_VIEW_ITEM_SELECTED_2);
@@ -821,7 +835,7 @@ static void ListViewSelectionBoxChanged(ListView *list, OSRectangle oldBox, OSRe
 static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 	if (message->type == OS_MESSAGE_MOUSE_MOVED) {
 		list->highlightItem = -1;
-		list->highlightColumn = -1;
+		if (!list->pressingColumnHeader) list->highlightColumn = -1;
 		list->highlightSplitter = -1;
 		list->window->cursor = OS_CURSOR_NORMAL;
 
@@ -846,8 +860,9 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 					OSRectangle columnBounds = OS_MAKE_RECTANGLE(x, x + column->width - 8, headerBounds.top, headerBounds.bottom);
 					OSRectangle splitterBounds = OS_MAKE_RECTANGLE(x + column->width - 8, x + column->width, headerBounds.top, headerBounds.bottom);
 
-					if (IsPointInRectangle(columnBounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
-						list->highlightColumn = i;
+					if (IsPointInRectangle(columnBounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)
+							&& (list->flags & OS_CREATE_LIST_VIEW_SORTABLE)) {
+						if (!list->pressingColumnHeader) list->highlightColumn = i;
 						return;
 					}
 
@@ -916,7 +931,7 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			if (list->highlightSplitter != (uintptr_t) -1) {
 				list->draggingSplitter = true;
 				list->dragAnchor.x -= list->columns[list->highlightSplitter].width;
-			}
+			} 
 		} else {
 			list->selectionBox = OS_MAKE_RECTANGLE_ALL(0);
 			list->draggingSelectionBox = true;
@@ -927,8 +942,34 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			ListViewSelectionBoxChanged(list, OS_MAKE_RECTANGLE_ALL(0), list->selectionBox, true);
 		}
 
+		if (list->pressingColumnHeader) {
+			OSMessage m;
+			m.type = OS_NOTIFICATION_SORT_COLUMN;
+			m.listViewColumn.descending = false;
+
+			for (uintptr_t i = 0; i < list->columnCount; i++) {
+				if (i == list->highlightColumn) {
+					if (list->columns[i].flags & OS_LIST_VIEW_COLUMN_SORT_ASCENDING) {
+						list->columns[i].flags &= ~(OS_LIST_VIEW_COLUMN_SORT_ASCENDING | OS_LIST_VIEW_COLUMN_SORT_DESCENDING);
+						list->columns[i].flags |= OS_LIST_VIEW_COLUMN_SORT_DESCENDING;
+						m.listViewColumn.descending = true;
+					} else {
+						list->columns[i].flags &= ~(OS_LIST_VIEW_COLUMN_SORT_ASCENDING | OS_LIST_VIEW_COLUMN_SORT_DESCENDING);
+						list->columns[i].flags |= OS_LIST_VIEW_COLUMN_SORT_ASCENDING;
+					}
+				} else {
+					list->columns[i].flags &= ~(OS_LIST_VIEW_COLUMN_SORT_ASCENDING | OS_LIST_VIEW_COLUMN_SORT_DESCENDING);
+				}
+			}
+
+			m.listViewColumn.index = list->highlightColumn;
+			OSForwardMessage(list, list->notificationCallback, &m);
+		}
+
 		list->draggingSelectionBox = false;
 		list->draggingSplitter = false;
+		list->pressingColumnHeader = false;
+		list->highlightColumn = -1;
 		RepaintControl(list);
 	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
 		if (!(list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
@@ -979,8 +1020,7 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 		OSMessage m;
 
 		if (!message->mousePressed.ctrl || !(list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
-			m.type = OS_NOTIFICATION_DESELECT_ALL;
-			OSForwardMessage(list, list->notificationCallback, &m);
+			ListViewSetRange(list, 0, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, 0);
 		}
 
 		if (list->highlightItem != (uintptr_t) -1) {
@@ -988,6 +1028,9 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			int to = list->highlightItem;
 
 			for (int i = from; from < to ? i <= to : i >= to; i += from < to ? 1 : -1) {
+				if (i < 0) continue;
+				if (i >= (int) list->itemCount) break;
+
 				bool select = true;
 
 				if (message->mousePressed.ctrl && !message->mousePressed.shift) {
@@ -1018,6 +1061,9 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 				m.type = OS_NOTIFICATION_CHOOSE_ITEM;
 				OSForwardMessage(list, list->notificationCallback, &m);
 			}
+		} else if (list->highlightColumn != (uintptr_t) -1) {
+			list->pressingColumnHeader = true;
+			RepaintControl(list);
 		}
 	}
 }
@@ -1037,7 +1083,7 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 		OSSendMessage(list->scrollbarY, message);
 		OSHeapFree(list->visibleItems);
 	} else if (message->type == OS_MESSAGE_END_HOVER) {
-		list->highlightColumn = -1;
+		if (!list->pressingColumnHeader) list->highlightColumn = -1;
 		list->highlightItem = -1;
 	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED 
 			|| message->type == OS_MESSAGE_MOUSE_DRAGGED
@@ -1180,7 +1226,7 @@ static OSCallbackResponse ListViewScrollbarYMoved(OSObject scrollbar, OSMessage 
 	return OS_CALLBACK_NOT_HANDLED;
 }
 
-OSObject OSCreateListView(unsigned flags) {
+OSObject OSCreateListView(unsigned flags, int constantHeight) {
 	ListView *list = (ListView *) GUIAllocate(sizeof(ListView), true);
 
 	list->type = API_OBJECT_CONTROL;
@@ -1217,6 +1263,8 @@ OSObject OSCreateListView(unsigned flags) {
 	list->highlightColumn = -1;
 	list->focusedItem = -1;
 
+	list->constantHeight = constantHeight == OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? LIST_VIEW_DEFAULT_ROW_HEIGHT : constantHeight;
+
 	OSSetObjectNotificationCallback(list->scrollbarX, OS_MAKE_CALLBACK(ListViewScrollbarXMoved, list));
 	OSSetObjectNotificationCallback(list->scrollbarY, OS_MAKE_CALLBACK(ListViewScrollbarYMoved, list));
 
@@ -1240,9 +1288,7 @@ void OSListViewInsert(OSObject listView, uintptr_t index, size_t count) {
 	m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
 	if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
-		OSForwardMessage(list, list->notificationCallback, &m);
-
-		itemsHeight = count * (m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT);
+		itemsHeight = count * list->constantHeight;
 	} else {
 		m.type = OS_NOTIFICATION_MEASURE_HEIGHT;
 		m.measureHeight.fromIndex = index;

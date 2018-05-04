@@ -577,7 +577,6 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_COMMAND			= 0x2000,
 	OS_NOTIFICATION_VALUE_CHANGED		= 0x2001,
 	OS_NOTIFICATION_GET_ITEM		= 0x2002,
-	OS_NOTIFICATION_DESELECT_ALL		= 0x2003,
 	OS_NOTIFICATION_SET_ITEM		= 0x2004,
 	OS_NOTIFICATION_START_EDIT		= 0x2005,
 	OS_NOTIFICATION_END_EDIT		= 0x2006,
@@ -589,6 +588,7 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_PAINT_ITEM		= 0x200C,
 	OS_NOTIFICATION_PAINT_CELL		= 0x200D,
 	OS_NOTIFICATION_SET_ITEM_RANGE		= 0x200E,
+	OS_NOTIFICATION_SORT_COLUMN		= 0x200F,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -721,6 +721,11 @@ typedef struct OSMessage {
 		} listViewItemRange;
 
 		struct {
+			int32_t index;
+			bool descending;
+		} listViewColumn;
+
+		struct {
 			int y;
 			uintptr_t index;
 			int offset;
@@ -837,13 +842,17 @@ typedef struct OSWindowSpecification {
 typedef struct OSListViewColumn {
 	char *title;
 	size_t titleBytes;
+
 #define OS_LIST_VIEW_COLUMN_DEFAULT_WIDTH_PRIMARY (300)
 #define OS_LIST_VIEW_COLUMN_DEFAULT_WIDTH_SECONDARY (150)
 	int width;
 	int minimumWidth;
+
 #define OS_LIST_VIEW_COLUMN_PRIMARY (1)
 #define OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED (2)
 #define OS_LIST_VIEW_COLUMN_ICON (4)
+#define OS_LIST_VIEW_COLUMN_SORT_ASCENDING (8)
+#define OS_LIST_VIEW_COLUMN_SORT_DESCENDING (16)
 	uint32_t flags;
 } OSListViewColumn;
 
@@ -885,6 +894,7 @@ typedef struct OSListViewColumn {
 #define OS_CREATE_LIST_VIEW_ANY_SELECTIONS  (OS_CREATE_LIST_VIEW_SINGLE_SELECT | OS_CREATE_LIST_VIEW_MULTI_SELECT)
 #define OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT (16)
 #define OS_CREATE_LIST_VIEW_BORDER	    (32)
+#define OS_CREATE_LIST_VIEW_SORTABLE        (64)
 
 #define OS_SHARED_MEMORY_MAXIMUM_SIZE ((size_t) 1024 * 1024 * 1024 * 1024)
 #define OS_SHARED_MEMORY_NAME_MAX_LENGTH (32)
@@ -1088,7 +1098,7 @@ OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
 OS_EXTERN_C OSObject OSCreateIconDisplay(uint16_t iconID);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool small);
 OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition);
-OS_EXTERN_C OSObject OSCreateListView(unsigned flags);
+OS_EXTERN_C OSObject OSCreateListView(unsigned flags, int constantHeight);
 OS_EXTERN_C OSObject OSCreateSlider(int minimum, int maximum, int initialValue, int mode, int minorTickSpacing, int majorTickSpacing);
 
 #define OSCreateIndeterminateProgressBar(small) OSCreateProgressBar(0, 0, 0, small)
