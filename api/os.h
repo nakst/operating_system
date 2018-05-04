@@ -588,6 +588,7 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_MEASURE_HEIGHT		= 0x200B,
 	OS_NOTIFICATION_PAINT_ITEM		= 0x200C,
 	OS_NOTIFICATION_PAINT_CELL		= 0x200D,
+	OS_NOTIFICATION_SET_ITEM_RANGE		= 0x200E,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -699,6 +700,7 @@ typedef struct OSMessage {
 
 #define OS_LIST_VIEW_ITEM_SELECTED	   (0x0001)
 #define OS_LIST_VIEW_ITEM_CUSTOM	   (0x0002)
+#define OS_LIST_VIEW_ITEM_SELECTED_2	   (0x0004) // Selected by the selection box; cleared when the mouse is released.
 #define OS_LIST_VIEW_ITEM_TEXT             (0x10000)
 #define OS_LIST_VIEW_ITEM_ICON		   (0x20000)
 #define OS_LIST_VIEW_ITEM_WIDTH		   (0x40000)
@@ -712,6 +714,11 @@ typedef struct OSMessage {
 			uint16_t iconID, state;
 			int16_t width, height;
 		} listViewItem;
+
+		struct {
+			int32_t indexFrom, indexTo;
+			uint16_t state, mask;
+		} listViewItemRange;
 
 		struct {
 			int y;
@@ -833,6 +840,7 @@ typedef struct OSListViewColumn {
 #define OS_LIST_VIEW_COLUMN_DEFAULT_WIDTH_PRIMARY (300)
 #define OS_LIST_VIEW_COLUMN_DEFAULT_WIDTH_SECONDARY (150)
 	int width;
+	int minimumWidth;
 #define OS_LIST_VIEW_COLUMN_PRIMARY (1)
 #define OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED (2)
 #define OS_LIST_VIEW_COLUMN_ICON (4)
@@ -873,7 +881,7 @@ typedef struct OSListViewColumn {
 #define OS_CREATE_SCROLL_PANE_HORIZONTAL    (2)
 
 #define OS_CREATE_LIST_VIEW_SINGLE_SELECT   (2)
-#define OS_CREATE_LIST_VIEW_MULTI_SELECT    (4)
+#define OS_CREATE_LIST_VIEW_MULTI_SELECT    (4) // Requires OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT.
 #define OS_CREATE_LIST_VIEW_ANY_SELECTIONS  (OS_CREATE_LIST_VIEW_SINGLE_SELECT | OS_CREATE_LIST_VIEW_MULTI_SELECT)
 #define OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT (16)
 #define OS_CREATE_LIST_VIEW_BORDER	    (32)

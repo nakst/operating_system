@@ -16,7 +16,7 @@
 
 struct FolderChild {
 	OSDirectoryChild data;
-	bool selected;
+	uint16_t state;
 };
 
 struct Instance {
@@ -76,13 +76,13 @@ Global global;
 
 OSListViewColumn folderListingColumns[] = {
 #define COLUMN_NAME (0)
-	{ OSLiteral("Name"), 270, OS_LIST_VIEW_COLUMN_PRIMARY | OS_LIST_VIEW_COLUMN_ICON, },
+	{ OSLiteral("Name"), 270, 100, OS_LIST_VIEW_COLUMN_PRIMARY | OS_LIST_VIEW_COLUMN_ICON, },
 #define COLUMN_DATE_MODIFIED (1)
-	{ OSLiteral("Date modified"), 120, OS_FLAGS_DEFAULT, },
+	{ OSLiteral("Date modified"), 120, 50, OS_FLAGS_DEFAULT, },
 #define COLUMN_TYPE (2)
-	{ OSLiteral("Type"), 120, OS_FLAGS_DEFAULT, },
+	{ OSLiteral("Type"), 120, 50, OS_FLAGS_DEFAULT, },
 #define COLUMN_SIZE (3)
-	{ OSLiteral("Size"), 100, OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED, },
+	{ OSLiteral("Size"), 100, 50, OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED, },
 };
 
 #define GUI_STRING_BUFFER_LENGTH (1024)
@@ -515,11 +515,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 				message->listViewItem.text = guiStringBuffer;
 			}
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
-				if (child->selected) {
-					message->listViewItem.state |= OS_LIST_VIEW_ITEM_SELECTED;
-				}
-			}
+			message->listViewItem.state = child->state & ((uint16_t) message->listViewItem.mask);
 
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_ICON) {
 				message->listViewItem.iconID = data->information.type == OS_NODE_DIRECTORY ? OS_ICON_FOLDER : OS_ICON_FILE;
@@ -534,7 +530,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 
 		case OS_NOTIFICATION_DESELECT_ALL: {
 			for (uintptr_t i = 0; i < instance->folderChildCount; i++) {
-				instance->folderChildren[i].selected = false;
+				instance->folderChildren[i].state &= ~(OS_LIST_VIEW_ITEM_SELECTED);
 			}
 
 			return OS_CALLBACK_HANDLED;
@@ -543,10 +539,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 		case OS_NOTIFICATION_SET_ITEM: {
 			uintptr_t index = message->listViewItem.index;
 			FolderChild *child = instance->folderChildren + index;
-
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
-				child->selected = message->listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
-			}
+			child->state = (child->state & ~((uint16_t) message->listViewItem.mask)) | (message->listViewItem.state & message->listViewItem.mask);
 
 			return OS_CALLBACK_HANDLED;
 		} break;

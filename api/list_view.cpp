@@ -4,10 +4,6 @@
 #define LIST_VIEW_DEFAULT_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
-// TODO Bookmark list in file manager is broken.
-// TODO Getting the selection box to actually select items.
-// TODO Column resizing.
-
 // TODO Keyboard controls.
 // TODO Right-click.
 // TODO Custom controls.
@@ -47,15 +43,19 @@ struct ListView : Control {
 	uintptr_t highlightItem, 
 		  focusedItem,
 		  shiftAnchorItem,
-		  highlightColumn;
+		  highlightColumn,
+		  highlightSplitter;
 
 	OSRectangle layoutClip;
 	OSRectangle margin;
 	OSRectangle oldBounds;
 
-	OSPoint selectionBoxAnchor;
+	OSPoint dragAnchor;
 	OSRectangle selectionBox;
-	bool draggingSelectionBox;
+
+	bool draggingSelectionBox,
+	     draggingSplitter,
+	     ctrlHeldInLastLeftClick;
 
 	bool receivedLayout;
 };
@@ -65,6 +65,7 @@ static UIImage listViewLastClickedHighlight= {{228, 241, 14 + 59, 14 + 72}, {228
 static UIImage listViewSelected            = {{14 + 228, 14 + 241, 59, 72}, {14 + 228 + 3, 14 + 241 - 3, 59 + 3, 72 - 3}, OS_DRAW_MODE_STRECH};
 static UIImage listViewSelected2           = {{14 + 228, 14 + 241, 28 + 59, 28 + 72}, {14 + 228 + 3, 14 + 241 - 3, 28 + 59 + 3, 28 + 72 - 3}, OS_DRAW_MODE_STRECH};
 static UIImage listViewSelected3           = {{14 + 228, 14 + 241, 28 + 59 - 14, 28 + 72 - 14}, {14 + 228 + 3, 14 + 241 - 3, 28 + 59 + 3 - 14, 28 + 72 - 3 - 14}, OS_DRAW_MODE_STRECH};
+static UIImage listViewSelected4           = {{14 + 228, 14 + 241, 14 + 28 + 59, 14 + 28 + 72}, {14 + 228 + 3, 14 + 241 - 3, 14 + 28 + 59 + 3, 14 + 28 + 72 - 3}, OS_DRAW_MODE_STRECH};
 static UIImage listViewLastClicked         = {{14 + 228, 14 + 241, 59 - 14, 72 - 14}, {14 + 228 + 6, 14 + 228 + 7, 59 + 6 - 14, 59 + 7 - 14}};
 static UIImage listViewSelectionBox        = {{14 + 228 - 14, 14 + 231 - 14, 42 + 59 - 14, 42 + 62 - 14}, {14 + 228 + 1 - 14, 14 + 228 + 2 - 14, 42 + 59 + 1 - 14, 42 + 59 + 2 - 14}};
 static UIImage listViewColumnHeaderDivider = {{212, 213, 45, 70}, {212, 212, 45, 45}};
@@ -75,7 +76,7 @@ static UIImage listViewBorder		   = {{237, 240, 87, 90}, {238, 239, 88, 89}};
 
 #else
 
-OSRectangle ListViewGetContentBounds(ListView *list) {
+static OSRectangle ListViewGetContentBounds(ListView *list) {
 	if (!list->receivedLayout) {
 		return OS_MAKE_RECTANGLE_ALL(0);
 	}
@@ -104,7 +105,7 @@ OSRectangle ListViewGetContentBounds(ListView *list) {
 	return contentBounds;
 }
 
-OSRectangle ListViewGetHeaderBounds(ListView *list) {
+static OSRectangle ListViewGetHeaderBounds(ListView *list) {
 	if (!list->receivedLayout) {
 		return OS_MAKE_RECTANGLE_ALL(0);
 	}
@@ -123,7 +124,7 @@ OSRectangle ListViewGetHeaderBounds(ListView *list) {
 	return headerBounds;
 }
 
-ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index) {
+static ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index) {
 	index -= list->firstVisibleItem;
 
 	if (list->visibleItemCount + 1 > list->visibleItemAllocated) {
@@ -140,7 +141,7 @@ ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index) {
 	return list->visibleItems + index;
 }
 
-void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t index, size_t count) {
+static void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t index, size_t count) {
 	int offsetIntoViewport = -list->offsetIntoFirstVisibleItem;
 	OSRectangle contentBounds = ListViewGetContentBounds(list);
 
@@ -182,7 +183,7 @@ void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t index, si
 	list->visibleItemCount = i - list->firstVisibleItem;
 }
 
-void ListViewUpdate(ListView *list) {
+static void ListViewUpdate(ListView *list) {
 	bool hadScrollbarX = list->showScrollbarX;
 	list->showScrollbarX = list->showScrollbarY = false;
 
@@ -247,7 +248,7 @@ void ListViewUpdate(ListView *list) {
 	}
 }
 
-void ListViewScrollVertically(ListView *list, int newScrollY) {
+static void ListViewScrollVertically(ListView *list, int newScrollY) {
 	RepaintControl(list);
 	int oldScrollY = list->scrollY;
 	int baseNewScrollY = newScrollY;
@@ -409,7 +410,7 @@ void ListViewScrollVertically(ListView *list, int newScrollY) {
 	list->scrollY = baseNewScrollY;
 }
 
-void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage *message, int row, int column, OSRectangle rowClip, OSListViewColumn *columnData) {
+static void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage *message, int row, int column, OSRectangle rowClip, OSListViewColumn *columnData) {
 	OSRectangle textRegion = OS_MAKE_RECTANGLE(cellBounds.left + 4, cellBounds.right - 8, cellBounds.top + 2, cellBounds.bottom - 2);
 
 	OSMessage m;
@@ -461,7 +462,7 @@ void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage *messag
 			OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, rowClip, 0);
 }
 
-bool ListViewGetBorderImage(ListView *list, uintptr_t i, UIImage *image) {
+static bool ListViewGetBorderImage(ListView *list, uintptr_t i, UIImage *image) {
 	if (i == list->itemCount) {
 		return false;
 	}
@@ -473,14 +474,25 @@ bool ListViewGetBorderImage(ListView *list, uintptr_t i, UIImage *image) {
 	OSMessage m;
 	m.type = OS_NOTIFICATION_GET_ITEM;
 	m.listViewItem.index = i;
-	m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+	m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2;
+	m.listViewItem.state = 0;
 
 	if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED) {
-		selected = m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
+		if (list->draggingSelectionBox) {
+			if (list->ctrlHeldInLastLeftClick) {
+				uint8_t s1 = (m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) ? 1 : 0;
+				uint8_t s2 = (m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED_2) ? 1 : 0;
+				selected = s1 ^ s2;
+			} else {
+				selected = m.listViewItem.state & (OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2);
+			}
+		} else {
+			selected = m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
+		}
 	}
 
 	if ((focus || list->highlightItem == i) && selected) {
-		*image = !listFocus ? listViewSelected2 : listViewSelected3;
+		*image = !listFocus ? (list->highlightItem == i ? listViewSelected4 : listViewSelected2) : listViewSelected3;
 	} else if (list->highlightItem == i) {
 		*image = focus ? listViewLastClickedHighlight : listViewHighlight;
 	} else if (selected) {
@@ -494,7 +506,7 @@ bool ListViewGetBorderImage(ListView *list, uintptr_t i, UIImage *image) {
 	return true;
 }
 
-void ListViewDrawSeparator(ListView *list, uintptr_t after, uintptr_t before, OSHandle surface, OSRectangle row, OSRectangle clip) {
+static void ListViewDrawSeparator(ListView *list, uintptr_t after, uintptr_t before, OSHandle surface, OSRectangle row, OSRectangle clip) {
 	UIImage afterImage, beforeImage;
 	bool afterFound = ListViewGetBorderImage(list, after, &afterImage);
 	bool beforeFound = ListViewGetBorderImage(list, before, &beforeImage);
@@ -531,7 +543,7 @@ void ListViewDrawSeparator(ListView *list, uintptr_t after, uintptr_t before, OS
 	} 
 }
 
-void ListViewPaint(ListView *list, OSMessage *message) {
+static void ListViewPaint(ListView *list, OSMessage *message) {
 	OSRectangle contentBounds = ListViewGetContentBounds(list);
 	OSRectangle contentClip;
 
@@ -687,19 +699,131 @@ void ListViewPaint(ListView *list, OSMessage *message) {
 
 		if (list->draggingSelectionBox) {
 			OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, 
-					OS_MAKE_RECTANGLE(list->selectionBox.left - list->scrollX - list->margin.left,
-						list->selectionBox.right - list->scrollX - list->margin.left,
-						list->selectionBox.top - list->scrollY - list->margin.top,
-						list->selectionBox.bottom - list->scrollY - list->margin.bottom),
+					OS_MAKE_RECTANGLE(list->selectionBox.left,
+						list->selectionBox.right,
+						list->selectionBox.top,
+						list->selectionBox.bottom),
 					listViewSelectionBox.region, listViewSelectionBox.border, listViewSelectionBox.drawMode, 0xFF, contentClip);
 		}
 	}
 }
 
-void ListViewMouseUpdated(ListView *list, OSMessage *message) {
+static void ListViewSetRange(ListView *list, int from, int to, uint16_t mask, uint16_t state) {
+	if (from >= to) return;
+
+	OSMessage m;
+
+	m.type = OS_NOTIFICATION_SET_ITEM_RANGE;
+	m.listViewItemRange.indexFrom = from;
+	m.listViewItemRange.indexTo = to;
+	m.listViewItemRange.mask = mask;
+	m.listViewItemRange.state = state;
+
+	if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_NOT_HANDLED) {
+		return;
+	}
+
+	m.type = OS_NOTIFICATION_SET_ITEM;
+	m.listViewItem.mask = mask;
+	m.listViewItem.state = state;
+
+	for (int i = from; i < to; i++) {
+		m.listViewItem.index = i;
+
+		if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_REJECTED) {
+			return;
+		}
+	}
+}
+
+static void ListViewSelectionBoxChanged(ListView *list, OSRectangle oldBox, OSRectangle newBox, bool moveS2ToS) {
+	OSRectangle contentBounds = ListViewGetContentBounds(list);
+
+	int rowLeft = list->columns ? contentBounds.left + list->margin.left - list->scrollX : contentBounds.left + list->margin.left;
+	int rowRight = list->columns ? contentBounds.left + list->totalX - list->margin.right - list->scrollX : contentBounds.right - list->margin.right;
+
+	int constantHeight = 0;
+
+	OSMessage m = {};
+	m.type = OS_NOTIFICATION_GET_ITEM;
+	m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+	m.listViewItem.index = 0;
+	OSForwardMessage(list, list->notificationCallback, &m);
+	constantHeight = m.listViewItem.height;
+
+	if (constantHeight == OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT) {
+		constantHeight = LIST_VIEW_DEFAULT_ROW_HEIGHT;
+	}
+
+	int y = contentBounds.top - (list->firstVisibleItem * constantHeight + list->offsetIntoFirstVisibleItem);
+	y += list->scrollY < list->margin.top ? (list->margin.top - list->scrollY) : 0;
+
+	int fromNew = 0;
+	int toNew = -1;
+	int fromOld = 0;
+	int toOld = -1;
+
+	if (ClipRectangle(OS_MAKE_RECTANGLE(rowLeft, rowRight, oldBox.top, oldBox.bottom), oldBox, nullptr)) {
+		fromOld = (oldBox.top - y) / constantHeight + list->firstVisibleItem;
+		toOld = (oldBox.bottom - y) / constantHeight + list->firstVisibleItem;
+	}
+
+	if (ClipRectangle(OS_MAKE_RECTANGLE(rowLeft, rowRight, newBox.top, newBox.bottom), newBox, nullptr)) {
+		fromNew = (newBox.top - y) / constantHeight + list->firstVisibleItem;
+		toNew = (newBox.bottom - y) / constantHeight + list->firstVisibleItem;
+	}
+
+	if (moveS2ToS) {
+		if (list->ctrlHeldInLastLeftClick) {
+			m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2;
+
+			for (int i = fromNew; i <= toNew; i++) {
+				m.type = OS_NOTIFICATION_GET_ITEM;
+				m.listViewItem.state = 0;
+				m.listViewItem.index = i;
+				if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_REJECTED) break;
+
+				uint8_t s1 = (m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) ? 1 : 0;
+				uint8_t s2 = (m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED_2) ? 1 : 0;
+				uint8_t s3 = s1 ^ s2;
+
+				m.type = OS_NOTIFICATION_SET_ITEM;
+				m.listViewItem.state = s3 ? OS_LIST_VIEW_ITEM_SELECTED : 0;
+				m.listViewItem.index = i;
+				if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_REJECTED) break;
+			}
+		} else {
+			ListViewSetRange(list, fromNew, toNew + 1, OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2, OS_LIST_VIEW_ITEM_SELECTED);
+		}
+
+		return;
+	}
+
+	if (toNew == -1) {
+		ListViewSetRange(list, fromOld, toOld + 1, OS_LIST_VIEW_ITEM_SELECTED_2, 0);
+	} else if (toOld == -1) {
+		ListViewSetRange(list, fromNew, toNew + 1, OS_LIST_VIEW_ITEM_SELECTED_2, OS_LIST_VIEW_ITEM_SELECTED_2);
+	} else {
+		if (fromNew < fromOld) {
+			ListViewSetRange(list, fromNew, fromOld, OS_LIST_VIEW_ITEM_SELECTED_2, OS_LIST_VIEW_ITEM_SELECTED_2);
+		} else {
+			ListViewSetRange(list, fromOld, fromNew, OS_LIST_VIEW_ITEM_SELECTED_2, 0);
+		}
+
+		if (toNew > toOld) {
+			ListViewSetRange(list, toOld + 1, toNew + 1, OS_LIST_VIEW_ITEM_SELECTED_2, OS_LIST_VIEW_ITEM_SELECTED_2);
+		} else {
+			ListViewSetRange(list, toNew + 1, toOld + 1, OS_LIST_VIEW_ITEM_SELECTED_2, 0);
+		}
+	}
+}
+
+static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 	if (message->type == OS_MESSAGE_MOUSE_MOVED) {
 		list->highlightItem = -1;
 		list->highlightColumn = -1;
+		list->highlightSplitter = -1;
+		list->window->cursor = OS_CURSOR_NORMAL;
 
 		if (!IsPointInRectangle(list->inputBounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
 			return;
@@ -719,10 +843,17 @@ void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 				for (uintptr_t i = 0; i < list->columnCount; i++) {
 					OSListViewColumn *column = list->columns + i;
 
-					OSRectangle columnBounds = OS_MAKE_RECTANGLE(x, x + column->width, headerBounds.top, headerBounds.bottom);
+					OSRectangle columnBounds = OS_MAKE_RECTANGLE(x, x + column->width - 8, headerBounds.top, headerBounds.bottom);
+					OSRectangle splitterBounds = OS_MAKE_RECTANGLE(x + column->width - 8, x + column->width, headerBounds.top, headerBounds.bottom);
 
 					if (IsPointInRectangle(columnBounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
 						list->highlightColumn = i;
+						return;
+					}
+
+					if (IsPointInRectangle(splitterBounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+						list->highlightSplitter = i;
+						list->window->cursor = OS_CURSOR_SPLIT_HORIZONTAL;
 						return;
 					}
 
@@ -775,41 +906,72 @@ void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			return;
 		}
 
-		list->selectionBoxAnchor = OS_MAKE_POINT(
-				message->mouseDragged.originalPositionX + list->scrollX + list->margin.left, 
-				message->mouseDragged.originalPositionY + list->scrollY + list->margin.top);
-		list->draggingSelectionBox = true;
-		RepaintControl(list);
+		OSRectangle contentBounds = ListViewGetContentBounds(list);
+
+		list->dragAnchor = OS_MAKE_POINT(
+				message->mouseDragged.originalPositionX, 
+				message->mouseDragged.originalPositionY);
+
+		if (!IsPointInRectangle(contentBounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+			if (list->highlightSplitter != (uintptr_t) -1) {
+				list->draggingSplitter = true;
+				list->dragAnchor.x -= list->columns[list->highlightSplitter].width;
+			}
+		} else {
+			list->selectionBox = OS_MAKE_RECTANGLE_ALL(0);
+			list->draggingSelectionBox = true;
+			RepaintControl(list);
+		}
 	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_RELEASED) {
+		if (list->draggingSelectionBox) {
+			ListViewSelectionBoxChanged(list, OS_MAKE_RECTANGLE_ALL(0), list->selectionBox, true);
+		}
+
 		list->draggingSelectionBox = false;
+		list->draggingSplitter = false;
 		RepaintControl(list);
 	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
 		if (!(list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
 			return;
 		}
 
-		OSPoint currentPoint = OS_MAKE_POINT(
-				message->mouseDragged.newPositionX + list->scrollX + list->margin.left, 
-				message->mouseDragged.newPositionY + list->scrollY + list->margin.top);
+		if (list->draggingSelectionBox) {
+			OSPoint currentPoint = OS_MAKE_POINT(
+					message->mouseDragged.newPositionX, 
+					message->mouseDragged.newPositionY);
 
-		if (currentPoint.x < list->selectionBoxAnchor.x) {
-			list->selectionBox.left = currentPoint.x;
-			list->selectionBox.right = list->selectionBoxAnchor.x;
-		} else {
-			list->selectionBox.left = list->selectionBoxAnchor.x;
-			list->selectionBox.right = currentPoint.x;
-		}
+			OSRectangle previousSelectionBox = list->selectionBox;
 
-		if (currentPoint.y < list->selectionBoxAnchor.y) {
-			list->selectionBox.top = currentPoint.y;
-			list->selectionBox.bottom = list->selectionBoxAnchor.y;
-		} else {
-			list->selectionBox.top = list->selectionBoxAnchor.y;
-			list->selectionBox.bottom = currentPoint.y;
+			if (currentPoint.x < list->dragAnchor.x) {
+				list->selectionBox.left = currentPoint.x;
+				list->selectionBox.right = list->dragAnchor.x;
+			} else {
+				list->selectionBox.left = list->dragAnchor.x;
+				list->selectionBox.right = currentPoint.x;
+			}
+
+			if (currentPoint.y < list->dragAnchor.y) {
+				list->selectionBox.top = currentPoint.y;
+				list->selectionBox.bottom = list->dragAnchor.y;
+			} else {
+				list->selectionBox.top = list->dragAnchor.y;
+				list->selectionBox.bottom = currentPoint.y;
+			}
+
+			ListViewSelectionBoxChanged(list, previousSelectionBox, list->selectionBox, false);
+		} else if (list->draggingSplitter) {
+			OSListViewColumn *column = list->columns + list->highlightSplitter;
+			column->width = message->mouseDragged.newPositionX - list->dragAnchor.x;
+
+			if (column->width < column->minimumWidth) {
+				column->width = column->minimumWidth;
+			}
 		}
 
 		RepaintControl(list);
 	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
+		list->ctrlHeldInLastLeftClick = message->mousePressed.ctrl;
+
 		if (!(list->flags & OS_CREATE_LIST_VIEW_ANY_SELECTIONS)) {
 			return;
 		}
@@ -828,10 +990,11 @@ void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			for (int i = from; from < to ? i <= to : i >= to; i += from < to ? 1 : -1) {
 				bool select = true;
 
-				if (message->mousePressed.ctrl) {
+				if (message->mousePressed.ctrl && !message->mousePressed.shift) {
 					m.type = OS_NOTIFICATION_GET_ITEM;
 					m.listViewItem.index = i;
 					m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+					m.listViewItem.state = 0;
 
 					if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED) {
 						select = (m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) ? false : true;
@@ -859,7 +1022,7 @@ void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 	}
 }
 
-OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message) {
+static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message) {
 	ListView *list = (ListView *) listView;
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 	bool redrawScrollbars = list->repaint;
@@ -991,7 +1154,7 @@ OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *message)
 	return response;
 }
 
-OSCallbackResponse ListViewScrollbarXMoved(OSObject scrollbar, OSMessage *message) {
+static OSCallbackResponse ListViewScrollbarXMoved(OSObject scrollbar, OSMessage *message) {
 	(void) scrollbar;
 	ListView *list = (ListView *) message->context;
 
@@ -1004,7 +1167,7 @@ OSCallbackResponse ListViewScrollbarXMoved(OSObject scrollbar, OSMessage *messag
 	return OS_CALLBACK_NOT_HANDLED;
 }
 
-OSCallbackResponse ListViewScrollbarYMoved(OSObject scrollbar, OSMessage *message) {
+static OSCallbackResponse ListViewScrollbarYMoved(OSObject scrollbar, OSMessage *message) {
 	(void) scrollbar;
 	ListView *list = (ListView *) message->context;
 
@@ -1111,6 +1274,8 @@ void OSListViewInsert(OSObject listView, uintptr_t index, size_t count) {
 	} else if (index < list->firstVisibleItem + list->visibleItemCount || list->itemCount == count) {
 		ListViewInsertItemsIntoVisibleItemsList(list, index, count);
 	}
+
+	ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem + list->visibleItemCount, list->itemCount - list->visibleItemCount - list->firstVisibleItem);
 
 	RepaintControl(list, true);
 	ListViewUpdate(list);
