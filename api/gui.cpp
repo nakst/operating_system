@@ -140,6 +140,7 @@ static UIImage buttonFocused		= {{4 * 9 + 0, 4 * 9 + 8, 88, 109}, {4 * 9 + 3, 4 
 static UIImage buttonDangerousHover	= {{5 * 9 + 0, 5 * 9 + 8, 88, 109}, {5 * 9 + 3, 5 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 static UIImage buttonDangerousPressed	= {{6 * 9 + 0, 6 * 9 + 8, 88, 109}, {6 * 9 + 3, 6 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 static UIImage buttonDangerousFocused	= {{7 * 9 + 0, 7 * 9 + 8, 88, 109}, {7 * 9 + 3, 7 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
+static UIImage buttonDefault		= {{8 * 9 + 0, 8 * 9 + 8, 88, 109}, {8 * 9 + 3, 8 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 
 static UIImage checkboxHover		= {{48, 61, 242, 255}, {48, 49, 242, 243}};
 
@@ -396,6 +397,14 @@ static UIImage *textboxCommandBackgrounds[] = {
 
 static UIImage *buttonBackgrounds[] = {
 	&buttonNormal,
+	&buttonDisabled,
+	&buttonHover,
+	&buttonPressed,
+	&buttonFocused,
+};
+
+static UIImage *buttonDefaultBackgrounds[] = {
+	&buttonDefault,
 	&buttonDisabled,
 	&buttonHover,
 	&buttonPressed,
@@ -1077,11 +1086,11 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 #endif
 
+				bool isDefaultCommand = !control->pressedByKeyboard && control->window->defaultCommand == control->command && control->command;
+
 				bool menuSource;
 				bool normal, hover, pressed, disabled, focused;
 				uint32_t textShadowColor, textColor;
-
-				bool isDefaultCommand = !control->pressedByKeyboard && control->window->defaultCommand == control->command && control->command;
 
 				OSRectangle contentBounds = control->bounds;
 				contentBounds.left += control->horizontalMargin;
@@ -1113,9 +1122,9 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 				disabled = control->disabled;
 				pressed = ((control->window->pressed == control && (control->window->hover == control || control->pressedByKeyboard)) 
-						|| (control->window->focus == control && !control->hasFocusedBackground) || menuSource) && !disabled && !isDefaultCommand;
-				hover = (control->window->hover == control || control->window->pressed == control || isDefaultCommand) && !pressed && !disabled;
-				focused = (control->window->focus == control && control->hasFocusedBackground) && !pressed && !hover && !disabled;
+						|| (control->window->focus == control && !control->hasFocusedBackground) || menuSource) && !disabled;
+				hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled;
+				focused = (control->window->focus == control && control->hasFocusedBackground) && !pressed && !hover && !disabled && !isDefaultCommand;
 				normal = !hover && !pressed && !disabled && !focused;
 
 				control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / control->finalAnimationStep + control->from1;
@@ -2049,10 +2058,18 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 			result = OS_CALLBACK_HANDLED;
 			IssueCommand(control);
 		}
-	}
+	} 
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
 		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+	}
+
+	if (message->type == OS_MESSAGE_PARENT_UPDATED) {
+		if (control->window && control->window->defaultCommand == control->command && control->command) {
+			if (control->backgrounds == buttonBackgrounds) {
+				control->backgrounds = buttonDefaultBackgrounds;
+			}
+		}
 	}
 
 	return result;

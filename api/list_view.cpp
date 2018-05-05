@@ -4,19 +4,29 @@
 #define LIST_VIEW_DEFAULT_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
-// TODO Update shiftAnchorItem with selection box.
+// TODO Custom controls.
+// 	- Delete.
+// 	- Layout.
+// 		- Get it working at all?!?
+// 		- Proper left and right.
+// 		- Layouting when scrolling up.
+
+// TODO Resizing columns doesn't update totalX.
+// TODO Display vertical scrollbar inside header bounds.
 
 // TODO Keyboard controls.
-// TODO Right-click.
-// TODO Custom controls.
 // TODO Dragging.
 // TODO Tile view.
-// TODO More efficient repositioning on scroll when delta > contentHeight.
 
 uint32_t LIST_VIEW_COLUMN_TEXT_COLOR = 0x4D6278;
 uint32_t LIST_VIEW_PRIMARY_TEXT_COLOR = 0x000000;
 uint32_t LIST_VIEW_SECONDARY_TEXT_COLOR = 0x686868;
 uint32_t LIST_VIEW_BACKGROUND_COLOR = 0xFFFFFFFF;
+
+struct ListViewCell {
+	GUIObject *object;
+	int32_t index, column;
+};
 
 struct ListViewItem {
 	bool repaint;
@@ -26,6 +36,9 @@ struct ListViewItem {
 
 struct ListView : Control {
 	unsigned flags;
+
+	ListViewCell *cells;
+	size_t cellCount, cellAllocated;
 
 	ListViewItem *visibleItems;
 	size_t visibleItemCount, visibleItemAllocated;
@@ -58,9 +71,9 @@ struct ListView : Control {
 	bool draggingSelectionBox,
 	     draggingSplitter,
 	     ctrlHeldInLastLeftClick,
-	     pressingColumnHeader;
-
-	bool receivedLayout;
+	     pressingColumnHeader,
+	     foundFirstItemInSelectionBox,
+	     receivedLayout;
 
 	int constantHeight;
 };
@@ -129,7 +142,7 @@ static OSRectangle ListViewGetHeaderBounds(ListView *list) {
 	return headerBounds;
 }
 
-static ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index) {
+static ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index, int y, int height) {
 	index -= list->firstVisibleItem;
 
 	if (list->visibleItemCount + 1 > list->visibleItemAllocated) {
@@ -143,6 +156,51 @@ static ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index) 
 	OSMoveMemory(list->visibleItems + index, list->visibleItems + list->visibleItemCount, sizeof(ListViewItem), true);
 	list->visibleItemCount++;
 	list->visibleItems[index].index = index + list->firstVisibleItem;
+
+	OSMessage m;
+	m.type = OS_NOTIFICATION_CREATE_CELL;
+	m.createCell.index = index + list->firstVisibleItem;
+
+	for (uintptr_t i = 0; i < list->columnCount; i++) {
+		m.createCell.column = i;
+		m.createCell.object = nullptr;
+
+		if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED
+				&& m.createCell.object) {
+			GUIObject *object = (GUIObject *) m.createCell.object;
+
+			if (list->cellCount + 1 > list->cellAllocated) {
+				list->cellAllocated = list->cellAllocated * 2 + 32;
+				ListViewCell *old = list->cells;
+				list->cells = (ListViewCell *) OSHeapAllocate(sizeof(ListViewCell) * list->cellAllocated, false);
+				OSCopyMemory(list->cells, old, sizeof(ListViewCell) * list->cellCount);
+				OSHeapFree(old);
+			}
+
+			list->cells[list->cellCount].object = object;
+			list->cells[list->cellCount].index = index + list->firstVisibleItem;
+			list->cells[list->cellCount].column = i;
+			list->cellCount++;
+
+			object->parent = list;
+			object->layout = OS_CELL_FILL;
+
+			{
+				OSMessage m;
+
+				m.type = OS_MESSAGE_PARENT_UPDATED;
+				m.parentUpdated.window = list->window;
+				OSSendMessage(object, &m);
+
+				m.type = OS_MESSAGE_LAYOUT;
+				m.layout.left = list->bounds.left;
+				m.layout.right = list->bounds.right;
+				m.layout.top = y;
+				m.layout.bottom = y + height;
+			}
+		}
+	}
+
 	return list->visibleItems + index;
 }
 
@@ -172,17 +230,19 @@ static void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t in
 	m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
 	for (i = index; i < index + count && remaining > 0; i++) {
-		ListViewItem *item = ListViewInsertVisibleItem(list, i);
-		item->repaint = true;
-
 		m.listViewItem.index = i;
 
 		if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
 			OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 		}
 
-		item->height = m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
-		remaining -= item->height;
+		int height = m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
+
+		ListViewItem *item = ListViewInsertVisibleItem(list, i, contentBounds.bottom - remaining, height);
+		item->repaint = true;
+
+		item->height = height;
+		remaining -= height;
 	}
 
 	list->visibleItemCount = i - list->firstVisibleItem;
@@ -299,27 +359,55 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 				m.type = OS_NOTIFICATION_CONVERT_Y_TO_INDEX;
 				m.convertYToIndex.y = newScrollY;
 
+				int knownY = oldScrollY - list->offsetIntoFirstVisibleItem;
+				m.convertYToIndex.knownY = knownY;
+				m.convertYToIndex.knownIndex = list->firstVisibleItem;
+
 				if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
-					// Start from the beginning....
+					if (knownY < newScrollY) {
+						int height = knownY;
+						m.type = OS_NOTIFICATION_GET_ITEM;
+						m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
-					int height = 0;
-					m.type = OS_NOTIFICATION_GET_ITEM;
-					m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+						for (uintptr_t i = list->firstVisibleItem; i < list->itemCount; i++) {
+							m.listViewItem.index = i;
 
-					for (uintptr_t i = 0; i < list->itemCount; i++) {
-						m.listViewItem.index = i;
+							if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
+								OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+							}
 
-						if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
-							OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+							int startHeight = height;
+							height += m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
+
+							if (height > newScrollY) {
+								list->firstVisibleItem = i;
+								list->offsetIntoFirstVisibleItem = newScrollY - startHeight;
+								break;
+							}
+						}
+					} else {
+						int height = knownY;
+						m.type = OS_NOTIFICATION_GET_ITEM;
+						m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+
+						if (!list->firstVisibleItem) {
+							list->offsetIntoFirstVisibleItem = newScrollY;
 						}
 
-						int startHeight = height;
-						height += m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
+						for (uintptr_t i = list->firstVisibleItem; i > 0; i--) {
+							m.listViewItem.index = i - 1;
 
-						if (height > newScrollY) {
-							list->firstVisibleItem = i;
-							list->offsetIntoFirstVisibleItem = newScrollY - startHeight;
-							break;
+							if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
+								OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+							}
+
+							height -= m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
+
+							if (height < newScrollY) {
+								list->firstVisibleItem = i - 1;
+								list->offsetIntoFirstVisibleItem = newScrollY - height;
+								break;
+							}
 						}
 					}
 				} else {
@@ -362,7 +450,7 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 			list->offsetIntoFirstVisibleItem = 0;
 
 			while (delta > 0) {
-				ListViewItem *item = ListViewInsertVisibleItem(list, list->firstVisibleItem);
+				ListViewItem *item = ListViewInsertVisibleItem(list, list->firstVisibleItem, 0, 0); // TODO Layout cells.
 				list->firstVisibleItem--;
 				item->index--;
 
@@ -427,6 +515,7 @@ static void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage 
 	m.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT | (hasIcon ? OS_LIST_VIEW_ITEM_ICON : 0);
 	m.listViewItem.index = row;
 	m.listViewItem.column = column;
+	m.listViewItem.textBytes = 0;
 
 	if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
 		OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
@@ -773,6 +862,11 @@ static void ListViewSelectionBoxChanged(ListView *list, OSRectangle oldBox, OSRe
 		toNew = (newBox.bottom - y) / constantHeight + list->firstVisibleItem;
 	}
 
+	if (toNew != -1 && !list->foundFirstItemInSelectionBox) {
+		list->shiftAnchorItem = toNew;
+		list->foundFirstItemInSelectionBox = true;
+	}
+
 	OSMessage m = {};
 
 	if (moveS2ToS) {
@@ -978,6 +1072,7 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 		list->draggingSplitter = false;
 		list->pressingColumnHeader = false;
 		list->highlightColumn = -1;
+		list->foundFirstItemInSelectionBox = false;
 		RepaintControl(list);
 	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
 		if (!(list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
@@ -1086,10 +1181,20 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 	} else if (message->type == OS_MESSAGE_PARENT_UPDATED) {
 		OSSendMessage(list->scrollbarX, message);
 		OSSendMessage(list->scrollbarY, message);
+
+		for (uintptr_t i = 0; i < list->cellCount; i++) {
+			OSSendMessage(list->cells[i].object, message);
+		}
 	} else if (message->type == OS_MESSAGE_DESTROY) {
 		OSSendMessage(list->scrollbarX, message);
 		OSSendMessage(list->scrollbarY, message);
+
+		for (uintptr_t i = 0; i < list->cellCount; i++) {
+			OSSendMessage(list->cells[i].object, message);
+		}
+
 		OSHeapFree(list->visibleItems);
+		OSHeapFree(list->cells);
 	} else if (message->type == OS_MESSAGE_END_HOVER) {
 		if (!list->pressingColumnHeader) list->highlightColumn = -1;
 		list->highlightItem = -1;
@@ -1103,6 +1208,10 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 	} else if (message->type == OS_MESSAGE_MOUSE_MOVED) {
 		if (list->showScrollbarX) OSSendMessage(list->scrollbarX, message);
 		if (list->showScrollbarY) OSSendMessage(list->scrollbarY, message);
+
+		for (uintptr_t i = 0; i < list->cellCount; i++) {
+			OSSendMessage(list->cells[i].object, message);
+		}
 
 		uintptr_t oldHighlightColumn = list->highlightColumn;
 		uintptr_t oldHighlightItem = list->highlightItem;
@@ -1152,9 +1261,27 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 				list->oldBounds.top == list->bounds.top && 
 				list->oldBounds.bottom == list->bounds.bottom) {
 			goto done;
-		} else {
-			list->oldBounds = list->bounds;
+		} 
+
+		{
+			OSRectangle contentBounds = ListViewGetContentBounds(list);
+
+			for (uintptr_t i = 0; i < list->cellCount; i++) {
+				GUIObject *object = list->cells[i].object;
+
+				OSMessage m;
+				m.type = OS_MESSAGE_LAYOUT;
+				m.layout.left = object->bounds.left - list->oldBounds.left + list->bounds.left;
+				m.layout.right = object->bounds.right - list->oldBounds.right + list->bounds.right;
+				m.layout.top = object->bounds.top - list->oldBounds.top + list->bounds.top;
+				m.layout.bottom = object->bounds.bottom - list->oldBounds.bottom + list->bounds.bottom;
+				m.layout.clip = contentBounds;
+				m.layout.force = true;
+				OSSendMessage(object, &m);
+			}
 		}
+
+		list->oldBounds = list->bounds;
 
 		ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem + list->visibleItemCount, list->itemCount - list->visibleItemCount - list->firstVisibleItem);
 
@@ -1196,6 +1323,12 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 			m.paint.force = message->paint.force || redrawScrollbars;
 			if (list->showScrollbarX) OSSendMessage(list->scrollbarX, &m);
 			if (list->showScrollbarY) OSSendMessage(list->scrollbarY, &m);
+
+			m = *message;
+			ClipRectangle(m.paint.clip, ListViewGetContentBounds(list), &m.paint.clip);
+			for (uintptr_t i = 0; i < list->cellCount; i++) {
+				OSSendMessage(list->cells[i].object, &m);
+			}
 		}
 	} 
 

@@ -84,6 +84,12 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		}
 	} else if (message->type == OS_NOTIFICATION_PAINT_CELL && message->paintCell.column == 2) {
 		OSDrawProgressBar(message->paintCell.surface, message->paintCell.bounds, (float) message->paintCell.index / (float) wordCount, message->paintCell.clip, true);
+	} else if (message->type == OS_NOTIFICATION_CREATE_CELL) {
+		if (message->createCell.column == 3) {
+			message->createCell.object = OSCreateButton(commandLaunchCalculator, OS_BUTTON_STYLE_NORMAL);
+		} else {
+			message->createCell.object = nullptr;
+		}
 	} else {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
@@ -121,6 +127,7 @@ OSListViewColumn columns[] = {
 	{ OSLiteral("Word"), 100, 30, true },
 	{ OSLiteral("Count"), 100, 30, false },
 	{ OSLiteral("Index"), 100, 30, false },
+	{ OSLiteral("Button"), 100, 30, false },
 };
 
 void CreateList(OSObject content) {
