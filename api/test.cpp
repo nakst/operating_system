@@ -127,7 +127,7 @@ OSListViewColumn columns[] = {
 	{ OSLiteral("Word"), 100, 30, true },
 	{ OSLiteral("Count"), 100, 30, false },
 	{ OSLiteral("Index"), 100, 30, false },
-	{ OSLiteral("Button"), 100, 30, false },
+	{ OSLiteral("Custom"), 100, 30, false },
 };
 
 void CreateList(OSObject content) {
