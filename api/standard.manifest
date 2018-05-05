@@ -42,7 +42,7 @@ shortcut = "Ctrl+A";
 defaultDisabled = true;
 
 [menu osMenuTextboxContext]
-name = "Textbox Context Menu";
+name = "Textbox context menu";
 osCommandCut;
 osCommandCopy;
 osCommandPaste;

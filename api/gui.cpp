@@ -51,12 +51,15 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Scrollbar nudges.
 // 	- Scroll-selections in textboxes and list views.
 // 	- Sliders nudges.
+// TODO Textboxes.
+// 	- Undo/redo.
+// 	- Scrolling.
+// 	- Multi-line.
+// 	- Using the textbox context menu with OS_TEXTBOX_STYLE_COMMAND doesn't work.
+// 	- Right-click on existing selection is broken.
 // TODO Menu icons.
 // TODO Multiple-cell positions.
 // TODO Wrapping.
-// TODO Scrolling in textboxes.
-// TODO Dragging and right-clicking in list views.
-// TODO Using the textbox context menu with OS_TEXTBOX_STYLE_COMMAND doesn't work.
 
 struct UIImage {
 	OSRectangle region;
@@ -434,6 +437,7 @@ static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
 
 struct GUIObject : APIObject {
+	struct Window *window;
 	OSRectangle bounds, cellBounds, inputBounds;
 	uint16_t descendentInvalidationFlags;
 	uint16_t layout;
@@ -452,8 +456,6 @@ struct GUIObject : APIObject {
 struct Control : GUIObject {
 	// Current size: ~290 bytes.
 	// Is this too big?
-	
-	struct Window *window;
 		
 #define UI_IMAGE_NORMAL (0)
 #define UI_IMAGE_DISABLED (1)
@@ -569,7 +571,6 @@ struct WindowResizeControl : Control {
 };
 
 struct Grid : GUIObject {
-	struct Window *window;
 	unsigned columns, rows;
 	GUIObject **objects;
 	int *widths, *heights;
@@ -1275,7 +1276,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			message->hitTest.result = IsPointInRectangle(control->inputBounds, message->hitTest.positionX, message->hitTest.positionY);
 		} break;
 
-		case OS_MESSAGE_MOUSE_RIGHT_PRESSED: {
+		case OS_MESSAGE_MOUSE_RIGHT_RELEASED: {
 			if (control->rightClickMenu) {
 				OSCreateMenu(control->rightClickMenu, control, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
 			}
@@ -2017,6 +2018,14 @@ static void IssueCommand(Control *control, OSCommand *command = nullptr, Window 
 		message.type = OS_MESSAGE_DESTROY;
 		OSSendMessage(openMenus[0].window, &message);
 	}
+}
+
+void OSIssueCommand(OSCommand *command, OSObject window) {
+	IssueCommand(nullptr, command, (Window *) window);
+}
+
+OSObject OSGetWindow(OSObject object) {
+	return ((GUIObject *) object)->window;
 }
 
 OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
@@ -4451,18 +4460,16 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				// This control can get the focus from this message.
 				allowFocus = true;
 
-				// If this was a left click then press the control.
-				if (!rightClick) {
-					window->pressed = window->hover;
+				// Press the control.
+				window->pressed = window->hover;
 
-					draggingStarted = false;
-					lastClickX = message->mousePressed.positionX;
-					lastClickY = message->mousePressed.positionY;
+				draggingStarted = false;
+				lastClickX = message->mousePressed.positionX;
+				lastClickY = message->mousePressed.positionY;
 
-					OSMessage m = *message;
-					m.type = OS_MESSAGE_START_PRESS;
-					OSSendMessage(window->pressed, &m);
-				}
+				OSMessage m = *message;
+				m.type = OS_MESSAGE_START_PRESS;
+				OSSendMessage(window->pressed, &m);
 			}
 
 			// If there isn't a control we're hovering over,
@@ -4488,6 +4495,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			}
 		} break;
 
+		case OS_MESSAGE_MOUSE_MIDDLE_RELEASED:
+		case OS_MESSAGE_MOUSE_RIGHT_RELEASED:
+			rightClick = true; // Fallthrough.
 		case OS_MESSAGE_MOUSE_LEFT_RELEASED: {
 			if (window->pressed) {
 				// Send the raw message.
@@ -4495,10 +4505,12 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 				RepaintControl(window->pressed);
 
-				if (window->pressed == window->hover) {
-					OSMessage clicked;
-					clicked.type = OS_MESSAGE_CLICKED;
-					OSSendMessage(window->pressed, &clicked);
+				if (!rightClick) {
+					if (window->pressed == window->hover) {
+						OSMessage clicked;
+						clicked.type = OS_MESSAGE_CLICKED;
+						OSSendMessage(window->pressed, &clicked);
+					}
 				}
 
 				OSMessage message;
@@ -4714,6 +4726,14 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 
 	Window *window = (Window *) GUIAllocate(sizeof(Window), true);
 	window->type = API_OBJECT_WINDOW;
+
+	if (menuParent) {
+		window->instance = menuParent->instance;
+	}
+
+	if (modalParent) {
+		window->instance = modalParent->instance;
+	}
 
 	OSRectangle bounds;
 	bounds.left = x;

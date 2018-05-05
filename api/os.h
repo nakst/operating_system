@@ -589,6 +589,7 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_PAINT_CELL		= 0x200D,
 	OS_NOTIFICATION_SET_ITEM_RANGE		= 0x200E,
 	OS_NOTIFICATION_SORT_COLUMN		= 0x200F,
+	OS_NOTIFICATION_RIGHT_CLICK		= 0x2010,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -1063,6 +1064,7 @@ OS_EXTERN_C void OSCheckCommand(OSObject window, OSCommand *command, bool checke
 OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback);
 OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSCallback callback);
 OS_EXTERN_C void OSSetControlCommand(OSObject control, OSCommand *command);
+OS_EXTERN_C void OSIssueCommand(OSCommand *command, OSObject window);
 
 OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
 OS_EXTERN_C void *OSGetInstance(OSObject window);
@@ -1089,6 +1091,7 @@ OS_EXTERN_C void OSShowDialogAlert(char *title, size_t titleBytes,
 OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 OS_EXTERN_C OSRectangle OSGetControlBounds(OSObject control);
 OS_EXTERN_C void OSRepaintControl(OSObject object);
+OS_EXTERN_C OSObject OSGetWindow(OSObject object);
 
 OS_EXTERN_C OSObject OSCreateBlankControl(int width, int height, OSCursorStyle cursor, unsigned flags);
 OS_EXTERN_C OSObject OSCreateLine(bool orientation);

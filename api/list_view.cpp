@@ -4,6 +4,8 @@
 #define LIST_VIEW_DEFAULT_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
+// TODO Update shiftAnchorItem with selection box.
+
 // TODO Keyboard controls.
 // TODO Right-click.
 // TODO Custom controls.
@@ -937,7 +939,7 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			list->draggingSelectionBox = true;
 			RepaintControl(list);
 		}
-	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_RELEASED) {
+	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_RELEASED || message->type == OS_MESSAGE_MOUSE_RIGHT_RELEASED) {
 		if (list->draggingSelectionBox) {
 			ListViewSelectionBoxChanged(list, OS_MAKE_RECTANGLE_ALL(0), list->selectionBox, true);
 		}
@@ -963,6 +965,12 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			}
 
 			m.listViewColumn.index = list->highlightColumn;
+			OSForwardMessage(list, list->notificationCallback, &m);
+		}
+
+		if (message->type == OS_MESSAGE_MOUSE_RIGHT_RELEASED) {
+			OSMessage m = *message;
+			m.type = OS_NOTIFICATION_RIGHT_CLICK;
 			OSForwardMessage(list, list->notificationCallback, &m);
 		}
 
@@ -1010,7 +1018,7 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 		}
 
 		RepaintControl(list);
-	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
+	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED || message->type == OS_MESSAGE_MOUSE_RIGHT_PRESSED) {
 		list->ctrlHeldInLastLeftClick = message->mousePressed.ctrl;
 
 		if (!(list->flags & OS_CREATE_LIST_VIEW_ANY_SELECTIONS)) {
@@ -1088,6 +1096,8 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED 
 			|| message->type == OS_MESSAGE_MOUSE_DRAGGED
 			|| message->type == OS_MESSAGE_MOUSE_LEFT_RELEASED
+			|| message->type == OS_MESSAGE_MOUSE_RIGHT_PRESSED
+			|| message->type == OS_MESSAGE_MOUSE_RIGHT_RELEASED
 			|| message->type == OS_MESSAGE_START_DRAG) {
 		ListViewMouseUpdated(list, message);
 	} else if (message->type == OS_MESSAGE_MOUSE_MOVED) {

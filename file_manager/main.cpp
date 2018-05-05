@@ -28,6 +28,7 @@ struct Instance {
 
 	FolderChild *folderChildren;
 	size_t folderChildCount;
+	size_t selectedChildCount;
 
 	char *path;
 	size_t pathBytes;
@@ -276,6 +277,55 @@ int SortFolder(const void *_a, const void *_b, void *argument) {
 	return result * (instance->sortDescending ? -1 : 1);
 }
 
+OSCallbackResponse CallbackOpenItem(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type != OS_NOTIFICATION_COMMAND) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+
+	uintptr_t i = 0;
+
+	for (i = 0; i < instance->folderChildCount; i++) {
+		if (instance->folderChildren[i].state & OS_LIST_VIEW_ITEM_SELECTED) {
+			break;
+		}
+	}
+
+	if (i == instance->folderChildCount) {
+		return OS_CALLBACK_REJECTED;
+	}
+
+	uintptr_t index = i;
+	FolderChild *child = instance->folderChildren + index;
+	OSDirectoryChild *data = &child->data;
+
+	if (data->information.type == OS_NODE_FILE) {
+		int fileType = GetFileType(data->name, data->nameLengthBytes);
+
+		if (fileType & FILE_CLASS_EXECUTABLE) {
+			size_t length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "%s/%s", 
+					instance->pathBytes, instance->path, data->nameLengthBytes, data->name);
+			OSProcessInformation information;
+			OSCreateProcess(guiStringBuffer, length, &information, nullptr);
+			OSCloseHandle(information.handle);
+			OSCloseHandle(information.mainThread.handle);
+		}
+	} else if (data->information.type == OS_NODE_DIRECTORY) {
+		char *existingPath = instance->path;
+		size_t existingPathBytes = instance->pathBytes;
+
+		char *folderName = data->name;
+		size_t folderNameBytes = data->nameLengthBytes;
+
+		instance->LoadFolder(existingPath, existingPathBytes, folderName, folderNameBytes);
+	}
+
+	return OS_CALLBACK_HANDLED;
+}
+
 OSCallbackResponse CommandNew(OSObject object, OSMessage *message) {
 	(void) object;
 
@@ -486,15 +536,11 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 				OSCrashProcess(OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS);
 			}
 
-			// OSPrint("asking for %d, %d\n", index, message->listViewItem.column);
-
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
 				switch (message->listViewItem.column) {
 					case COLUMN_NAME: {
 						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 								"%s", data->nameLengthBytes, data->name);
-
-						// OSPrint("-> %s\n", data->nameLengthBytes, data->name);
 					} break;
 
 					case COLUMN_DATE_MODIFIED: {
@@ -531,8 +577,6 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"%d.%d GB", fileSize / 1000000000, (fileSize / 100000000) % 10);
 							}
-
-							// OSPrint("-> %s (%d)\n", message->listViewItem.textBytes, guiStringBuffer, fileSize);
 						} else if (data->information.type == OS_NODE_DIRECTORY) {
 							uint64_t children = data->information.directoryChildren;
 
@@ -567,36 +611,24 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 			}
 
 			FolderChild *child = instance->folderChildren + index;
+	
+			if (child->state & OS_LIST_VIEW_ITEM_SELECTED) {
+				instance->selectedChildCount--;
+			}
+
 			child->state = (child->state & ~((uint16_t) message->listViewItem.mask)) | (message->listViewItem.state & message->listViewItem.mask);
+
+			if (child->state & OS_LIST_VIEW_ITEM_SELECTED) {
+				instance->selectedChildCount++;
+			}
+
+			OSEnableCommand(OSGetWindow(object), commandOpenItem, instance->selectedChildCount);
 
 			return OS_CALLBACK_HANDLED;
 		} break;
 
 		case OS_NOTIFICATION_CHOOSE_ITEM: {
-			uintptr_t index = message->listViewItem.index;
-			FolderChild *child = instance->folderChildren + index;
-			OSDirectoryChild *data = &child->data;
-
-			if (data->information.type == OS_NODE_FILE) {
-				int fileType = GetFileType(data->name, data->nameLengthBytes);
-
-				if (fileType & FILE_CLASS_EXECUTABLE) {
-					size_t length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "%s/%s", 
-							instance->pathBytes, instance->path, data->nameLengthBytes, data->name);
-					OSProcessInformation information;
-					OSCreateProcess(guiStringBuffer, length, &information, nullptr);
-					OSCloseHandle(information.handle);
-					OSCloseHandle(information.mainThread.handle);
-				}
-			} else if (data->information.type == OS_NODE_DIRECTORY) {
-				char *existingPath = instance->path;
-				size_t existingPathBytes = instance->pathBytes;
-
-				char *folderName = data->name;
-				size_t folderNameBytes = data->nameLengthBytes;
-
-				instance->LoadFolder(existingPath, existingPathBytes, folderName, folderNameBytes);
-			}
+			OSIssueCommand(commandOpenItem, OSGetWindow(object));
 
 			return OS_CALLBACK_HANDLED;
 		} break;
@@ -610,21 +642,42 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 			for (int i = message->listViewItemRange.indexFrom; i < message->listViewItemRange.indexTo; i++) {
 				FolderChild *child = instance->folderChildren + i;
 
+				if (child->state & OS_LIST_VIEW_ITEM_SELECTED) {
+					instance->selectedChildCount--;
+				}
+
 				child->state &= ~message->listViewItemRange.mask;
 				child->state |= message->listViewItemRange.mask & message->listViewItemRange.state;
+
+				if (child->state & OS_LIST_VIEW_ITEM_SELECTED) {
+					instance->selectedChildCount++;
+				}
 			}
+
+			OSEnableCommand(OSGetWindow(object), commandOpenItem, instance->selectedChildCount);
 
 			return OS_CALLBACK_HANDLED;
 		} break;
 
 		case OS_NOTIFICATION_SORT_COLUMN: {
 			OSListViewReset(instance->folderListing);
+			instance->selectedChildCount = 0;
 
 			instance->sortColumn = message->listViewColumn.index;
 			instance->sortDescending = message->listViewColumn.descending;
 			OSSort(instance->folderChildren, instance->folderChildCount, sizeof(FolderChild), SortFolder, instance);
 
 			OSListViewInsert(instance->folderListing, 0, instance->folderChildCount);
+
+			return OS_CALLBACK_HANDLED;
+		} break;
+
+		case OS_NOTIFICATION_RIGHT_CLICK: {
+			if (instance->selectedChildCount) {
+				OSCreateMenu(menuItemContext, object, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
+			} else {
+				OSCreateMenu(menuFolderListingContext, object, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
+			}
 
 			return OS_CALLBACK_HANDLED;
 		} break;
@@ -768,12 +821,6 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 		newPathBytes += pathBytes2 + 1;
 	}
 
-#if 0
-	if (oldPath && !CompareStrings(oldPath, newPath, oldPathBytes, newPathBytes)) {
-		goto fail;
-	}
-#endif
-
 	OSNodeInformation node;
 	OSError error;
 
@@ -803,8 +850,6 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 		if (!children[i].information.present) {
 			childCount = i;
 			break;
-		} else {
-			// OSPrint("] %s, %d\n", children[i].nameLengthBytes, children[i].name, children[i].information.fileSize);
 		}
 	}
 
@@ -821,10 +866,6 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	// Sort the folder.
 	OSSort(folderChildren, folderChildCount, sizeof(FolderChild), SortFolder, this);
 
-	for (uintptr_t i = 0; i < folderChildCount; i++) {
-		// OSPrint("[ %s, %d\n", folderChildren[i].data.nameLengthBytes, folderChildren[i].data.name, folderChildren[i].data.information.fileSize);
-	}
-
 	// Confirm the new path.
 	path = newPath;
 	pathBytes = newPathBytes;
@@ -835,6 +876,9 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	OSSetText(folderPath, path, pathBytes, OS_RESIZE_MODE_IGNORE);
 	OSEnableCommand(window, commandNavigateParent, pathBytes1 != 1);
 	OSListViewInvalidate(bookmarkList, 0, global.bookmarkCount);
+
+	selectedChildCount = 0;
+	OSEnableCommand(window, commandOpenItem, false);
 
 	{
 		bool found = false;
@@ -912,7 +956,7 @@ void Instance::Initialise() {
 	OSObject rootLayout = OSCreateGrid(1, 6, OS_GRID_STYLE_LAYOUT);
 	OSObject contentSplit = OSCreateGrid(3, 1, OS_GRID_STYLE_LAYOUT);
 	OSObject toolbar1 = OSCreateGrid(5, 1, OS_GRID_STYLE_TOOLBAR);
-	OSObject toolbar2 = OSCreateGrid(1, 1, OS_GRID_STYLE_TOOLBAR_ALT);
+	OSObject toolbar2 = OSCreateGrid(2, 1, OS_GRID_STYLE_TOOLBAR_ALT);
 	OSObject statusBar = OSCreateGrid(2, 1, OS_GRID_STYLE_STATUS_BAR);
 
 	OSSetRootGrid(window, rootLayout);
@@ -948,8 +992,8 @@ void Instance::Initialise() {
 	OSObject bookmarkFolderButton = OSCreateButton(commandBookmarkFolder, OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY);
 	OSAddControl(toolbar1, 4, 0, bookmarkFolderButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
-	OSObject newFolderButton = OSCreateButton(commandNewFolder, OS_BUTTON_STYLE_TOOLBAR);
-	OSAddControl(toolbar2, 0, 0, newFolderButton, OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar2, 0, 0, OSCreateButton(commandNewFolder, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar2, 1, 0, OSCreateButton(commandOpenItem, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
 	statusLabel = OSCreateLabel(OSLiteral(""));
 	OSAddControl(statusBar, 1, 0, statusLabel, OS_FLAGS_DEFAULT);

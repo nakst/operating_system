@@ -50,3 +50,22 @@ defaultDisabled = false;
 callback = CallbackBookmarkFolder;
 checkable = true;
 iconID = OS_ICON_BOOKMARK;
+
+[menu menuFolderListingContext]
+name = "Folder listing context";
+osCommandPaste;
+Separator;
+commandNewFolder;
+
+[command commandOpenItem]
+label = "Open";
+callback = CallbackOpenItem;
+defaultDisabled = true;
+
+[menu menuItemContext]
+commandOpenItem;
+Separator;
+osCommandCut;
+osCommandCopy;
+Separator;
+osCommandDelete;
