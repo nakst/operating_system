@@ -590,7 +590,6 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_SET_ITEM_RANGE		= 0x200E,
 	OS_NOTIFICATION_SORT_COLUMN		= 0x200F,
 	OS_NOTIFICATION_RIGHT_CLICK		= 0x2010,
-	OS_NOTIFICATION_CREATE_CELL		= 0x2011,
 
 	// Misc messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
@@ -735,11 +734,6 @@ typedef struct OSMessage {
 			int knownY;
 			uintptr_t knownIndex;
 		} convertYToIndex;
-
-		struct {
-			uintptr_t index, column;
-			OSObject object;
-		} createCell;
 
 		struct {
 			uintptr_t fromIndex, toIndex;

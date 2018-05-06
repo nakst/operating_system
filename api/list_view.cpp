@@ -18,11 +18,6 @@ uint32_t LIST_VIEW_PRIMARY_TEXT_COLOR = 0x000000;
 uint32_t LIST_VIEW_SECONDARY_TEXT_COLOR = 0x686868;
 uint32_t LIST_VIEW_BACKGROUND_COLOR = 0xFFFFFFFF;
 
-struct ListViewCell {
-	GUIObject *object;
-	int32_t index, column;
-};
-
 struct ListViewItem {
 	bool repaint;
 	int height;
@@ -31,9 +26,6 @@ struct ListViewItem {
 
 struct ListView : Control {
 	unsigned flags;
-
-	ListViewCell *cells;
-	size_t cellCount, cellAllocated;
 
 	ListViewItem *visibleItems;
 	size_t visibleItemCount, visibleItemAllocated;
@@ -139,71 +131,14 @@ static OSRectangle ListViewGetHeaderBounds(ListView *list) {
 	return headerBounds;
 }
 
-static void ListViewCreateCell(ListView *list, OSMessage *m, uintptr_t i, uintptr_t index, int y, int height, OSRectangle contentBounds, int left, int right) {
-	m->createCell.column = i;
-	m->createCell.object = nullptr;
-
-	if (OSForwardMessage(list, list->notificationCallback, m) == OS_CALLBACK_HANDLED
-			&& m->createCell.object) {
-		GUIObject *object = (GUIObject *) m->createCell.object;
-		OSPrint("Create cell, %d/%d, %d->%d\n", index, i, y, y + height);
-
-		if (list->cellCount + 1 > list->cellAllocated) {
-			list->cellAllocated = list->cellAllocated * 2 + 32;
-			ListViewCell *old = list->cells;
-			list->cells = (ListViewCell *) OSHeapAllocate(sizeof(ListViewCell) * list->cellAllocated, false);
-			OSCopyMemory(list->cells, old, sizeof(ListViewCell) * list->cellCount);
-			OSHeapFree(old);
-		}
-
-		list->cells[list->cellCount].object = object;
-		list->cells[list->cellCount].index = index + list->firstVisibleItem;
-		list->cells[list->cellCount].column = i;
-		list->cellCount++;
-
-		object->parent = list;
-		object->layout = OS_CELL_FILL;
-
-		{
-			OSMessage m;
-
-			m.type = OS_MESSAGE_PARENT_UPDATED;
-			m.parentUpdated.window = list->window;
-			OSSendMessage(object, &m);
-
-			m.type = OS_MESSAGE_LAYOUT;
-			m.layout.left = left;
-			m.layout.right = right;
-			m.layout.top = y;
-			m.layout.bottom = y + height;
-			m.layout.clip = contentBounds;
-			m.layout.force = true;
-			OSSendMessage(object, &m);
-		}
-	}
-}
-
 static void ListViewDeleteVisibleItems(ListView *list, size_t newCount) {
-	OSMessage m;
-	m.type = OS_MESSAGE_DESTROY;
-
-	for (uintptr_t i = newCount; i < list->visibleItemCount; i++) {
-		for (uintptr_t j = 0; j < list->cellCount; j++) {
-			if ((uintptr_t) list->cells[j].index == i) {
-				OSPrint("Delete cell, %d/%d\n", i, list->cells[j].column);
-				OSSendMessage(list->cells[j].object, &m);
-
-				OSMoveMemory(list->cells + j + 1, list->cells + list->cellCount, -sizeof(ListViewCell), false);
-				j--;
-				list->cellCount--;
-			}
-		}
-	}
-
 	list->visibleItemCount = newCount;
 }
 
 static ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index, int y, int height) {
+	(void) y;
+	(void) height;
+
 	index -= list->firstVisibleItem;
 
 	if (list->visibleItemCount + 1 > list->visibleItemAllocated) {
@@ -217,36 +152,6 @@ static ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index, 
 	OSMoveMemory(list->visibleItems + index, list->visibleItems + list->visibleItemCount, sizeof(ListViewItem), true);
 	list->visibleItemCount++;
 	list->visibleItems[index].index = index + list->firstVisibleItem;
-
-	OSMessage m;
-	m.type = OS_NOTIFICATION_CREATE_CELL;
-	m.createCell.index = index + list->firstVisibleItem;
-
-	OSRectangle contentBounds = list->contentBounds;
-	OSRectangle row;
-
-	if (list->columns) {
-		row = OS_MAKE_RECTANGLE(
-				contentBounds.left + list->margin.left - list->scrollX, 
-				contentBounds.left + list->totalX - list->margin.right - list->scrollX,
-				0, 0);
-	} else {
-		row = OS_MAKE_RECTANGLE(
-				contentBounds.left + list->margin.left, 
-				contentBounds.right - list->margin.right,
-				0, 0);
-	}
-
-	if (list->columns) {
-		int x = row.left;
-
-		for (uintptr_t i = 0; i < list->columnCount; i++) {
-			ListViewCreateCell(list, &m, i, index, y, height, contentBounds, x, x + list->columns[i].width);
-			x += list->columns[i].width;
-		}
-	} else {
-		ListViewCreateCell(list, &m, 0, index, y, height, contentBounds, row.left, row.right);
-	}
 
 	return list->visibleItems + index;
 }
@@ -368,20 +273,6 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 	RepaintControl(list);
 	int oldScrollY = list->scrollY;
 	int baseNewScrollY = newScrollY;
-
-	for (uintptr_t i = 0; i < list->cellCount; i++) {
-		GUIObject *object = list->cells[i].object;
-
-		OSMessage m;
-		m.type = OS_MESSAGE_LAYOUT;
-		m.layout.left = object->bounds.left;
-		m.layout.right = object->bounds.right;
-		m.layout.top = object->bounds.top + oldScrollY - newScrollY;
-		m.layout.bottom = object->bounds.bottom + oldScrollY - newScrollY;
-		m.layout.clip = list->contentBounds;
-		m.layout.force = true;
-		OSSendMessage(object, &m);
-	}
 
 	if (oldScrollY < list->margin.top) {
 		oldScrollY = 0;
@@ -1252,20 +1143,11 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 	} else if (message->type == OS_MESSAGE_PARENT_UPDATED) {
 		OSSendMessage(list->scrollbarX, message);
 		OSSendMessage(list->scrollbarY, message);
-
-		for (uintptr_t i = 0; i < list->cellCount; i++) {
-			OSSendMessage(list->cells[i].object, message);
-		}
 	} else if (message->type == OS_MESSAGE_DESTROY) {
 		OSSendMessage(list->scrollbarX, message);
 		OSSendMessage(list->scrollbarY, message);
 
-		for (uintptr_t i = 0; i < list->cellCount; i++) {
-			OSSendMessage(list->cells[i].object, message);
-		}
-
 		OSHeapFree(list->visibleItems);
-		OSHeapFree(list->cells);
 	} else if (message->type == OS_MESSAGE_END_HOVER) {
 		if (!list->pressingColumnHeader) list->highlightColumn = -1;
 		list->highlightItem = -1;
@@ -1310,10 +1192,6 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 		if (repaint) {
 			RepaintControl(list, true);
 		}
-
-		for (uintptr_t i = 0; i < list->cellCount; i++) {
-			OSSendMessage(list->cells[i].object, message);
-		}
 	} else if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
 		ListViewPaint(list, message);
 		response = OS_CALLBACK_HANDLED;
@@ -1334,24 +1212,6 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 				list->oldBounds.bottom == list->bounds.bottom) {
 			goto done;
 		} 
-
-		{
-			OSRectangle contentBounds = list->contentBounds;
-
-			for (uintptr_t i = 0; i < list->cellCount; i++) {
-				GUIObject *object = list->cells[i].object;
-
-				OSMessage m;
-				m.type = OS_MESSAGE_LAYOUT;
-				m.layout.left = object->bounds.left - list->oldBounds.left + list->bounds.left;
-				m.layout.right = object->bounds.right - list->oldBounds.right + list->bounds.right;
-				m.layout.top = object->bounds.top - list->oldBounds.top + list->bounds.top;
-				m.layout.bottom = object->bounds.bottom - list->oldBounds.bottom + list->bounds.bottom;
-				m.layout.clip = contentBounds;
-				m.layout.force = true;
-				OSSendMessage(object, &m);
-			}
-		}
 
 		list->oldBounds = list->bounds;
 
@@ -1397,18 +1257,6 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 			m.paint.force = message->paint.force || redrawScrollbars;
 			if (list->showScrollbarX) OSSendMessage(list->scrollbarX, &m);
 			if (list->showScrollbarY) OSSendMessage(list->scrollbarY, &m);
-		}
-
-		{
-			OSMessage m = *message;
-			m.paint.force = true;
-			ClipRectangle(m.paint.clip, list->contentBounds, &m.paint.clip);
-
-			for (uintptr_t i = 0; i < list->cellCount; i++) {
-				if (ClipRectangle(list->cells[i].object->bounds, m.paint.clip, nullptr)) {
-					OSSendMessage(list->cells[i].object, &m);
-				}
-			}
 		}
 	} 
 
