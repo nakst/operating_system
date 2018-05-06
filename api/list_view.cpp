@@ -4,16 +4,9 @@
 #define LIST_VIEW_DEFAULT_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
-// TODO Custom controls.
-// 	- Delete.
-// 	- Input clipping problems.
-// 	- Better repainting.
-// 	- Store with visible items rather than in separate array?
-// 	- Incorrect indices when creating cells.
-// 	- Top margin incorrect with revealing upwards.
-
 // TODO Resizing columns doesn't update totalX.
 // TODO Display vertical scrollbar inside header bounds.
+// TODO Can't resize columns on single select mode?
 
 // TODO Keyboard controls.
 // TODO Dragging.
@@ -190,6 +183,26 @@ static void ListViewCreateCell(ListView *list, OSMessage *m, uintptr_t i, uintpt
 	}
 }
 
+static void ListViewDeleteVisibleItems(ListView *list, size_t newCount) {
+	OSMessage m;
+	m.type = OS_MESSAGE_DESTROY;
+
+	for (uintptr_t i = newCount; i < list->visibleItemCount; i++) {
+		for (uintptr_t j = 0; j < list->cellCount; j++) {
+			if ((uintptr_t) list->cells[j].index == i) {
+				OSPrint("Delete cell, %d/%d\n", i, list->cells[j].column);
+				OSSendMessage(list->cells[j].object, &m);
+
+				OSMoveMemory(list->cells + j + 1, list->cells + list->cellCount, -sizeof(ListViewCell), false);
+				j--;
+				list->cellCount--;
+			}
+		}
+	}
+
+	list->visibleItemCount = newCount;
+}
+
 static ListViewItem *ListViewInsertVisibleItem(ListView *list, uintptr_t index, int y, int height) {
 	index -= list->firstVisibleItem;
 
@@ -247,7 +260,7 @@ static void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t in
 		offsetIntoViewport += list->visibleItems[i - list->firstVisibleItem].height;
 
 		if (offsetIntoViewport > contentBounds.bottom - contentBounds.top) {
-			list->visibleItemCount = i - list->firstVisibleItem + 1;
+			ListViewDeleteVisibleItems(list, i - list->firstVisibleItem + 1);
 			return;
 		}
 	}
@@ -280,7 +293,7 @@ static void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t in
 		remaining -= height;
 	}
 
-	list->visibleItemCount = i - list->firstVisibleItem;
+	ListViewDeleteVisibleItems(list, i - list->firstVisibleItem);
 }
 
 static void ListViewUpdate(ListView *list) {
@@ -401,7 +414,7 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 	if (delta > contentBounds.bottom - contentBounds.top) {
 		// We're moving past at least an entire screen, so the contents of the list will completely change.
 
-		list->visibleItemCount = 0;
+		ListViewDeleteVisibleItems(list, 0);
 
 		if (newScrollY) {
 			if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
@@ -472,6 +485,7 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 			list->offsetIntoFirstVisibleItem = 0;
 		}
 
+		list->scrollY = baseNewScrollY;
 		ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem, list->itemCount - list->firstVisibleItem);
 	} else if (oldScrollY < newScrollY) {
 		// Move content up.
@@ -489,8 +503,9 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 
 		list->offsetIntoFirstVisibleItem = delta;
 		OSMoveMemory(list->visibleItems + i, list->visibleItems + list->visibleItemCount, -i * sizeof(ListViewItem), false);
-		list->visibleItemCount -= i;
+		ListViewDeleteVisibleItems(list, list->visibleItemCount - i);
 		list->firstVisibleItem += i;
+		list->scrollY = baseNewScrollY;
 		ListViewInsertItemsIntoVisibleItemsList(list, list->firstVisibleItem + list->visibleItemCount, list->itemCount - list->visibleItemCount - list->firstVisibleItem);
 	} else if (oldScrollY > newScrollY) {
 		// Move content down.
@@ -498,7 +513,7 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 		if (delta < list->offsetIntoFirstVisibleItem) {
 			list->offsetIntoFirstVisibleItem -= delta;
 		} else {
-			int marginOffset = list->scrollY < list->margin.top ? (list->margin.top - list->scrollY) : 0;
+			int marginOffset = baseNewScrollY < list->margin.top ? (list->margin.top - baseNewScrollY) : 0;
 			int y = -list->offsetIntoFirstVisibleItem + delta + contentBounds.top + marginOffset;
 
 			delta -= list->offsetIntoFirstVisibleItem;
@@ -538,15 +553,15 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 				i++;
 			}
 
-			list->visibleItemCount = i;
-
-			if (list->visibleItemCount + list->firstVisibleItem != list->itemCount) {
-				list->visibleItemCount++;
+			if (i + list->firstVisibleItem != list->itemCount) {
+				ListViewDeleteVisibleItems(list, i + 1);
+			} else {
+				ListViewDeleteVisibleItems(list, i);
 			}
 		}
-	}
 
-	list->scrollY = baseNewScrollY;
+		list->scrollY = baseNewScrollY;
+	}
 }
 
 static void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage *message, int row, int column, OSRectangle rowClip, OSListViewColumn *columnData) {
@@ -1544,7 +1559,7 @@ void OSListViewRemove(OSObject listView, uintptr_t index, size_t count) {
 
 void OSListViewReset(OSObject listView) {
 	ListView *list = (ListView *) listView;
-	list->visibleItemCount = 0;
+	ListViewDeleteVisibleItems(list, 0);
 	list->firstVisibleItem = 0;
 	list->offsetIntoFirstVisibleItem = 0;
 	list->itemCount = 0;

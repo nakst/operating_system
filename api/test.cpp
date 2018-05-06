@@ -73,7 +73,7 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		}
 
 		if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
-			message->listViewItem.height = 25;
+			message->listViewItem.height = 50;
 		}
 	} else if (message->type == OS_NOTIFICATION_SET_ITEM) {
 		uintptr_t index = message->listViewItem.index;
@@ -86,7 +86,7 @@ OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
 		OSDrawProgressBar(message->paintCell.surface, message->paintCell.bounds, (float) message->paintCell.index / (float) wordCount, message->paintCell.clip, true);
 	} else if (message->type == OS_NOTIFICATION_CREATE_CELL) {
 		if (message->createCell.column == 3) {
-			message->createCell.object = OSCreateButton(commandLaunchCalculator, OS_BUTTON_STYLE_NORMAL);
+			message->createCell.object = OSCreateLabel(buffer, OSFormatString(buffer, 1024, "i%d", message->createCell.index));
 		} else {
 			message->createCell.object = nullptr;
 		}
@@ -125,9 +125,9 @@ int SortList(const void *_a, const void *_b) {
 
 OSListViewColumn columns[] = {
 	{ OSLiteral("Word"), 100, 30, true },
-	{ OSLiteral("Count"), 100, 30, false },
-	{ OSLiteral("Index"), 100, 30, false },
-	{ OSLiteral("Custom"), 100, 30, false },
+	{ OSLiteral("Count"), 50, 30, false },
+	{ OSLiteral("Index"), 50, 30, false },
+	{ OSLiteral("Custom"), 80, 30, false },
 };
 
 void CreateList(OSObject content) {
