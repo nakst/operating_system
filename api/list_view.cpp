@@ -505,7 +505,7 @@ static void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage 
 				? OS_DRAW_STRING_HALIGN_RIGHT : OS_DRAW_STRING_HALIGN_LEFT) | OS_DRAW_STRING_VALIGN_CENTER,
 			(columnData ? !(columnData->flags & OS_LIST_VIEW_COLUMN_PRIMARY) : column) 
 				? LIST_VIEW_SECONDARY_TEXT_COLOR : LIST_VIEW_PRIMARY_TEXT_COLOR, -1, 0, 
-			OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, rowClip, 0);
+			OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, rowClip, 0, 0);
 }
 
 static bool ListViewGetBorderImage(ListView *list, uintptr_t i, UIImage *image) {
@@ -638,7 +638,7 @@ static void ListViewPaint(ListView *list, OSMessage *message) {
 			DrawString(message->paint.surface, textRegion, &string, 
 					OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_VALIGN_CENTER,
 					LIST_VIEW_COLUMN_TEXT_COLOR, -1, 0, 
-					OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, headerClip, 0);
+					OS_MAKE_POINT(0, 0), nullptr, 0, 0, true, FONT_SIZE, fontRegular, headerClip, 0, 0);
 
 			if (column->flags & OS_LIST_VIEW_COLUMN_SORT_ASCENDING) {
 				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, 

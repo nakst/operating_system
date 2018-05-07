@@ -1,12 +1,17 @@
 #include <stdio.h>
+#include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
 
-#include "../api/utf8.h"
 #define OS_NO_CSTDLIB
 #include "../api/os.h"
+#include "../api/utf8.h"
+
+void OSCrashProcess(OSError x) {
+	assert(false);
+}
 
 /*
  * Manifest syntax:

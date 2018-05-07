@@ -46,19 +46,13 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Access keys.
 // 	- Menus and list view navigation.
 // 	- Change "default command" to be a special case of dialog box keyboard controls.
-// TODO Send repeat messages for held left press? 
-// 	- Scrollbar buttons.
-// 	- Scrollbar nudges.
+// 	- FindObjectInGrid sometimes gets stuck in a loop?
+// TODO Click repeat.
 // 	- Scroll-selections in textboxes and list views.
-// 	- Sliders nudges.
 // TODO Textboxes.
 // 	- Undo/redo.
-// 	- Scrolling.
 // 	- Multi-line.
 // 	- Using the textbox context menu with OS_TEXTBOX_STYLE_COMMAND doesn't work.
-// 	- Right-click on existing selection is broken.
-// 	- Selection shown after lost focus.
-// TODO Menu icons.
 // TODO Multiple-cell positions.
 // TODO Wrapping.
 
@@ -158,6 +152,10 @@ static UIImage menuBox 			= {{1, 32, 1, 15}, {28, 30, 4, 6}};
 static UIImage menuBoxBlank		= {{22, 27, 16, 24}, {24, 25, 19, 20}};
 static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 128, 144}, OS_DRAW_MODE_STRECH};
 static UIImage dialogAltAreaBox		= {{18, 19, 17, 22}, {18, 19, 21, 22}};
+
+static UIImage menuIconCheck 		= {{0, 16, 32, 32 + 16}, {0, 0, 32, 32}};
+static UIImage menuIconRadio 		= {{0, 16, 17 + 32, 17 + 32 + 16}, {0, 0, 17 + 32, 17 + 32}};
+static UIImage menuIconSub 		= {{0, 16, 17 + 17 + 32, 17 + 17 + 32 + 16}, {0, 0, 17 + 17 + 32, 17 + 17 + 32}};
 
 static UIImage menuItemHover		= {{42, 50, 142, 159}, {45, 46, 151, 157}, OS_DRAW_MODE_STRECH};
 static UIImage menuItemDragged		= {{18 + 42, 18 + 50, 142, 159}, {18 + 45, 18 + 46, 151, 157}, OS_DRAW_MODE_STRECH};
@@ -497,6 +495,7 @@ struct Control : GUIObject {
 	uint32_t focusable : 1,
 		checkable : 1,
 		radioCheck : 1,
+		useClickRepeat : 1,
 
 		noAnimations : 1,
 		noDisabledTextColorChange : 1,
@@ -568,8 +567,9 @@ struct MenuItem : Control {
 struct Textbox : Control {
 	OSCaret caret, caret2;
 	OSCaret wordSelectionAnchor, wordSelectionAnchor2;
-	uint8_t caretBlink : 1;
-	bool sentEditResultNotification;
+	uint8_t caretBlink : 1,
+		sentEditResultNotification : 1;
+	int scrollX;
 	OSString previousString;
 	OSTextboxStyle style;
 };
@@ -598,7 +598,7 @@ struct Grid : GUIObject {
 };
 
 struct Slider : Grid {
-	int minimum, maximum, value, minorTickSpacing, majorTickSpacing, mode;
+	int minimum, maximum, value, minorTickSpacing, majorTickSpacing, mode, previousClickAdjustment;
 	struct SliderHandle *handle;
 };
 
@@ -1578,7 +1578,7 @@ static void FindCaret(Textbox *control, int positionX, int positionY, bool secon
 		control->caret2.character = control->text.characters;
 	} else {
 		OSFindCharacterAtCoordinate(control->textBounds, OS_MAKE_POINT(positionX, positionY), 
-				&control->text, control->textAlign, &control->caret2, control->textSize);
+				&control->text, control->textAlign, &control->caret2, control->textSize, control->scrollX);
 
 		if (!secondCaret) {
 			control->caret = control->caret2;
@@ -1624,14 +1624,19 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
 	static int lastClickChainCount = 1;
+	bool ensureCaretVisible = false;
 
 	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
-		DrawString(message->paint.surface, control->textBounds, 
-				&control->text, control->textAlign, control->textColor, -1, control->window->focus == control ? TEXTBOX_SELECTED_COLOR_1 : TEXTBOX_SELECTED_COLOR_2,
-				{0, 0}, nullptr, control->caret.character, control->window->lastFocus == control 
+#define TEXTBOX_MARGIN (4)
+		DrawString(message->paint.surface, OS_MAKE_RECTANGLE(control->textBounds.left - TEXTBOX_MARGIN, 
+					control->textBounds.right + TEXTBOX_MARGIN, control->textBounds.top, control->textBounds.bottom), 
+				&control->text, control->textAlign, control->textColor, -1, 
+				control->window->focus == control ? TEXTBOX_SELECTED_COLOR_1 : TEXTBOX_SELECTED_COLOR_2,
+				{0, 0}, nullptr, control->caret.character, (control->window->lastFocus == control 
+					&& (control->style != OS_TEXTBOX_STYLE_COMMAND || control->window->focus == control))
 				&& !control->disabled ? control->caret2.character : control->caret.character, 
 				control->window->focus != control || control->caretBlink || control->disabled,
-				control->textSize, fontRegular, message->paint.clip, 0);
+				control->textSize, fontRegular, message->paint.clip, 0, control->scrollX - TEXTBOX_MARGIN);
 
 #if 0
 		OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, control->textBounds, 
@@ -1649,6 +1654,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		result = OS_CALLBACK_HANDLED;
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_END_FOCUS) {
+		ensureCaretVisible = true;
+
 		OSMessage message;
 
 		if (!control->sentEditResultNotification) {
@@ -1668,6 +1675,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		GUIFree(control->previousString.buffer);
 		control->previousString.buffer = nullptr;
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
+		ensureCaretVisible = true;
+
 		control->caretBlink = false;
 		control->window->caretBlinkPause = CARET_BLINK_PAUSE;
 
@@ -1703,12 +1712,15 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	} else if (message->type == OS_MESSAGE_CLIPBOARD_UPDATED) {
 		OSEnableCommand(control->window, osCommandPaste, ClipboardTextBytes());
 	} else if (message->type == OS_MESSAGE_END_LAST_FOCUS) {
+		ensureCaretVisible = true;
+
 		OSDisableCommand(control->window, osCommandPaste, true);
 		OSDisableCommand(control->window, osCommandSelectAll, true);
 		OSDisableCommand(control->window, osCommandCopy, true);
 		OSDisableCommand(control->window, osCommandCut, true);
 		OSDisableCommand(control->window, osCommandDelete, true);
 	} else if (message->type == OS_NOTIFICATION_COMMAND) {
+		ensureCaretVisible = true;
 		// TODO Code copy-and-pasted from KEY_TYPED below.
 
 		if (message->command.command == osCommandSelectAll) {
@@ -1753,23 +1765,32 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		}
 
 		RepaintControl(control);
-	} else if (message->type == OS_MESSAGE_START_PRESS) {
+	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
 		FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, message->mousePressed.clickChainCount);
 		lastClickChainCount = message->mousePressed.clickChainCount;
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_START_DRAG 
 			|| (message->type == OS_MESSAGE_MOUSE_RIGHT_PRESSED && control->caret.byte == control->caret2.byte)) {
+		ensureCaretVisible = true;
 		FindCaret(control, message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY, true, lastClickChainCount);
 		control->caret = control->caret2;
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
+		ensureCaretVisible = true;
 		FindCaret(control, message->mouseDragged.newPositionX, message->mouseDragged.newPositionY, true, lastClickChainCount);
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_TEXT_UPDATED) {
+		if (control->caret2.byte > control->text.bytes) {
+			control->caret2.byte = control->text.bytes;
+		}
+
 		control->caret = control->caret2;
+		ensureCaretVisible = true;
 	} else if (message->type == OS_MESSAGE_DESTROY) {
 		GUIFree(control->previousString.buffer);
 	} else if (message->type == OS_MESSAGE_KEY_TYPED) {
+		ensureCaretVisible = true;
+
 		control->caretBlink = false;
 		control->window->caretBlinkPause = CARET_BLINK_PAUSE;
 
@@ -1968,6 +1989,23 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		OSDisableCommand(control->window, osCommandDelete, noSelection);
 	}
 
+	if (ensureCaretVisible) {
+		int caretX = MeasureStringWidth(control->text.buffer, control->caret2.byte, control->textSize, fontRegular) - control->scrollX;
+
+		int fullWidth = MeasureStringWidth(control->text.buffer, control->text.bytes, control->textSize, fontRegular);
+		int controlWidth = control->textBounds.right - control->textBounds.left;
+
+		if (caretX < 0) {
+			control->scrollX += caretX;
+		} else if (caretX > controlWidth) {
+			control->scrollX += caretX - controlWidth + 1;
+		} else if (fullWidth - control->scrollX < controlWidth && fullWidth > controlWidth) {
+			control->scrollX = fullWidth - controlWidth;
+		} else if (fullWidth <= controlWidth) {
+			control->scrollX = 0;
+		}
+	}
+
 	if (result == OS_CALLBACK_NOT_HANDLED) {
 		result = ProcessControlMessage(object, message);
 	}
@@ -2151,6 +2189,10 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 		} else {
 			control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
 		}
+
+		if (style == OS_BUTTON_STYLE_REPEAT) {
+			control->useClickRepeat = true;
+		}
 	}
 
 	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr));
@@ -2184,6 +2226,22 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 			if (message->type != OS_MESSAGE_START_HOVER) result = OS_CALLBACK_HANDLED;
 			OSAnimateControl(control, true);
 		}
+	} else if (message->type == OS_MESSAGE_CUSTOM_PAINT && !control->menubar) {
+		int xOffset = 4, yOffset = 2;
+		OSRectangle iconRegion = OS_MAKE_RECTANGLE(control->bounds.left + xOffset, control->bounds.left + xOffset + 16, control->bounds.top + yOffset, control->bounds.top + yOffset + 16);
+		OSRectangle clip;
+		ClipRectangle(iconRegion, message->paint.clip, &clip);
+
+		if (control->item.type == OSMenuItem::SUBMENU) {
+			OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, iconRegion, 
+					menuIconSub.region, menuIconSub.border, menuIconSub.drawMode, 0xFF, clip);
+		} else if (control->isChecked && control->radioCheck) {
+			OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, iconRegion, 
+					menuIconRadio.region, menuIconRadio.border, menuIconRadio.drawMode, 0xFF, clip);
+		} else if (control->isChecked) {
+			OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, iconRegion, 
+					menuIconCheck.region, menuIconCheck.border, menuIconCheck.drawMode, 0xFF, clip);
+		}
 	}
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
@@ -2207,6 +2265,7 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 
 	control->item = item;
 	control->menubar = menubar;
+	// control->horizontalMargin = menubar ? 0 : 4;
 
 	if (item.type == OSMenuItem::COMMAND) {
 		OSCommand *command = (OSCommand *) item.value;
@@ -2215,7 +2274,6 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	} else if (item.type == OSMenuItem::SUBMENU) {
 		OSMenuSpecification *menu = (OSMenuSpecification *) item.value;
 		OSSetText(control, menu->name, menu->nameBytes, OS_RESIZE_MODE_GROW_ONLY);
-		if (!menubar) control->icon = &smallArrowRightNormal;
 	}
 
 	if (menubar) {
@@ -3198,15 +3256,28 @@ OSCallbackResponse ProcessSliderMessage(OSObject object, OSMessage *message) {
 
 			SliderValueModified(grid);
 		}
+	} else if (message->type == OS_MESSAGE_CLICK_REPEAT) {
+		grid->value += grid->previousClickAdjustment;
+		SliderValueModified(grid);
 	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
 		response = OS_CALLBACK_HANDLED;
 
-		if (message->mousePressed.positionX < grid->handle->bounds.left) {
-			grid->value -= grid->minorTickSpacing;
+		if (grid->mode & OS_SLIDER_MODE_HORIZONTAL) {
+			if (message->mousePressed.positionX < grid->handle->bounds.left) {
+				grid->previousClickAdjustment = -grid->minorTickSpacing;
+			} else {
+				grid->previousClickAdjustment = grid->minorTickSpacing;
+			}
 		} else {
-			grid->value += grid->minorTickSpacing;
+			if (message->mousePressed.positionY < grid->handle->bounds.top) {
+				grid->previousClickAdjustment = -grid->minorTickSpacing;
+			} else {
+				grid->previousClickAdjustment = grid->minorTickSpacing;
+			}
 		}
 
+
+		grid->value += grid->previousClickAdjustment;
 		SliderValueModified(grid);
 	}
 
@@ -3488,9 +3559,9 @@ static OSCallbackResponse ScrollbarButtonPressed(OSObject object, OSMessage *mes
 	} else if (message->context == SCROLLBAR_BUTTON_DOWN) {
 		position += amount;
 	} else if (message->context == SCROLLBAR_NUDGE_UP) {
-		position -= scrollbar->viewportSize / 2;
+		position -= scrollbar->viewportSize;
 	} else if (message->context == SCROLLBAR_NUDGE_DOWN) {
-		position += scrollbar->viewportSize / 2;
+		position += scrollbar->viewportSize;
 	}
 
 	OSSetScrollbarPosition(scrollbar, position, true);
@@ -3775,6 +3846,7 @@ OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition) {
 	nudgeUp->context = scrollbar;
 	nudgeUp->notificationCallback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_UP);
 	nudgeUp->backgrounds = orientation ? scrollbarTrackVerticalBackgrounds : scrollbarTrackHorizontalBackgrounds;
+	nudgeUp->useClickRepeat = true;
 	OSSetCallback(nudgeUp, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr));
 
 	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_DOWN);
@@ -3783,10 +3855,11 @@ OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition) {
 	nudgeDown->context = scrollbar;
 	nudgeDown->notificationCallback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_DOWN);
 	nudgeDown->backgrounds = orientation ? scrollbarTrackVerticalBackgrounds : scrollbarTrackHorizontalBackgrounds;
+	nudgeDown->useClickRepeat = true;
 	OSSetCallback(nudgeDown, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr));
 
 	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_UP);
-	Control *up = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_NORMAL);
+	Control *up = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_REPEAT);
 	up->backgrounds = scrollbarButtonHorizontalBackgrounds;
 	up->context = scrollbar;
 	up->icon = orientation ? &smallArrowUpNormal : &smallArrowLeftNormal;
@@ -3801,7 +3874,7 @@ OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition) {
 	OSSetCallback(grip, OS_MAKE_CALLBACK(ProcessScrollbarGripMessage, nullptr));
 
 	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_DOWN);
-	Control *down = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_NORMAL);
+	Control *down = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_REPEAT);
 	down->backgrounds = scrollbarButtonHorizontalBackgrounds;
 	down->context = scrollbar;
 	down->icon = orientation ? &smallArrowDownNormal : &smallArrowRightNormal;
@@ -4501,6 +4574,20 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			window->destroyed = true;
 		} break;
 
+		case OS_MESSAGE_CLICK_REPEAT: {
+			if (window->pressed) {
+				OSSendMessage(window->pressed, message);
+
+				if (window->pressed == window->hover && window->pressed->useClickRepeat) {
+					OSMessage clicked;
+					clicked.type = OS_MESSAGE_CLICKED;
+					OSSendMessage(window->pressed, &clicked);
+				}
+			} else if (window->hoverGrid) {
+				OSSendMessage(window->hoverGrid, message);
+			}
+		} break;
+
 		case OS_MESSAGE_MOUSE_RIGHT_PRESSED:
 			rightClick = true;
 			// Fallthrough
@@ -4527,6 +4614,12 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				OSMessage m = *message;
 				m.type = OS_MESSAGE_START_PRESS;
 				OSSendMessage(window->pressed, &m);
+
+				if (!rightClick && window->hover->useClickRepeat) {
+					OSMessage clicked;
+					clicked.type = OS_MESSAGE_CLICKED;
+					OSSendMessage(window->pressed, &clicked);
+				}
 			}
 
 			// If there isn't a control we're hovering over,
@@ -4563,7 +4656,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				RepaintControl(window->pressed);
 
 				if (!rightClick) {
-					if (window->pressed == window->hover) {
+					if (window->pressed == window->hover && !window->pressed->useClickRepeat) {
 						OSMessage clicked;
 						clicked.type = OS_MESSAGE_CLICKED;
 						OSSendMessage(window->pressed, &clicked);

@@ -498,6 +498,7 @@ typedef struct OSClipboardHeader {
 
 typedef enum OSButtonStyle {
 	OS_BUTTON_STYLE_NORMAL,
+	OS_BUTTON_STYLE_REPEAT,
 	OS_BUTTON_STYLE_TOOLBAR,
 	OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY,
 } OSButtonStyle;
@@ -572,6 +573,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_MOUSE_MIDDLE_RELEASED 	= 0x100F,
 	OS_MESSAGE_MODAL_PARENT_CLICKED		= 0x1010,
 	OS_MESSAGE_UPDATE_WINDOW		= 0x1011,
+	OS_MESSAGE_CLICK_REPEAT			= 0x1012,
 
 	// Notifications:
 	OS_NOTIFICATION_COMMAND			= 0x2000,
@@ -1035,7 +1037,7 @@ OS_EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRecta
 OS_EXTERN_C OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha, OSRectangle clipRegion);
 OS_EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
 OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion, int blur);
-OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize);
+OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize, int scrollX);
 OS_EXTERN_C void OSDrawProgressBar(OSHandle surface, OSRectangle bounds, float progress, OSRectangle clip, bool blue);
 
 // You shouldn't need to call either of these...

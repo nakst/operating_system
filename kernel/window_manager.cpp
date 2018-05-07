@@ -64,6 +64,8 @@ struct WindowManager {
 	uint64_t clickChainStartMs;
 	unsigned clickChainCount;
 	int clickChainX, clickChainY;
+
+	Timer clickRepeatTimer;
 };
 
 struct Clipboard {
@@ -361,11 +363,42 @@ void WindowManager::SetActiveWindow(Window *window) {
 	}
 }
 
+void ClickRepeat(void *argument) {
+	(void) argument;
+
+	windowManager.mutex.Acquire();
+
+	if (!(windowManager.lastButtons & LEFT_BUTTON) || !windowManager.pressedWindow) {
+		windowManager.clickRepeatTimer.Remove();
+		windowManager.mutex.Release();
+		return;
+	}
+
+	OSMessage message;
+	message.type = OS_MESSAGE_CLICK_REPEAT;
+	message.context = windowManager.pressedWindow->apiWindow;
+	windowManager.pressedWindow->owner->messageQueue.SendMessage(message);
+
+	windowManager.clickRepeatTimer.Remove();
+#define CLICK_REPEAT_RATE (100)
+	windowManager.clickRepeatTimer.Set(CLICK_REPEAT_RATE, true, ClickRepeat, nullptr);
+	windowManager.mutex.Release();
+}
+
 void WindowManager::ClickCursor(unsigned buttons) {
 	mutex.Acquire();
 
 	unsigned delta = lastButtons ^ buttons;
 	lastButtons = buttons;
+
+	if (delta & LEFT_BUTTON) {
+		clickRepeatTimer.Remove();
+
+		if (buttons & LEFT_BUTTON) {
+#define CLICK_REPEAT_PAUSE (500)
+			clickRepeatTimer.Set(CLICK_REPEAT_PAUSE, true, ClickRepeat, nullptr);
+		}
+	}
 
 	bool moveCursorNone = false;
 

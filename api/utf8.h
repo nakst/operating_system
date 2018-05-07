@@ -21,12 +21,14 @@
 }
 
 int utf8_length_char(char *character) {
+	if (!character) OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 	int value;
 	UTF8_LENGTH_CHAR(character, value);
 	return value;
 }
 
 int utf8_value(char *character) {
+	if (!character) OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 	int length;
 	UTF8_LENGTH_CHAR(character, length);
 
@@ -56,6 +58,7 @@ int utf8_value(char *character) {
 }
 
 int utf8_encode(int value, char *buffer) {
+	if (!buffer) OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 	if (value < (1 << 7)) {
 		if (buffer) {
 			buffer[0] = value & 0x7F;
@@ -113,6 +116,7 @@ int utf8_encode(int value, char *buffer) {
 }
 
 char *utf8_advance(char *string) {
+	if (!string) OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 	int length;
 	UTF8_LENGTH_CHAR(string, length);
 
@@ -123,6 +127,7 @@ char *utf8_advance(char *string) {
 }
 
 char *utf8_retreat(char *string) {
+	if (!string) OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 	// Keep going backwards until we find a non continuation character
 	do string--;
 	while (((*string) & 0xC0) == 0x80);
