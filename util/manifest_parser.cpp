@@ -335,10 +335,18 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "\t.accessBytes = 0,\n");
 			}
 
+			if (FindProperty("radio", &value)) {
+				fprintf(output, "\t.radio = (char *) %.*s,\n", value.bytes, value.text);
+				fprintf(output, "\t.radioBytes = %d,\n", value.bytes - 2);
+			} else {
+				fprintf(output, "\t.radio = (char *) \"\",\n");
+				fprintf(output, "\t.radioBytes = 0,\n");
+			}
+
 			if (FindProperty("checkable", &value)) {
 				fprintf(output, "\t.checkable = %.*s,\n", value.bytes, value.text);
 			} else {
-				fprintf(output, "\t.checkable = false,\n");
+				fprintf(output, "\t.checkable = %s,\n", FindProperty("radio", &value) ? "true" : "false");
 			}
 
 			if (FindProperty("defaultCheck", &value)) {
@@ -352,6 +360,12 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			} else {
 				// fprintf(output, "\t.defaultDisabled = %s,\n", FindProperty("callback", &value) ? "false" : "true");
 				fprintf(output, "\t.defaultDisabled = %s,\n", "false");
+			}
+
+			if (FindProperty("radioCheck", &value)) {
+				fprintf(output, "\t.radioCheck = %.*s,\n", value.bytes, value.text);
+			} else {
+				fprintf(output, "\t.radioCheck = %s,\n", FindProperty("radio", &value) ? "true" : "false");
 			}
 
 			if (FindProperty("dangerous", &value)) {

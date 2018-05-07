@@ -57,6 +57,7 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Multi-line.
 // 	- Using the textbox context menu with OS_TEXTBOX_STYLE_COMMAND doesn't work.
 // 	- Right-click on existing selection is broken.
+// 	- Selection shown after lost focus.
 // TODO Menu icons.
 // TODO Multiple-cell positions.
 // TODO Wrapping.
@@ -143,6 +144,7 @@ static UIImage buttonDangerousFocused	= {{7 * 9 + 0, 7 * 9 + 8, 88, 109}, {7 * 9
 static UIImage buttonDefault		= {{8 * 9 + 0, 8 * 9 + 8, 88, 109}, {8 * 9 + 3, 8 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 
 static UIImage checkboxHover		= {{48, 61, 242, 255}, {48, 49, 242, 243}};
+static UIImage radioboxHover		= {{48, 61, 242 - 13, 255 - 13}, {48, 49, 242 - 13, 243 - 13}};
 
 static UIImage textboxNormal		= {{52, 61, 166, 189}, {55, 58, 169, 186}};
 static UIImage textboxFocus		= {{11 + 52, 11 + 61, 166, 189}, {11 + 55, 11 + 58, 169, 186}};
@@ -494,6 +496,7 @@ struct Control : GUIObject {
 
 	uint32_t focusable : 1,
 		checkable : 1,
+		radioCheck : 1,
 
 		noAnimations : 1,
 		noDisabledTextColorChange : 1,
@@ -845,6 +848,7 @@ void OSSetControlCommand(OSObject _control, OSCommand *_command) {
 	control->command = _command;
 	control->commandItem.thisItem = control;
 	control->checkable = _command->checkable;
+	control->radioCheck = _command->radioCheck;
 
 	if (control->window) {
 		CommandWindow *command = control->window->commands + _command->identifier;
@@ -1215,17 +1219,23 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				}
 
 				textColor = control->textColor ? control->textColor : TEXT_COLOR_DEFAULT;
-				textShadowColor = 0xFFFFFF - textColor;
+				textShadowColor = 0xFFFFFFFF - textColor;
 
 				if (control->disabled && !control->noDisabledTextColorChange) {
+#if 0
 					textColor ^= TEXT_COLOR_DISABLED;
 					textShadowColor = TEXT_COLOR_DISABLED_SHADOW;
+#endif
+					textColor &= 0xFFFFFF;
+					textColor |= 0x80000000;
+					textShadowColor &= 0xFFFFFF;
+					textShadowColor |= 0x80000000;
 				}
 
 				if (!control->customTextRendering) {
 					OSRectangle textBounds = control->textBounds;
 
-					if (control->textShadow && !DISABLE_TEXT_SHADOWS && (!control->disabled || control->noDisabledTextColorChange)) {
+					if (control->textShadow && !DISABLE_TEXT_SHADOWS) {
 						OSRectangle bounds = textBounds;
 						bounds.top++; bounds.bottom++; 
 						// bounds.left++; bounds.right++;
@@ -1997,9 +2007,16 @@ static void IssueCommand(Control *control, OSCommand *command = nullptr, Window 
 	}
 
 	bool checkable = control ? control->checkable : command->checkable;
+	bool radioCheck = control ? control->radioCheck : command->radioCheck;
 	bool isChecked = control ? control->isChecked : window->commands[command->identifier].checked;
 
-	if (checkable) {
+	if (radioCheck) {
+		isChecked = true;
+
+		if (command) {
+			OSCheckCommand(window, command, isChecked);
+		}
+	} else if (checkable) {
 		// Update the checked state.
 		isChecked = !isChecked;
 
@@ -2127,7 +2144,7 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 
 		if (control->checkable) {
 			control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
-			control->icon = &checkboxHover;
+			control->icon = control->radioCheck ? &radioboxHover : &checkboxHover;
 			control->iconHasVariants = true;
 			control->iconHasFocusVariant = true;
 			control->additionalCheckedIcons = true;
@@ -3855,6 +3872,29 @@ void OSDisableCommand(OSObject _window, OSCommand *_command, bool disabled) {
 
 void OSCheckCommand(OSObject _window, OSCommand *_command, bool checked) {
 	Window *window = (Window *) _window;
+
+	if (_command->radioCheck) {
+		for (uintptr_t i = 0; i < _commandCount; i++) {
+			if ((int) i == _command->identifier) {
+				continue;
+			}
+
+			if (_command->radioBytes != _commands[i]->radioBytes ||
+					0 != OSCompareBytes(_command->radio, _commands[i]->radio, _command->radioBytes)) {
+				continue;
+			}
+
+			CommandWindow *command = window->commands + i;
+			command->checked = false;
+			LinkedItem<Control> *item = command->controls.firstItem;
+
+			while (item) {
+				item->thisItem->isChecked = false;
+				RepaintControl(item->thisItem);
+				item = item->nextItem;
+			}
+		}
+	} 
 
 	CommandWindow *command = window->commands + _command->identifier;
 	command->checked = checked;

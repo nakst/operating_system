@@ -27,6 +27,19 @@ callback = ToggleEnabled;
 isDisabled = false;
 defaultCheck = true;
 
+[command r1]
+label = "R1";
+radio = "RadioGroup";
+
+[command r2]
+label = "R2";
+radio = "RadioGroup";
+defaultCheck = true;
+
+[command r3]
+label = "R3";
+radio = "RadioGroup";
+
 [command commandDeleteEverything]
 label = "Delete Everything";
 dangerous = true;

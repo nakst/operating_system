@@ -835,10 +835,13 @@ extern "C" void ProgramEntry() {
 	{
 		OSObject textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);
 		// OSDebugGUIObject(textbox);
-		OSObject grid = OSCreateGrid(2, 2, OS_GRID_STYLE_GROUP_BOX);
+		OSObject grid = OSCreateGrid(2, 5, OS_GRID_STYLE_GROUP_BOX);
 		OSAddGrid(content, 1, 4, grid, OS_CELL_H_RIGHT);
 		OSAddControl(grid, 0, 0, textbox, OS_CELL_H_LEFT);
 		OSAddControl(grid, 0, 1, OSCreateButton(actionToggleEnabled, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_LEFT);
+		OSAddControl(grid, 0, 2, OSCreateButton(r1, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_LEFT);
+		OSAddControl(grid, 0, 3, OSCreateButton(r2, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_LEFT);
+		OSAddControl(grid, 0, 4, OSCreateButton(r3, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_LEFT);
 	}
 
 #if 0

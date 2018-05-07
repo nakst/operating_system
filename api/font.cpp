@@ -149,7 +149,10 @@ inline static void DrawStringPixel(int oX, int oY, void *bitmap, size_t stride, 
 			(oX) * 4 + 
 			(oY) * stride);
 
-	if (pixel == 0xFFFFFF) {
+	uint8_t alpha = (textColor & 0xFF000000) >> 24;
+	if (!alpha) alpha = 0xFF;
+
+	if (pixel == 0xFFFFFF && alpha == 0xFF) {
 		*destination = 0xFF000000 | textColor;
 	} else if (pixel) {
 		uint32_t original;
@@ -162,9 +165,9 @@ inline static void DrawStringPixel(int oX, int oY, void *bitmap, size_t stride, 
 			original = backgroundColor;
 		}
 
-		uint32_t ra = (pixel & 0x000000FF) >> 0;
-		uint32_t ga = (pixel & 0x0000FF00) >> 8;
-		uint32_t ba = (pixel & 0x00FF0000) >> 16;
+		uint32_t ra = (((pixel & 0x000000FF) >> 0) * alpha) >> 8;
+		uint32_t ga = (((pixel & 0x0000FF00) >> 8) * alpha) >> 8;
+		uint32_t ba = (((pixel & 0x00FF0000) >> 16) * alpha) >> 8;
 		uint32_t r2 = (255 - ra) * ((original & 0x000000FF) >> 0);
 		uint32_t g2 = (255 - ga) * ((original & 0x0000FF00) >> 8);
 		uint32_t b2 = (255 - ba) * ((original & 0x00FF0000) >> 16);

@@ -820,9 +820,13 @@ typedef struct OSCommand {
 	char *access;
 	size_t accessBytes;
 
+	char *radio;
+	size_t radioBytes;
+
 	uint8_t checkable : 1, 
 		defaultCheck : 1, 
 		defaultDisabled : 1,
+		radioCheck : 1,
 		dangerous : 1;
 
 	uint16_t iconID;
