@@ -119,11 +119,11 @@ static int MeasureStringWidth(char *string, size_t stringLength, int size, Font 
 	return totalWidth;
 }
 
-static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle &invalidatedRegion, OSLinearBuffer &linearBuffer, int lineHeight, void *bitmap) {
-	for (int y = 1; y < lineHeight - 1; y++) {
-		int oY = outputPosition.y - lineHeight + y + 4;
+static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle &invalidatedRegion, OSLinearBuffer &linearBuffer, int lineHeight, void *bitmap, int descent) {
+	for (int y = 1; y < lineHeight; y++) {
+		int oY = outputPosition.y - lineHeight + y + descent;
 
-		if (oY < region.top) continue;
+		if (oY < region.top - 1) continue;
 		if (oY >= region.bottom) break;
 
 		if (oY < invalidatedRegion.top) invalidatedRegion.top = oY;
@@ -181,6 +181,11 @@ inline static void DrawStringPixel(int oX, int oY, void *bitmap, size_t stride, 
 
 		*destination = result;
 	}
+}
+
+static int GetLineHeight(Font &font, int size) {
+	FT_Set_Char_Size(font, 0, size * 64, 100, 100);
+	return font->size->metrics.height >> 6; 
 }
 
 static OSError DrawString(OSHandle surface, OSRectangle region, 
@@ -327,9 +332,9 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 		if (selected) {
 			for (int y = 1; y < lineHeight; y++) {
-				int oY = outputPosition.y - lineHeight + y + 4;
+				int oY = outputPosition.y - lineHeight + y + (lineHeight - ascent);
 
-				if (oY < region.top) continue;
+				if (oY < region.top - 1) continue;
 				if (oY >= region.bottom) break;
 
 				if (oY < invalidatedRegion.top) invalidatedRegion.top = oY;
@@ -467,7 +472,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 		skipCharacter:
 		if (characterIndex == caretIndex2 && caretIndex != (uintptr_t) -1 && !caretBlink) {
-			DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight, bitmap);
+			DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight, bitmap, lineHeight - ascent);
 		}
 
 		outputPosition.x += advanceWidth;
@@ -478,7 +483,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	}
 
 	if (characterIndex == caretIndex2 && caretIndex != (uintptr_t) -1 && !caretBlink) {
-		DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight, bitmap);
+		DrawCaret(outputPosition, region, invalidatedRegion, linearBuffer, lineHeight, bitmap, lineHeight - ascent);
 	}
 
 	if (coordinate.x >= outputPosition.x && !actuallyDraw && characterIndex) {

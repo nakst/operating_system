@@ -2040,7 +2040,7 @@ OSObject OSCreateTextbox(OSTextboxStyle style) {
 	control->textAlign = OS_DRAW_STRING_VALIGN_CENTER | OS_DRAW_STRING_HALIGN_LEFT;
 	control->textSize = style == OS_TEXTBOX_STYLE_LARGE ? FONT_SIZE * 2 : FONT_SIZE;
 	control->textColor = TEXT_COLOR_DEFAULT;
-	control->preferredHeight = 23 - 9 + control->textSize;
+	control->preferredHeight = GetLineHeight(fontRegular, control->textSize) + 5;
 	control->style = style;
 	control->rightClickMenu = osMenuTextboxContext;
 

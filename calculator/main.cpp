@@ -3,8 +3,6 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/calculator.manifest.h"
 
-// TODO Selection extends out of top of textbox
-
 struct Instance {
 	OSObject textbox;
 };
