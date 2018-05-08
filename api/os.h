@@ -954,6 +954,7 @@ typedef struct OSListViewColumn {
 #define OS_CREATE_MENUBAR (1)
 #define OS_CREATE_SUBMENU (2)
 #define OS_CREATE_MENU_BLANK (4)
+#define OS_CREATE_MENU_FROM_MENUBAR (8)
 #define OS_CREATE_MENU_AT_SOURCE (OS_MAKE_POINT(-1, -1))
 #define OS_CREATE_MENU_AT_CURSOR (OS_MAKE_POINT(-2, -1))
 

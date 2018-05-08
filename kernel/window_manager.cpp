@@ -9,6 +9,8 @@
 #define MIDDLE_BUTTON (2)
 #define RIGHT_BUTTON (4)
 
+// TODO Don't send key released messages if the focused window has changed.
+
 struct Window {
 	void Update(bool fromUser);
 	void SetCursorStyle(OSCursorStyle style);

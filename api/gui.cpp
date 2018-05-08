@@ -44,15 +44,13 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 
 // TODO Keyboard controls.
 // 	- Access keys.
-// 	- Menus and list view navigation.
-// 	- Change "default command" to be a special case of dialog box keyboard controls.
-// 	- FindObjectInGrid sometimes gets stuck in a loop?
-// TODO Click repeat.
-// 	- Scroll-selections in textboxes and list views.
+// 	- List view navigation.
+// 	- Change "default command" to be a special case of dialog box and menu keyboard controls.
+// TODO Scroll-selections in textboxes and list views.
 // TODO Textboxes.
 // 	- Undo/redo.
 // 	- Multi-line.
-// 	- Using the textbox context menu with OS_TEXTBOX_STYLE_COMMAND doesn't work.
+// 	- Limit the length to 1024 characters?
 // TODO Multiple-cell positions.
 // TODO Wrapping.
 
@@ -148,7 +146,7 @@ static UIImage textboxCommand		= {{33 + 52, 33 + 61, 166, 189}, {33 + 55, 33 + 5
 static UIImage textboxCommandHover	= {{44 + 52, 44 + 61, 166, 189}, {44 + 55, 44 + 58, 169, 186}};
 
 static UIImage gridBox 			= {{1, 7, 17, 23}, {3, 4, 19, 20}};
-static UIImage menuBox 			= {{1, 32, 1, 15}, {28, 30, 4, 6}};
+static UIImage menuBox 			= {{1, 31, 1, 14}, {28, 30, 4, 6}};
 static UIImage menuBoxBlank		= {{22, 27, 16, 24}, {24, 25, 19, 20}};
 static UIImage menubarBackground	= {{34, 40, 124, 145}, {35, 38, 128, 144}, OS_DRAW_MODE_STRECH};
 static UIImage dialogAltAreaBox		= {{18, 19, 17, 22}, {18, 19, 21, 22}};
@@ -456,7 +454,8 @@ struct GUIObject : APIObject {
 		suggestWidth : 1, // Prevent recalculation of the preferred[Width/Height]
 		suggestHeight : 1, // on MEASURE messages with grids.
 		relayout : 1, repaint : 1,
-		tabStop : 1, disabled : 1;
+		tabStop : 1, disabled : 1,
+		isMenubar : 1;
 };
 
 #define DESCENDENT_REPAINT  (1)
@@ -652,7 +651,7 @@ struct Window : GUIObject {
 
 	struct Grid *hoverGrid;
 
-	bool destroyed, created;
+	bool destroyed, created, activated;
 
 	int width, height;
 	int minimumWidth, minimumHeight;
@@ -671,10 +670,15 @@ struct Window : GUIObject {
 struct OpenMenu {
 	Window *window;
 	Control *source;
+	bool fromMenubar;
 };
 
 static OpenMenu openMenus[8];
 static unsigned openMenuCount;
+static bool navigateMenuMode;
+static bool navigateMenuUsedKey;
+static MenuItem *navigateMenuItem;
+static MenuItem *navigateMenuFirstItem;
 
 struct GUIAllocationBlock {
 	size_t allocationCount;
@@ -1128,8 +1132,11 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				pressed = ((control->window->pressed == control && (control->window->hover == control || control->pressedByKeyboard)) 
 						|| (control->window->focus == control && !control->hasFocusedBackground) || menuSource) && !disabled;
 				hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled;
-				focused = (control->window->focus == control && control->hasFocusedBackground) && !pressed && !hover && !disabled && !isDefaultCommand;
+				focused = ((control->window->focus == control || (navigateMenuItem == control && navigateMenuMode)) 
+						&& control->hasFocusedBackground) && !pressed && !hover && (!disabled || (navigateMenuItem == control && navigateMenuMode)) && !isDefaultCommand;
 				normal = !hover && !pressed && !disabled && !focused;
+
+				if (focused) disabled = false;
 
 				control->current1 = ((normal   ? 15 : 0) - control->from1) * control->animationStep / control->finalAnimationStep + control->from1;
 				control->current2 = ((hover    ? 15 : 0) - control->from2) * control->animationStep / control->finalAnimationStep + control->from2;
@@ -1650,7 +1657,13 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		control->textBounds.right -= 6;
 		result = OS_CALLBACK_HANDLED;
 	} else if (message->type == OS_MESSAGE_CARET_BLINK) {
-		control->caretBlink = !control->caretBlink;
+		if (control->window->caretBlinkPause) {
+			control->window->caretBlinkPause--;
+			control->caretBlink = false;
+		} else {
+			control->caretBlink = !control->caretBlink;
+		}
+
 		result = OS_CALLBACK_HANDLED;
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_END_FOCUS) {
@@ -1998,7 +2011,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		if (caretX < 0) {
 			control->scrollX += caretX;
 		} else if (caretX > controlWidth) {
-			control->scrollX += caretX - controlWidth + 1;
+			control->scrollX += caretX - controlWidth;
 		} else if (fullWidth - control->scrollX < controlWidth && fullWidth > controlWidth) {
 			control->scrollX = fullWidth - controlWidth;
 		} else if (fullWidth <= controlWidth) {
@@ -2204,6 +2217,20 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 	return control;
 }
 
+static int FindObjectInGrid(Grid *grid, OSObject object) {
+	if (grid->type != API_OBJECT_GRID) {
+		OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
+	}
+
+	for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
+		if (grid->objects[i] == object && object) {
+			return i;
+		}
+	}
+
+	return grid->columns * grid->rows;
+}
+
 OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	MenuItem *control = (MenuItem *) object;
 	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
@@ -2216,15 +2243,49 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 			control->textBounds.right -= 4;
 			result = OS_CALLBACK_HANDLED;
 		}
-	} else if ((message->type == OS_MESSAGE_CLICKED) || (message->type == OS_MESSAGE_START_HOVER && openMenuCount)) {
-		if (control->item.type == OSMenuItem::SUBMENU) {
-			if (message->type != OS_MESSAGE_CLICKED || !openMenuCount) {
-				OSCreateMenu((OSMenuSpecification *) control->item.value, control, OS_CREATE_MENU_AT_SOURCE, 
-						control->menubar ? OS_FLAGS_DEFAULT : OS_CREATE_SUBMENU);
-			}
+	} else if (message->type == OS_MESSAGE_END_HOVER) {
+		if (navigateMenuItem == control) {
+			navigateMenuItem = nullptr;
+		}
+	} else if (message->type == OS_MESSAGE_CLICKED 
+			|| message->type == OS_MESSAGE_START_HOVER || message->type == OS_MESSAGE_START_FOCUS) {
+		if (control->window->hover != control) {
+			OSMessage m;
+			m.type = OS_MESSAGE_END_HOVER;
+			OSSendMessage(control->window->hover, &m);
+			control->window->hover = control;
+		}
 
-			if (message->type != OS_MESSAGE_START_HOVER) result = OS_CALLBACK_HANDLED;
+		if (navigateMenuItem) {
+			OSAnimateControl(navigateMenuItem, false);
+		}
+
+		bool openMenu = control->item.type == OSMenuItem::SUBMENU;
+
+		if (message->type == OS_MESSAGE_START_HOVER && !openMenuCount) {
+			openMenu = false;
+		} else {
+			navigateMenuMode = true;
+			navigateMenuItem = control;
+		}
+
+		if (openMenuCount && openMenus[openMenuCount - 1].source == control) {
+			openMenu = false;
+		}
+
+		if (message->type == OS_MESSAGE_START_FOCUS && !control->menubar) {
+			openMenu = false;
+		}
+
+		if (openMenu) {
+			OSCreateMenu((OSMenuSpecification *) control->item.value, control, OS_CREATE_MENU_AT_SOURCE, 
+					control->menubar ? OS_CREATE_MENU_FROM_MENUBAR : OS_CREATE_SUBMENU);
+
 			OSAnimateControl(control, true);
+
+			if (message->type == OS_MESSAGE_CLICKED) {
+				result = OS_CALLBACK_HANDLED;
+			}
 		}
 	} else if (message->type == OS_MESSAGE_CUSTOM_PAINT && !control->menubar) {
 		int xOffset = 4, yOffset = 2;
@@ -2262,6 +2323,8 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	control->backgrounds = menuItemBackgrounds;
 	control->ignoreActivationClicks = menubar;
 	control->noAnimations = true;
+	control->hasFocusedBackground = true;
+	control->tabStop = true;
 
 	control->item = item;
 	control->menubar = menubar;
@@ -2574,16 +2637,6 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 		message.type = OS_MESSAGE_PARENT_UPDATED;
 		OSSendMessage(control, &message);
 	}
-}
-
-static uintptr_t FindObjectInGrid(Grid *grid, OSObject object) {
-	for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
-		if (grid->objects[i] == object && object) {
-			return i;
-		}
-	}
-
-	return grid->columns * grid->rows;
 }
 
 static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *message) {
@@ -2960,6 +3013,7 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 				response = OS_CALLBACK_NOT_HANDLED;
 			} else {
 				if (loopAround && i == end) {
+					loopAround = false;
 					i = start;
 				}
 
@@ -4444,19 +4498,23 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_ACTIVATED: {
-			for (int i = 0; i < 12; i++) {
-				if (i == 7 || (window->flags & OS_CREATE_WINDOW_MENU)) continue;
-				OSDisableControl(window->root->objects[i], false);
-			}
+			if (!window->activated) {
+				for (int i = 0; i < 12; i++) {
+					if (i == 7 || (window->flags & OS_CREATE_WINDOW_MENU)) continue;
+					OSDisableControl(window->root->objects[i], false);
+				}
 
-			if (window->lastFocus) {
-				OSMessage message;
-				message.type = OS_MESSAGE_CLIPBOARD_UPDATED;
-				OSSyscall(OS_SYSCALL_GET_CLIPBOARD_HEADER, 0, (uintptr_t) &message.clipboard, 0, 0);
-				OSSendMessage(window->lastFocus, &message);
-			}
+				if (window->lastFocus) {
+					OSMessage message;
+					message.type = OS_MESSAGE_CLIPBOARD_UPDATED;
+					OSSyscall(OS_SYSCALL_GET_CLIPBOARD_HEADER, 0, (uintptr_t) &message.clipboard, 0, 0);
+					OSSendMessage(window->lastFocus, &message);
+				}
 
-			OSSetFocusedControl(window->defaultFocus, false);
+				OSSetFocusedControl(window->defaultFocus, false);
+
+				window->activated = true;
+			}
 		} break;
 
 		case OS_MESSAGE_WINDOW_DEACTIVATED: {
@@ -4471,6 +4529,12 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				message->type = OS_MESSAGE_DESTROY;
 				OSSendMessage(window, message);
 			}
+
+			if (openMenuCount && openMenus[0].window == window) {
+				navigateMenuMode = false;
+			}
+
+			window->activated = false;
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
@@ -4483,16 +4547,132 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_KEY_RELEASED: {
-			GUIObject *control = window->lastFocus;
-			OSSendMessage(control, message);
+			if (navigateMenuMode) {
+				if (message->keyboard.scancode == OS_SCANCODE_ENTER && navigateMenuItem) {
+					window->pressed = nullptr;
+					navigateMenuItem->pressedByKeyboard = false;
+					OSAnimateControl(navigateMenuItem, false);
+					IssueCommand(navigateMenuItem);
+				}
+			} else {
+				GUIObject *control = window->lastFocus;
+				OSSendMessage(control, message);
+			}
 		} break;
 
 		case OS_MESSAGE_KEY_PRESSED: {
+			if (message->keyboard.scancode == OS_SCANCODE_F2 && message->keyboard.alt) {
+				EnterDebugger();
+			}
+
+			if (navigateMenuMode) {
+				if (navigateMenuItem) {
+					RepaintControl(navigateMenuItem);
+				}
+				
+				navigateMenuUsedKey = true;
+
+				if (message->keyboard.scancode == OS_SCANCODE_ESCAPE) {
+					if (window->hasMenuParent) {
+						OSMessage m;
+						m.type = OS_MESSAGE_DESTROY;
+						OSSendMessage(window, &m);
+					} 
+
+					if (openMenuCount <= 1) {
+						navigateMenuMode = false;
+					}
+				} else if (message->keyboard.scancode == OS_SCANCODE_LEFT_ARROW) {
+					if (openMenuCount == 1) {
+						if (((GUIObject *) openMenus[0].source->parent)->isMenubar) {
+							Grid *parent = (Grid *) openMenus[0].source->parent;
+							int i = FindObjectInGrid(parent, openMenus[0].source) - 1;
+
+							if (i == -1) {
+								i += parent->columns;
+							}
+
+							MenuItem *control = (MenuItem *) parent->objects[i];
+							OSCreateMenu((OSMenuSpecification *) control->item.value, control, OS_CREATE_MENU_AT_SOURCE, OS_CREATE_MENU_FROM_MENUBAR);
+						}
+					} else {
+						OSMessage m;
+						m.type = OS_MESSAGE_DESTROY;
+						OSSendMessage(window, &m);
+					}
+				} else if (message->keyboard.scancode == OS_SCANCODE_RIGHT_ARROW) {
+					if (navigateMenuItem && navigateMenuItem->item.type == OSMenuItem::SUBMENU) {
+						OSCreateMenu((OSMenuSpecification *) navigateMenuItem->item.value, navigateMenuItem, OS_CREATE_MENU_AT_SOURCE, OS_CREATE_SUBMENU);
+					} else if (openMenuCount == 1 && ((GUIObject *) openMenus[0].source->parent)->isMenubar) {
+						Grid *parent = (Grid *) openMenus[0].source->parent;
+						int i = FindObjectInGrid(parent, openMenus[0].source) + 1;
+
+						if (i == (int) parent->columns) {
+							i -= parent->columns;
+						}
+
+						MenuItem *control = (MenuItem *) parent->objects[i];
+						OSCreateMenu((OSMenuSpecification *) control->item.value, control, OS_CREATE_MENU_AT_SOURCE, OS_CREATE_MENU_FROM_MENUBAR);
+					}
+				} else if (message->keyboard.scancode == OS_SCANCODE_UP_ARROW) {
+					if (!navigateMenuItem) {
+						navigateMenuItem = navigateMenuFirstItem;
+					}
+
+					Grid *parent = (Grid *) navigateMenuItem->parent;
+
+					do {
+						int i = FindObjectInGrid(parent, navigateMenuItem) - 1;
+
+						if (i == -1) {
+							i += parent->rows;
+						}
+
+						navigateMenuItem = (MenuItem *) parent->objects[i];
+					} while (!navigateMenuItem->tabStop);
+				} else if (message->keyboard.scancode == OS_SCANCODE_DOWN_ARROW) {
+					bool f = false;
+
+					if (!navigateMenuItem) {
+						navigateMenuItem = navigateMenuFirstItem;
+						f = true;
+					}
+
+					Grid *parent = (Grid *) navigateMenuItem->parent;
+
+					do {
+						int i = FindObjectInGrid(parent, navigateMenuItem) + (f ? 0 : 1);
+
+						if (i == (int) parent->rows) {
+							i -= parent->rows;
+						}
+
+						navigateMenuItem = (MenuItem *) parent->objects[i];
+					} while (!navigateMenuItem->tabStop);
+				} else if (message->keyboard.scancode == OS_SCANCODE_ENTER && navigateMenuItem) {
+					window->pressed = navigateMenuItem;
+					navigateMenuItem->pressedByKeyboard = true;
+					OSAnimateControl(navigateMenuItem, true);
+				}
+
+				if (navigateMenuItem) {
+					RepaintControl(navigateMenuItem);
+				}
+
+				break;
+			}
+			
+			if (message->keyboard.scancode == OS_SCANCODE_LEFT_ALT) {
+				if (window->flags & OS_CREATE_WINDOW_WITH_MENUBAR) {
+					navigateMenuUsedKey = true;
+					MenuItem *control = (MenuItem *) ((Grid *) ((Grid *) window->root->objects[7])->objects[0])->objects[0];
+					OSCreateMenu((OSMenuSpecification *) control->item.value, control, OS_CREATE_MENU_AT_SOURCE, OS_CREATE_MENU_FROM_MENUBAR);
+				}
+			}
+
 			if (message->keyboard.scancode == OS_SCANCODE_F4 && message->keyboard.alt) {
 				message->type = OS_MESSAGE_DESTROY;
 				OSSendMessage(window, message);
-			} else if (message->keyboard.scancode == OS_SCANCODE_F2 && message->keyboard.alt) {
-				EnterDebugger();
 			} else if (message->keyboard.scancode == OS_SCANCODE_ESCAPE) {
 				if (window->hasMenuParent || (window->flags & OS_CREATE_WINDOW_DIALOG)) {
 					OSMessage m;
@@ -4540,7 +4720,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 						IssueCommand(nullptr, window->defaultCommand, window);
 					}
 
-					// TODO Keyboard shortcuts and access keys.
+					// TODO Access keys.
 				}
 			}
 		} break;
@@ -4552,6 +4732,14 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					
 					if (openMenus[i].source) {
 						OSAnimateControl(openMenus[i].source, true);
+
+						if (i >= 1) {
+							navigateMenuItem = (MenuItem *) openMenus[i].source;
+						} else {
+							navigateMenuItem = nullptr;
+							navigateMenuMode = false;
+							navigateMenuUsedKey = false;
+						}
 					}
 
 					openMenuCount = i;
@@ -4771,13 +4959,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				if (window->caretBlinkStep >= window->timerHz / CARET_BLINK_HZ) {
 					window->caretBlinkStep = 0;
 
-					if (window->caretBlinkPause) {
-						window->caretBlinkPause--;
-					} else {
-						OSMessage message;
-						message.type = OS_MESSAGE_CARET_BLINK;
-						OSSendMessage(window->lastFocus, &message);
-					}
+					OSMessage message;
+					message.type = OS_MESSAGE_CARET_BLINK;
+					OSSendMessage(window->lastFocus, &message);
 				}
 			}
 		} break;
@@ -5025,11 +5209,17 @@ void OSShowDialogAlert(char *title, size_t titleBytes,
 OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, OSPoint position, unsigned flags) {
 	Control *source = (Control *) _source;
 
+	if (source) {
+		RepaintControl(source);
+	}
+
 	size_t itemCount = menuSpecification->itemCount;
 	bool menubar = flags & OS_CREATE_MENUBAR;
 
 	Control *items[itemCount];
 	int width = 0, height = 7;
+
+	MenuItem *firstMenuItem = nullptr;
 
 	for (uintptr_t i = 0; i < itemCount; i++) {
 		switch (menuSpecification->items[i].type) {
@@ -5040,6 +5230,7 @@ OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, 
 			case OSMenuItem::SUBMENU:
 			case OSMenuItem::COMMAND: {
 				items[i] = (Control *) CreateMenuItem(menuSpecification->items[i], menubar);
+				if (!firstMenuItem) firstMenuItem = (MenuItem *) items[i];
 			} break;
 
 			default: {} continue;
@@ -5077,6 +5268,8 @@ OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, 
 
 	if (!(flags & OS_CREATE_MENU_BLANK)) {
 		grid = OSCreateGrid(menubar ? itemCount : 1, !menubar ? itemCount : 1, menubar ? OS_GRID_STYLE_MENUBAR : OS_GRID_STYLE_MENU);
+		((Grid *) grid)->tabStop = false;
+		((Grid *) grid)->isMenubar = menubar;
 	}
 	
 	OSObject returnValue = grid;
@@ -5097,7 +5290,7 @@ OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, 
 				y = source->bounds.top;
 			} else {
 				x = source->bounds.left;
-				y = source->bounds.bottom;
+				y = source->bounds.bottom - 2;
 			}
 
 			OSRectangle bounds;
@@ -5128,7 +5321,19 @@ OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, 
 
 		openMenus[openMenuCount].source = source;
 		openMenus[openMenuCount].window = window;
+		openMenus[openMenuCount].fromMenubar = flags & OS_CREATE_MENU_FROM_MENUBAR;
 		openMenuCount++;
+
+		if (!(flags & OS_CREATE_MENU_BLANK)) {
+			if (navigateMenuMode && navigateMenuUsedKey) {
+				navigateMenuItem = firstMenuItem;
+			} else {
+				navigateMenuMode = true;
+				navigateMenuItem = nullptr;
+			}
+		}
+
+		navigateMenuFirstItem = firstMenuItem;
 
 		if (grid) {
 			OSSetRootGrid(window, grid);
@@ -5140,6 +5345,12 @@ OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, 
 	for (uintptr_t i = 0; i < itemCount; i++) {
 		OSAddControl(grid, menubar ? i : 0, !menubar ? i : 0, items[i], OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	}
+
+#if 0
+	if (!menubar) {
+		OSSetFocusedControl(items[0], true);
+	}
+#endif
 
 	return returnValue;
 }

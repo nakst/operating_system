@@ -842,6 +842,7 @@ extern "C" void ProgramEntry() {
 		OSAddControl(grid, 0, 2, OSCreateButton(r1, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_LEFT);
 		OSAddControl(grid, 0, 3, OSCreateButton(r2, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_LEFT);
 		OSAddControl(grid, 0, 4, OSCreateButton(r3, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_LEFT);
+		OSSetText(textbox, OSLiteral("abcdefghijklmnopqrstuvwxyz"), OS_RESIZE_MODE_IGNORE);
 	}
 
 #if 0
@@ -861,7 +862,6 @@ extern "C" void ProgramEntry() {
 
 	OSDisableCommand(window, actionToggleEnabled, false);
 	OSDisableCommand(window, actionOK, false);
-
 
 	OSProcessMessages();
 }
