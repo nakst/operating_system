@@ -1958,6 +1958,10 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 				if (response == OS_CALLBACK_REJECTED) {
 					CreateString(control->previousString.buffer, control->previousString.bytes, &control->text, control->previousString.characters);
+
+					OSMessage m;
+					m.type = OS_MESSAGE_TEXT_UPDATED;
+					OSSendMessage(control, &m);
 				}
 
 				OSRemoveFocusedControl(control->window, true);
@@ -4556,7 +4560,15 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				}
 			} else {
 				GUIObject *control = window->lastFocus;
-				OSSendMessage(control, message);
+				OSCallbackResponse response = OSSendMessage(control, message);
+
+				if (response == OS_CALLBACK_NOT_HANDLED && message->keyboard.scancode == OS_SCANCODE_LEFT_ALT) {
+					if (window->flags & OS_CREATE_WINDOW_WITH_MENUBAR) {
+						navigateMenuUsedKey = true;
+						MenuItem *control = (MenuItem *) ((Grid *) ((Grid *) window->root->objects[7])->objects[0])->objects[0];
+						OSCreateMenu((OSMenuSpecification *) control->item.value, control, OS_CREATE_MENU_AT_SOURCE, OS_CREATE_MENU_FROM_MENUBAR);
+					}
+				}
 			}
 		} break;
 
@@ -4662,14 +4674,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				break;
 			}
 			
-			if (message->keyboard.scancode == OS_SCANCODE_LEFT_ALT) {
-				if (window->flags & OS_CREATE_WINDOW_WITH_MENUBAR) {
-					navigateMenuUsedKey = true;
-					MenuItem *control = (MenuItem *) ((Grid *) ((Grid *) window->root->objects[7])->objects[0])->objects[0];
-					OSCreateMenu((OSMenuSpecification *) control->item.value, control, OS_CREATE_MENU_AT_SOURCE, OS_CREATE_MENU_FROM_MENUBAR);
-				}
-			}
-
 			if (message->keyboard.scancode == OS_SCANCODE_F4 && message->keyboard.alt) {
 				message->type = OS_MESSAGE_DESTROY;
 				OSSendMessage(window, message);

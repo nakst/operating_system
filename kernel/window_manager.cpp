@@ -10,6 +10,7 @@
 #define RIGHT_BUTTON (4)
 
 // TODO Don't send key released messages if the focused window has changed.
+// TODO Prevent accessing the window's surface during a resize.
 
 struct Window {
 	void Update(bool fromUser);

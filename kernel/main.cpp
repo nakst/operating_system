@@ -1,7 +1,5 @@
-// Timing problems:
-// 	- Qemu's timer (sometimes) runs too slow on SMP.
-//
 // TODO Reduce memory usage.
+// TODO Prevent Meltdown/Spectre exploits.
 
 #include "kernel.h"
 #define IMPLEMENTATION
