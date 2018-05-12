@@ -1,4 +1,4 @@
-// TODO Doesn't work 100% of the time on VirtualBox.
+// TODO Doesn't work 100% of the time on VirtualBox (or qemu!!).
 // 	Timeout related things happen.
 // 	-> Setting AHCI_COMMAND_COUNT to 1 seems to fix it?
 // 	-> Nope. Using ATA for now with VirtualBox...

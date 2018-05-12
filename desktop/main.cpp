@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 #define WALLPAPER ("/OS/Sample Images/Flower.jpg")
-#define FIRST_PROGRAM ("File Manager")
+#define FIRST_PROGRAM ("/OS/lua.esx")
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"

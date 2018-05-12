@@ -53,6 +53,7 @@ extern "C" void OSInitialiseAPI() {
 	osSystemMessages = &_osSystemMessages;
 
 	OSInitialiseGUI();
+	InitialiseCStandardLibrary();
 
 	OSMessage m = {};
 	m.type = OS_MESSAGE_PROCESS_STARTED;

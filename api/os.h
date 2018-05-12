@@ -1245,7 +1245,8 @@ typedef struct FILE {
 	uint64_t seekToEndBeforeWrites : 1,
 		 endOfFile : 1,
 		 error : 1,
-		 temporary : 1;
+		 temporary : 1,
+		 virtualFile : 1;
 } FILE;
 
 extern int errno;
@@ -1282,6 +1283,7 @@ OS_EXTERN_C int isalnum(int c);
 OS_EXTERN_C int iscntrl(int c);
 OS_EXTERN_C int isgraph(int c);
 OS_EXTERN_C int islower(int c);
+OS_EXTERN_C int isprint(int c);
 OS_EXTERN_C int ispunct(int c);
 OS_EXTERN_C int isupper(int c);
 OS_EXTERN_C int isxdigit(int c);
@@ -1330,6 +1332,8 @@ OS_EXTERN_C void (*signal(int sig, void (*func)(int)))(int);
 OS_EXTERN_C double sin(double x);
 OS_EXTERN_C double sinh(double x);
 OS_EXTERN_C int snprintf(char *str, size_t size, const char *format, ...);
+OS_EXTERN_C int sprintf(char *str, const char *format, ...);
+OS_EXTERN_C int printf(const char *format, ...);
 OS_EXTERN_C void srand(unsigned int seed);
 OS_EXTERN_C int strcoll(const char *s1, const char *s2);
 OS_EXTERN_C char *strerror(int errnum);

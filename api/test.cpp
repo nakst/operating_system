@@ -864,6 +864,23 @@ extern "C" void ProgramEntry() {
 	CreateList(content);
 
 	OSPrint("%F, %F, %F, %F, %F, %F\n", floor(2.5), floor(-2.5), floor(3), ceil(2.5), ceil(-2.5), ceil(3));
+	OSPrint("sin(3) = %F\n", sin(3));
+
+	{
+		FILE *f = fopen("/ctest.txt", "wb");
+		fputs("hey!", f);
+		fclose(f);
+		f = fopen("/ctest.txt", "rb");
+		char b[16];
+		fgets(b, 16, f);
+		OSPrint("%s\n", OSCStringLength(b), b);
+		fclose(f);
+	}
+
+	{
+		double x = strtod("    -0x12.3aA4P-1", nullptr);
+		OSPrint("x = %F\n", x);
+	}
 
 	OSDisableCommand(window, actionToggleEnabled, false);
 	OSDisableCommand(window, actionOK, false);

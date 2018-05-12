@@ -618,8 +618,27 @@ int rand() {
 int snprintf(char *str, size_t size, const char *format, ...) {
 	va_list arguments;
 	va_start(arguments, format);
-	int x = stbsp_vsnprintf( str, size, format, arguments );
+	int x = stbsp_vsnprintf(str, size, format, arguments );
 	va_end(arguments);
+	return x;
+}
+
+int sprintf(char *str, const char *format, ...) {
+	va_list arguments;
+	va_start(arguments, format);
+	int x = stbsp_vsnprintf(str, 65536, format, arguments );
+	va_end(arguments);
+	return x;
+}
+
+int printf(const char *format, ...) {
+	char *buffer = (char *) OSHeapAllocate(65536, false);
+	va_list arguments;
+	va_start(arguments, format);
+	int x = stbsp_vsnprintf(buffer, 65536, format, arguments );
+	OSPrintDirect(buffer, x);
+	va_end(arguments);
+	OSHeapFree(buffer);
 	return x;
 }
 
@@ -637,6 +656,10 @@ int isgraph(int c) {
 
 int islower(int c) {
 	return c >= 'a' && c <= 'z';
+}
+
+int isprint(int c) {
+	return c >= ' ' && c < 127;
 }
 
 int ispunct(int c) {
@@ -808,6 +831,7 @@ FILE *fopen(const char *path, const char *_mode) {
 }
 
 static void CloseStream(FILE *stream) {
+	if (stream->virtualFile) return;
 	fflush(stream);
 	if (stream->temporary) OSDeleteNode(stream->node.handle);
 	OSCloseHandle(stream->node.handle);
@@ -848,6 +872,10 @@ FILE *tmpfile() {
 }
 
 size_t fread(void *_ptr, size_t size, size_t nmemb, FILE *stream) {
+	size_t per = size;
+
+	if (stream->virtualFile) return 0;
+
 	char *ptr = (char *) _ptr;
 	size *= nmemb;
 
@@ -867,7 +895,7 @@ size_t fread(void *_ptr, size_t size, size_t nmemb, FILE *stream) {
 
 		stream->position += size;
 
-		return result;
+		return result / per;
 	} else {
 		stream->error = true;
 		return 0;
@@ -883,6 +911,13 @@ int fputs(const char *s, FILE *stream) {
 }
 
 size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
+	size_t per = size;
+
+	if (stream->virtualFile) {
+		OSPrintDirect((char *) ptr, size * nmemb);
+		return nmemb;
+	}
+
 	if (stream->seekToEndBeforeWrites) {
 		OSRefreshNodeInformation(&stream->node);
 		stream->position = stream->node.fileSize;
@@ -897,7 +932,7 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
 
 		stream->position += result;
 
-		return result;
+		return result / per;
 	} else {
 		stream->error = true;
 		return 0;
@@ -905,6 +940,7 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
 }
 
 int fseek(FILE *stream, long offset, int whence) {
+	if (stream->virtualFile) return -1;
 	int64_t position = 0;
 
 	if (whence == SEEK_CUR) {
@@ -1047,4 +1083,114 @@ int rename(const char *oldPath, const char *newPath) {
 	OSCloseHandle(oldNode.handle);
 	OSCloseHandle(newDirectory.handle);
 	return 0;
+}
+
+double strtod(const char *nptr, char **endptr) {
+	// TODO errno
+	double result = 0;
+
+	while (isspace(*nptr)) nptr++;
+	bool neg = false, hex = false;
+	if (*nptr == '+') nptr++;
+	else if (*nptr == '-') { neg = true; nptr++; }
+	if (*nptr == '0' && tolower(nptr[1]) == 'x') { hex = true; nptr += 2; }
+
+	if (tolower(nptr[0]) == 'i' && tolower(nptr[1]) == 'n' && tolower(nptr[2]) == 'f') {
+		nptr += 3;
+
+		if (tolower(nptr[0]) == 'i' && tolower(nptr[1]) == 'n' && tolower(nptr[2]) == 'i' && tolower(nptr[3]) == 't' && tolower(nptr[4]) == 'y') {
+			nptr += 5;
+		}
+
+		result = neg ? -INFINITY : INFINITY;
+		goto done;
+	}
+
+	if (tolower(nptr[0]) == 'n' && tolower(nptr[1]) == 'a' && tolower(nptr[2]) == 'n') {
+		nptr += 3;
+		result = NAN;
+		goto done;
+	}
+
+	while ((hex && isxdigit(*nptr)) || isdigit(*nptr)) {
+		result *= hex ? 16 : 10;
+		result += isdigit(*nptr) ? *nptr - '0' : (isupper(*nptr) ? 10 + *nptr - 'A' : 10 + *nptr - 'a');
+		nptr++;
+	}
+
+	if (*nptr == '.') {
+		nptr++;
+		double fraction = 0, reduce = 1;
+
+		while ((hex && isxdigit(*nptr)) || isdigit(*nptr)) {
+			fraction *= hex ? 16 : 10;
+			fraction += isdigit(*nptr) ? *nptr - '0' : (isupper(*nptr) ? 10 + *nptr - 'A' : 10 + *nptr - 'a');
+			reduce *= hex ? 16 : 10;
+			nptr++;
+		}
+
+		result += fraction / reduce;
+	}
+
+	if ((hex && tolower(*nptr) == 'p') || (!hex && tolower(*nptr) == 'e')) {
+		nptr++;
+		long int exponent = strtol(nptr, (char **) &nptr, hex ? 2 : 10);
+		result *= pow(hex ? 2 : 10, exponent);
+	}
+
+	done:;
+	if (endptr) *endptr = (char *) nptr;
+	return result;
+}
+
+// ----------- Time function stubs vvvvvvv
+
+clock_t clock() {
+	return (clock_t) -1;
+}
+
+double difftime(time_t t1, time_t t2) {
+	return (double) (t1 - t2);
+}
+
+time_t time(time_t *tloc) {
+	(void) tloc;
+	static time_t t = 0;
+	return ++t;
+}
+
+size_t strftime(char *s, size_t max, const char *format, const struct tm *tm) {
+	(void) max;
+	(void) format;
+	(void) tm;
+	s[0] = 0;
+	return 0;
+}
+
+time_t mktime(struct tm *tm) {
+	(void) tm;
+	return (clock_t) -1;
+}
+
+static struct tm stubTime;
+
+struct tm *localtime(const time_t *time) {
+	(void) time;
+	return &stubTime;
+}
+
+struct tm *gmtime(const time_t *time) {
+	(void) time;
+	return &stubTime;
+}
+
+// ----------- Time function stubs ^^^^^^^
+
+static void InitialiseCStandardLibrary() {
+	stdin = (FILE *) OSHeapAllocate(sizeof(FILE), true);
+	stdout = (FILE *) OSHeapAllocate(sizeof(FILE), true);
+	stderr = (FILE *) OSHeapAllocate(sizeof(FILE), true);
+	stdin->virtualFile = true;
+	stdout->virtualFile = true;
+	stderr->virtualFile = true;
 }
