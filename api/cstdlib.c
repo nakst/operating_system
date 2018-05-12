@@ -1,3 +1,9 @@
+int errno; // TODO Thread-local storage.
+
+FILE *stdin;
+FILE *stdout;
+FILE *stderr;
+
 void *memset(void *s, int c, size_t n) {
 	uint8_t *s8 = (uint8_t *) s;
 	for (uintptr_t i = 0; i < n; i++) {
@@ -56,6 +62,36 @@ void free(void *ptr) {
 double fabs(double x) {
 	if (x < 0) 	return 0 - x;
 	else		return x;
+}
+
+double ceil(double x) {
+	if (x == INFINITY || x == -INFINITY || x == NAN) return x;
+
+	if (x < 0) {
+		int64_t truncate = (int64_t) x;
+		return truncate;
+	} else if (x > 0) {
+		int64_t truncate = (int64_t) x;
+		if ((double) truncate == x) return x;
+		return truncate + 1;
+	} else {
+		return x;
+	}
+}
+
+double floor(double x) {
+	if (x == INFINITY || x == -INFINITY || x == NAN) return x;
+
+	if (x < 0) {
+		int64_t truncate = (int64_t) x;
+		if ((double) truncate == x) return x;
+		return truncate - 1;
+	} else if (x > 0) {
+		int64_t truncate = (int64_t) x;
+		return truncate;
+	} else {
+		return x;
+	}
 }
 
 int abs(int n) {
@@ -541,4 +577,474 @@ int isalpha(int c) {
 
 int isdigit(int c) {
 	return (c >= '0' && c <= '9');
+}
+
+struct lconv *localeconv() {
+	static lconv l;
+	l.decimal_point = (char *) ".";
+	l.thousands_sep = (char *) "";
+	l.grouping = (char *) "";
+	l.int_curr_symbol = (char *) "";
+	l.currency_symbol = (char *) "";
+	l.mon_decimal_point = (char *) "";
+	l.mon_thousands_sep = (char *) "";
+	l.mon_grouping = (char *) "";
+	l.positive_sign = (char *) "";
+	l.negative_sign = (char *) "";
+	l.frac_digits = CHAR_MAX;
+	l.p_cs_precedes = CHAR_MAX;
+	l.n_cs_precedes = CHAR_MAX;
+	l.p_sep_by_space = CHAR_MAX;
+	l.n_sep_by_space = CHAR_MAX;
+	l.p_sign_posn = CHAR_MAX;
+	l.n_sign_posn = CHAR_MAX;
+	l.int_frac_digits = CHAR_MAX;
+	l.int_p_cs_precedes = CHAR_MAX;
+	l.int_n_cs_precedes = CHAR_MAX;
+	l.int_p_sep_by_space = CHAR_MAX;
+	l.int_n_sep_by_space = CHAR_MAX;
+	l.int_p_sign_posn = CHAR_MAX;
+	l.int_n_sign_posn = CHAR_MAX;
+	return &l;
+}
+
+int rand() {
+	uint8_t a = OSGetRandomByte();
+	uint8_t b = OSGetRandomByte();
+	uint8_t c = OSGetRandomByte();
+	return (a << 16) | (b << 8) | (c << 0);
+}
+
+int snprintf(char *str, size_t size, const char *format, ...) {
+	va_list arguments;
+	va_start(arguments, format);
+	int x = stbsp_vsnprintf( str, size, format, arguments );
+	va_end(arguments);
+	return x;
+}
+
+int isalnum(int c) {
+	return isalpha(c) || isdigit(c);
+}
+
+int iscntrl(int c) {
+	return c < 0x20 || c == 0x7F;
+}
+
+int isgraph(int c) {
+	return c > ' ' && c < 0x7F;
+}
+
+int islower(int c) {
+	return c >= 'a' && c <= 'z';
+}
+
+int ispunct(int c) {
+	return c != ' ' && !isalnum(c);
+}
+
+int isupper(int c) {
+	return c >= 'A' && c <= 'Z';
+}
+
+int isxdigit(int c) {
+	return isdigit(c) || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+}
+
+char *setlocale(int category, const char *locale) {
+	(void) category;
+	(void) locale;
+	return nullptr;
+}
+
+int system(const char *command) {
+	OSExecuteProgram(command, OSCStringLength(command));
+	return 0;
+}
+
+void srand(unsigned int seed) {
+	osRandomByteSeed = seed;
+}
+
+void (*signal(int sig, void (*func)(int)))(int) {
+	(void) sig;
+	(void) func;
+	return nullptr;
+}
+
+void exit(int status) {
+	(void) status;
+	OSTerminateProcess(OS_CURRENT_PROCESS);
+}
+
+void abort() {
+	OSCrashProcess(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+	while (true);
+}
+
+int strcoll(const char *s1, const char *s2) {
+	return OSCompareStrings((char *) s1, (char *) s2, OSCStringLength(s1), OSCStringLength(s2));
+}
+
+char *strerror(int errnum) {
+	(void) errnum;
+	return (char*) "unknown operation failure";
+}
+
+char *strpbrk(const char *s, const char *accept) {
+	size_t l1 = OSCStringLength(s), l2 = OSCStringLength(accept);
+
+	for (uintptr_t i = 0; i <  l1; i++) {
+		char c = s[i];
+
+		for (uintptr_t j = 0; j < l2; j++) {
+			if (accept[j] == c) {
+				return (char *) (i + s);
+			}
+		}
+	}
+
+	return nullptr;
+}
+
+int remove(const char *path) {
+	OSNodeInformation node;
+	OSError error = OSOpenNode((char *) path, OSCStringLength(path), OS_OPEN_NODE_RESIZE_ACCESS | OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &node);
+	if (error != OS_SUCCESS) return -1;
+	error = OSDeleteNode(node.handle); 
+	return error == OS_SUCCESS ? 0 : -1;
+}
+
+static bool OpenStream(const char *path, const char *_mode, FILE *stream) {
+	uint64_t flags = 0;
+
+#define FOPEN_MODE_R  (0)
+#define FOPEN_MODE_R2 (1)
+#define FOPEN_MODE_W  (2)
+#define FOPEN_MODE_W2 (3)
+#define FOPEN_MODE_A  (4)
+#define FOPEN_MODE_A2 (5)
+	int mode = 0;
+
+	size_t modeLength = strlen(_mode);
+	for (uintptr_t i = 0; i < modeLength; i++) {
+		char c = _mode[i];
+
+		switch (c) {
+			case 'r': { mode += FOPEN_MODE_R; } break;
+			case 'w': { mode += FOPEN_MODE_W; } break;
+			case 'a': { mode += FOPEN_MODE_A; } break;
+			case '+': { mode += 1; } break;
+		}
+	}
+
+	bool clearFile = false;
+	bool seekToEndBeforeWrites = false;
+
+	switch (mode) {
+		case FOPEN_MODE_R: {
+			flags = OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_FAIL_IF_NOT_FOUND;
+		} break;
+
+		case FOPEN_MODE_R2: {
+			flags = OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_FAIL_IF_NOT_FOUND | OS_OPEN_NODE_RESIZE_ACCESS;
+		} break;
+
+		case FOPEN_MODE_W: {
+			flags = OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS;
+			clearFile = true;
+		} break;
+
+		case FOPEN_MODE_W2: {
+			flags = OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS;
+			clearFile = true;
+		} break;
+
+		case FOPEN_MODE_A: {
+			flags = OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS;
+			seekToEndBeforeWrites = true;
+		} break;
+
+		case FOPEN_MODE_A2: {
+			flags = OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS;
+			seekToEndBeforeWrites = true;
+		} break;
+	}
+
+	OSNodeInformation _node;
+	OSError error = OSOpenNode((char *) path, OSCStringLength(path), flags, &_node);
+
+	if (error != OS_SUCCESS) {
+		return false;
+	}
+
+	if (clearFile) {
+		error = OSResizeFile(_node.handle, 0); 
+
+		if (error != OS_SUCCESS) {
+			OSCloseHandle(_node.handle);
+			return false;
+		}
+	}
+
+	FILE *file = stream;
+	memset(file, 0, sizeof(FILE));
+	file->node = _node;
+	file->ungotc = -1;
+	file->seekToEndBeforeWrites = seekToEndBeforeWrites;
+
+	return true;
+}
+
+FILE *fopen(const char *path, const char *_mode) {
+	FILE *stream = (FILE *) OSHeapAllocate(sizeof(FILE), true);
+
+	if (!OpenStream(path, _mode, stream)) {
+		OSHeapFree(stream);
+		return nullptr;
+	}
+
+	return stream;
+}
+
+static void CloseStream(FILE *stream) {
+	fflush(stream);
+	if (stream->temporary) OSDeleteNode(stream->node.handle);
+	OSCloseHandle(stream->node.handle);
+}
+
+int fclose(FILE *stream) {
+	CloseStream(stream);
+	OSHeapFree(stream);
+	return 0;
+}
+
+int feof(FILE *stream) {
+	return stream->endOfFile;
+}
+
+int ferror(FILE *stream) {
+	return stream->error;
+}
+
+void clearerr(FILE *stream) {
+	stream->endOfFile = false;
+	stream->error = false;
+}
+
+FILE *tmpfile() {
+	char r[L_tmpnam + 1];
+	r[L_tmpnam] = 0;
+	r[0] = '/';
+	r[1] = '_';
+
+	for (uintptr_t i = 2; i < L_tmpnam; i++) {
+		r[i] = (rand() % 26) + 'A';
+	}
+
+	FILE *f = fopen(r, "w+");
+	f->temporary = true;
+	return f;
+}
+
+size_t fread(void *_ptr, size_t size, size_t nmemb, FILE *stream) {
+	char *ptr = (char *) _ptr;
+	size *= nmemb;
+
+	if (stream->ungotc != -1) {
+		*ptr = stream->ungotc;
+		stream->ungotc = -1;
+		size--;
+		ptr++;
+	}
+
+	int64_t result = (int64_t) OSReadFileSync(stream->node.handle, stream->position, size, ptr);
+
+	if (result >= 0) {
+		if (result != (int64_t) size) {
+			stream->endOfFile = true;
+		}
+
+		stream->position += size;
+
+		return result;
+	} else {
+		stream->error = true;
+		return 0;
+	}
+}
+
+int fputs(const char *s, FILE *stream) {
+	if (fwrite(s, 1, OSCStringLength(s), stream)) {
+		return 1;
+	} else {
+		return EOF;
+	}
+}
+
+size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
+	if (stream->seekToEndBeforeWrites) {
+		OSRefreshNodeInformation(&stream->node);
+		stream->position = stream->node.fileSize;
+	}
+
+	int64_t result = (int64_t) OSWriteFileSync(stream->node.handle, stream->position, size * nmemb, (void *) ptr);
+
+	if (result >= 0) {
+		if (result != (int64_t) size) {
+			stream->error = true;
+		}
+
+		stream->position += result;
+
+		return result;
+	} else {
+		stream->error = true;
+		return 0;
+	}
+}
+
+int fseek(FILE *stream, long offset, int whence) {
+	int64_t position = 0;
+
+	if (whence == SEEK_CUR) {
+		position = stream->position;
+	} else if (whence == SEEK_END) {
+		OSRefreshNodeInformation(&stream->node);
+		position = stream->node.fileSize;
+	}
+
+	position += offset;
+	stream->position = position;
+
+	return 0;
+}
+
+long ftell(FILE *stream) {
+	return stream->position;
+}
+
+int fflush(FILE *stream) {
+	(void) stream;
+	// TODO.
+	return 0;
+}
+
+FILE *freopen(const char *path, const char *_mode, FILE *stream) {
+	CloseStream(stream);
+
+	if (!OpenStream(path, _mode, stream)) {
+		OSHeapFree(stream);
+		return nullptr;
+	}
+
+	return stream;
+}
+
+int getc(FILE *stream) {
+	char c;
+
+	if (fread(&c, 1, 1, stream)) {
+		return c;
+	} else {
+		return EOF;
+	}
+}
+
+int ungetc(int c, FILE *stream) {
+	stream->ungotc = c;
+	return c;
+}
+
+char *fgets(char *s, int size, FILE *stream) {
+	s[size - 1] = 0;
+
+	int64_t read = fread(s, 1, size - 1, stream);
+
+	if (!read) {
+		return nullptr;
+	}
+
+	stream->position -= read;
+	s[read] = 0;
+
+	for (intptr_t i = 0; i < read && i < size - 1; i++) {
+		stream->position++;
+
+		if (s[i] == '\n') {
+			s[i + 1] = 0;
+			break;
+		}
+	}
+
+	return s;
+}
+
+static char *FormatPrintCallback(char *buffer, void *user, int length) {
+	FILE *stream = (FILE *) user;
+
+	if (fwrite(buffer, 1, length, stream)) {
+		return buffer;
+	} else {
+		return 0;
+	}
+}
+
+int fprintf(FILE *stream, const char *format, ...) {
+	char buffer[STB_SPRINTF_MIN];
+	va_list arguments;
+	va_start(arguments, format);
+	int x = stbsp_vsprintfcb(FormatPrintCallback, stream, buffer, format, arguments);
+	va_end(arguments);
+	return x;
+}
+
+int setvbuf(FILE *stream, char *buf, int mode, size_t size) {
+	(void) stream;
+	(void) buf;
+	(void) mode;
+	(void) size;
+	return -1;
+}
+
+char *tmpnam(char *s) {
+	(void) s;
+	return nullptr;
+}
+
+int rename(const char *oldPath, const char *newPath) {
+	size_t oldPathBytes = OSCStringLength(oldPath);
+	const char *newFileName = newPath + OSCStringLength(newPath);
+
+	while (true) {
+		newFileName--;
+		if (*newFileName == '/') {
+			newFileName++;
+			break;
+		}
+	}
+
+	size_t newFileNameBytes = OSCStringLength(newFileName);
+	size_t newPathBytes = OSCStringLength(newPath) - newFileNameBytes;
+
+	OSNodeInformation oldNode, newDirectory;
+
+	if (OSOpenNode((char *) oldPath, oldPathBytes, OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &oldNode) != OS_SUCCESS) {
+		return -1;
+	}
+
+	if (OSOpenNode((char *) newPath, newPathBytes, OS_OPEN_NODE_FAIL_IF_NOT_FOUND | OS_OPEN_NODE_DIRECTORY, &newDirectory) != OS_SUCCESS) {
+		OSCloseHandle(oldNode.handle);
+		return -1;
+	}
+
+	if (OSMoveNode(oldNode.handle, newDirectory.handle, (char *) newFileName, newFileNameBytes) != OS_SUCCESS) {
+		OSCloseHandle(oldNode.handle);
+		OSCloseHandle(newDirectory.handle);
+		return -1;
+	}
+
+	OSCloseHandle(oldNode.handle);
+	OSCloseHandle(newDirectory.handle);
+	return 0;
 }

@@ -6,6 +6,10 @@
 #define STB_IMAGE_STATIC
 #include "stb_image.h"
 
+#define STB_SPRINTF_IMPLEMENTATION
+#define STB_SPRINTF_STATIC
+#include "stb_sprintf.h"
+
 #ifndef CF
 #define CF(x) OS ## x
 #endif

@@ -863,6 +863,8 @@ extern "C" void ProgramEntry() {
 
 	CreateList(content);
 
+	OSPrint("%F, %F, %F, %F, %F, %F\n", floor(2.5), floor(-2.5), floor(3), ceil(2.5), ceil(-2.5), ceil(3));
+
 	OSDisableCommand(window, actionToggleEnabled, false);
 	OSDisableCommand(window, actionOK, false);
 
