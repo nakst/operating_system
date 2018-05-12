@@ -282,6 +282,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_CLEAR_MODIFIED_REGION,
 	OS_SYSCALL_GET_MESSAGE,
 	OS_SYSCALL_POST_MESSAGE,
+	OS_SYSCALL_POST_MESSAGE_REMOTE,
 	OS_SYSCALL_WAIT_MESSAGE,
 	OS_SYSCALL_CREATE_WINDOW,
 	OS_SYSCALL_UPDATE_WINDOW,
@@ -599,6 +600,10 @@ typedef enum OSMessageType {
 	// Desktop messages:
 	OS_MESSAGE_EXECUTE_PROGRAM		= 0x4800,
 
+	// Instance messages:
+	OS_MESSAGE_CREATE_INSTANCE		= 0x4A00,
+	OS_MESSAGE_PROCESS_STARTED		= 0x4A01,
+
 	// Debugger messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x4C00,
 	OS_MESSAGE_PROGRAM_FAILED_TO_START	= 0x4C01,
@@ -666,6 +671,7 @@ typedef struct OSMessage {
 			OSHandle process;
 			OSHandle processNameBuffer;
 			size_t processNameBytes;
+			uintptr_t pid;
 		} crash;
 
 		struct {
@@ -1076,6 +1082,7 @@ OS_EXTERN_C void OSSetProperty(OSObject object, uintptr_t index, void *value);
 OS_EXTERN_C void OSSetCursor(OSObject window, OSCursorStyle cursor);
 
 OS_EXTERN_C OSError OSPostMessage(OSMessage *message);
+OS_EXTERN_C OSError OSPostMessageRemote(OSHandle process, OSMessage *message);
 OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
 OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSObject target, OSCallback callback, OSMessage *message);
 OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
@@ -1246,6 +1253,6 @@ OS_EXTERN_C uint64_t osRandomByteSeed;
 OS_EXTERN_C OSHandle osMessageMutex;
 #endif
 
-OS_EXTERN_C void ProgramEntry();
+OS_EXTERN_C void ProgramEntry(); 
 
 #endif

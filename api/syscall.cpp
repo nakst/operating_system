@@ -74,6 +74,10 @@ OSError OSPostMessage(OSMessage *message) {
 	return OSSyscall(OS_SYSCALL_POST_MESSAGE, (uintptr_t) message, 0, 0, 0);
 }
 
+OSError OSPostMessageRemote(OSHandle process, OSMessage *message) {
+	return OSSyscall(OS_SYSCALL_POST_MESSAGE_REMOTE, (uintptr_t) message, process, 0, 0);
+}
+
 OSError OSWaitMessage(uintptr_t timeoutMs) {
 	return OSSyscall(OS_SYSCALL_WAIT_MESSAGE, timeoutMs, 0, 0, 0);
 }

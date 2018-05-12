@@ -11,6 +11,8 @@
 
 struct InstalledProgram {
 	Token name, shortName, workingFolder, executablePath;
+	OSHandle process;
+	uintptr_t pid;
 };
 
 #define MAX_INSTALLED_PROGRAMS (8192)
@@ -106,6 +108,15 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 					crashMessage, crashMessageLength,
 					OS_ICON_ERROR, OS_INVALID_OBJECT);
 
+			// If this was an installed program, we'll have to restart the process.
+			for (uintptr_t i = 0; i < installedProgramCount; i++) {
+				if (installedPrograms[i].pid == message->crash.pid) {
+					OSCloseHandle(installedPrograms[i].process);
+					installedPrograms[i].pid = 0;
+					installedPrograms[i].process = 0;
+				}
+			}
+
 			OSHeapFree(processNameBase);
 
 			response = OS_CALLBACK_HANDLED;
@@ -117,22 +128,48 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 			OSReadConstantBuffer(message->executeProgram.nameBuffer, name);
 			OSCloseHandle(message->executeProgram.nameBuffer);
 
-			bool found;
+			bool found = false;
 			InstalledProgram *program;
+			bool executable = *name == '/';
 
 			for (uintptr_t i = 0; i < installedProgramCount; i++) {
 				program = installedPrograms + i;
 
-				if (0 == OSCompareStrings(program->name.text, name, program->name.bytes, nameBytes)) {
+				if (!executable && 0 == OSCompareStrings(program->name.text, name, program->name.bytes, nameBytes)) {
+					found = true;
+					break;
+				} else if (executable && 0 == OSCompareStrings(program->executablePath.text, name, program->executablePath.bytes, nameBytes)) {
 					found = true;
 					break;
 				}
 			}
 
 			if (found) {
+				if (!program->process) {
+					// The program hasn't been started yet.
+
+					OSProcessInformation information;
+
+					if (OS_SUCCESS == OSCreateProcess(program->executablePath.text, program->executablePath.bytes, &information, nullptr)) {
+						OSCloseHandle(information.mainThread.handle);
+
+						program->process = information.handle;
+						program->pid = information.pid;
+					}
+				}
+
+				if (program->process) {
+					OSMessage m = {};
+					m.type = OS_MESSAGE_CREATE_INSTANCE;
+					OSPostMessageRemote(program->process, &m);
+				}
+			} else if (executable) {
+				// Not an installed program.
+				// Run the executable anyway.
+
 				OSProcessInformation information;
 
-				if (OS_SUCCESS == OSCreateProcess(program->executablePath.text, program->executablePath.bytes, &information, nullptr)) {
+				if (OS_SUCCESS == OSCreateProcess(name, nameBytes, &information, nullptr)) {
 					OSCloseHandle(information.handle);
 					OSCloseHandle(information.mainThread.handle);
 				}
@@ -285,6 +322,10 @@ void LoadInstalledPrograms(Token attribute, Token section, Token name, Token val
 }
 
 extern "C" void ProgramEntry() {
+	if (sizeof(OSMessage) > 64) {
+		OSPrint("Warning: OSMessage is larger than 64 bytes.\n");
+	}
+
 	OSHandle handle = OSOpenSharedMemory(1, OSLiteral("DesktopInstance"), OS_OPEN_SHARED_MEMORY_FAIL_IF_FOUND);
 
 	if (handle == OS_INVALID_HANDLE) {

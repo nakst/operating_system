@@ -49,6 +49,10 @@ extern "C" void OSInitialiseAPI() {
 	osSystemMessages = &_osSystemMessages;
 
 	OSInitialiseGUI();
+
+	OSMessage m = {};
+	m.type = OS_MESSAGE_PROCESS_STARTED;
+	OSPostMessage(&m);
 }
 
 extern "C" void _start() {
@@ -63,20 +67,10 @@ extern "C" void _start() {
 
 OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message) {
 	APIObject *object = (APIObject *) target;
-	OSCallback to;
-
-	if (!object) {
-		return OS_CALLBACK_NOT_HANDLED;
-	}
-
-	to = object->callback;
-	
-	if (!to.function) {
-		return OS_CALLBACK_NOT_HANDLED;
-	}
-
-	message->context = to.context;
-	return to.function(target, message);
+	if (!object) return OS_CALLBACK_NOT_HANDLED;
+	if (!object->callback.function) return OS_CALLBACK_NOT_HANDLED;
+	message->context = object->callback.context;
+	return object->callback.function(target, message);
 }
 
 OSCallbackResponse OSForwardMessage(OSObject target, OSCallback callback, OSMessage *message) {

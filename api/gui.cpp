@@ -5055,11 +5055,16 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 		flags |= OS_CREATE_WINDOW_WITH_MENUBAR;
 	}
 
+	int width = specification->width;
+	int height = specification->height;
+	int minimumWidth = specification->minimumWidth;
+	int minimumHeight = specification->minimumHeight;
+
 	if (!(flags & OS_CREATE_WINDOW_MENU)) {
-		specification->width += totalBorderWidth;
-		specification->minimumWidth += totalBorderWidth;
-		specification->height += totalBorderHeight;
-		specification->minimumHeight += totalBorderHeight;
+		width += totalBorderWidth;
+		minimumWidth += totalBorderWidth;
+		height += totalBorderHeight;
+		minimumHeight += totalBorderHeight;
 	}
 
 	Window *window = (Window *) GUIAllocate(sizeof(Window), true);
@@ -5075,9 +5080,9 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 
 	OSRectangle bounds;
 	bounds.left = x;
-	bounds.right = x + specification->width;
+	bounds.right = x + width;
 	bounds.top = y;
-	bounds.bottom = y + specification->height;
+	bounds.bottom = y + height;
 
 	window->window = modalParent ? modalParent->window : OS_INVALID_HANDLE;
 	OSSyscall(OS_SYSCALL_CREATE_WINDOW, (uintptr_t) &window->window, (uintptr_t) &bounds, (uintptr_t) window, menuParent ? (uintptr_t) menuParent->window : 0);
@@ -5087,8 +5092,8 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	window->height = bounds.bottom - bounds.top;
 	window->flags = flags;
 	window->cursor = OS_CURSOR_NORMAL;
-	window->minimumWidth = specification->minimumWidth;
-	window->minimumHeight = specification->minimumHeight;
+	window->minimumWidth = minimumWidth;
+	window->minimumHeight = minimumHeight;
 	window->defaultCommand = specification->defaultCommand;
 
 	if (!menuParent) {

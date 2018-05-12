@@ -343,7 +343,18 @@ void Instance::Initialise(char *path, size_t pathBytes) {
 	OSEndGUIAllocationBlock();
 }
 
+OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
+	(void) _object;
+
+	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
+		((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise(OSLiteral("/OS/Sample Images/Flower.jpg"));
+		return OS_CALLBACK_HANDLED;
+	} 
+
+	return OS_CALLBACK_NOT_HANDLED;
+}
+
 void ProgramEntry() {
-	((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise(OSLiteral("/OS/Sample Images/Flower.jpg"));
+	OSSetCallback(osSystemMessages, OS_MAKE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
 }

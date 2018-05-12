@@ -251,39 +251,50 @@ OSObject CreateKeypadButton(OSCommand *command) {
 	return button;
 }
 
+OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
+	(void) _object;
+
+	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
+		Instance *instance = (Instance *) OSHeapAllocate(sizeof(Instance), true);
+
+		OSObject window = OSCreateWindow(mainWindow);
+		OSSetInstance(window, instance);
+
+		OSObject grid = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER);
+		OSObject keypad = OSCreateGrid(5, 4, OS_GRID_STYLE_GROUP_BOX);
+		instance->textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_LARGE);
+
+		OSSetRootGrid(window, grid);
+		OSAddControl(grid, 0, 0, instance->textbox, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
+		OSAddGrid(grid, 0, 1, keypad, OS_CELL_FILL);
+
+		OSAddControl(keypad, 0, 0, CreateKeypadButton(insert7), 			OS_CELL_FILL);
+		OSAddControl(keypad, 0, 1, CreateKeypadButton(insert4), 			OS_CELL_FILL);
+		OSAddControl(keypad, 0, 2, CreateKeypadButton(insert1), 			OS_CELL_FILL);
+		OSAddControl(keypad, 0, 3, CreateKeypadButton(insert0), 			OS_CELL_FILL);
+		OSAddControl(keypad, 1, 0, CreateKeypadButton(insert8), 			OS_CELL_FILL);
+		OSAddControl(keypad, 1, 1, CreateKeypadButton(insert5), 			OS_CELL_FILL);
+		OSAddControl(keypad, 1, 2, CreateKeypadButton(insert2), 			OS_CELL_FILL);
+		OSAddControl(keypad, 1, 3, CreateKeypadButton(insertFractionalSeparator), 	OS_CELL_FILL);
+		OSAddControl(keypad, 2, 0, CreateKeypadButton(insert9), 			OS_CELL_FILL);
+		OSAddControl(keypad, 2, 1, CreateKeypadButton(insert6), 			OS_CELL_FILL);
+		OSAddControl(keypad, 2, 2, CreateKeypadButton(insert3), 			OS_CELL_FILL);
+		OSAddControl(keypad, 2, 3, CreateKeypadButton(insertPercentageSign),		OS_CELL_FILL);
+		OSAddControl(keypad, 3, 0, CreateKeypadButton(insertDivide), 			OS_CELL_FILL);
+		OSAddControl(keypad, 3, 1, CreateKeypadButton(insertMultiply), 			OS_CELL_FILL);
+		OSAddControl(keypad, 3, 2, CreateKeypadButton(insertSubtract), 			OS_CELL_FILL);
+		OSAddControl(keypad, 3, 3, CreateKeypadButton(insertAdd), 			OS_CELL_FILL);
+		OSAddControl(keypad, 4, 0, CreateKeypadButton(insertLeftBracket), 		OS_CELL_FILL);
+		OSAddControl(keypad, 4, 1, CreateKeypadButton(insertRightBracket), 		OS_CELL_FILL);
+		OSAddControl(keypad, 4, 3, CreateKeypadButton(evaluate), 			OS_CELL_FILL);
+
+		return OS_CALLBACK_HANDLED;
+	} 
+
+	return OS_CALLBACK_NOT_HANDLED;
+}
+
 void ProgramEntry() {
-	Instance *instance = (Instance *) OSHeapAllocate(sizeof(Instance), true);
-
-	OSObject window = OSCreateWindow(mainWindow);
-	OSSetInstance(window, instance);
-
-	OSObject grid = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER);
-	OSObject keypad = OSCreateGrid(5, 4, OS_GRID_STYLE_GROUP_BOX);
-	instance->textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_LARGE);
-
-	OSSetRootGrid(window, grid);
-	OSAddControl(grid, 0, 0, instance->textbox, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-	OSAddGrid(grid, 0, 1, keypad, OS_CELL_FILL);
-
-	OSAddControl(keypad, 0, 0, CreateKeypadButton(insert7), 			OS_CELL_FILL);
-	OSAddControl(keypad, 0, 1, CreateKeypadButton(insert4), 			OS_CELL_FILL);
-	OSAddControl(keypad, 0, 2, CreateKeypadButton(insert1), 			OS_CELL_FILL);
-	OSAddControl(keypad, 0, 3, CreateKeypadButton(insert0), 			OS_CELL_FILL);
-	OSAddControl(keypad, 1, 0, CreateKeypadButton(insert8), 			OS_CELL_FILL);
-	OSAddControl(keypad, 1, 1, CreateKeypadButton(insert5), 			OS_CELL_FILL);
-	OSAddControl(keypad, 1, 2, CreateKeypadButton(insert2), 			OS_CELL_FILL);
-	OSAddControl(keypad, 1, 3, CreateKeypadButton(insertFractionalSeparator), 	OS_CELL_FILL);
-	OSAddControl(keypad, 2, 0, CreateKeypadButton(insert9), 			OS_CELL_FILL);
-	OSAddControl(keypad, 2, 1, CreateKeypadButton(insert6), 			OS_CELL_FILL);
-	OSAddControl(keypad, 2, 2, CreateKeypadButton(insert3), 			OS_CELL_FILL);
-	OSAddControl(keypad, 2, 3, CreateKeypadButton(insertPercentageSign),		OS_CELL_FILL);
-	OSAddControl(keypad, 3, 0, CreateKeypadButton(insertDivide), 			OS_CELL_FILL);
-	OSAddControl(keypad, 3, 1, CreateKeypadButton(insertMultiply), 			OS_CELL_FILL);
-	OSAddControl(keypad, 3, 2, CreateKeypadButton(insertSubtract), 			OS_CELL_FILL);
-	OSAddControl(keypad, 3, 3, CreateKeypadButton(insertAdd), 			OS_CELL_FILL);
-	OSAddControl(keypad, 4, 0, CreateKeypadButton(insertLeftBracket), 		OS_CELL_FILL);
-	OSAddControl(keypad, 4, 1, CreateKeypadButton(insertRightBracket), 		OS_CELL_FILL);
-	OSAddControl(keypad, 4, 3, CreateKeypadButton(evaluate), 			OS_CELL_FILL);
-
+	OSSetCallback(osSystemMessages, OS_MAKE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
 }

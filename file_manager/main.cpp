@@ -244,13 +244,7 @@ OSCallbackResponse CallbackOpenItem(OSObject object, OSMessage *message) {
 		if (fileType & FILE_CLASS_EXECUTABLE) {
 			size_t length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "%s/%s", 
 					instance->pathBytes, instance->path, data->nameLengthBytes, data->name);
-			OSProcessInformation information;
-
-			if (OS_SUCCESS == OSCreateProcess(guiStringBuffer, length, &information, nullptr)) {
-				OSCloseHandle(information.handle);
-				OSCloseHandle(information.mainThread.handle);
-			}
-
+			OSExecuteProgram(guiStringBuffer, length);
 		}
 	} else if (data->information.type == OS_NODE_DIRECTORY) {
 		char *existingPath = instance->path;
@@ -943,10 +937,21 @@ void Instance::Initialise() {
 	OSEndGUIAllocationBlock();
 }
 
+OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
+	(void) _object;
+
+	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
+		((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise();
+		return OS_CALLBACK_HANDLED;
+	} 
+
+	return OS_CALLBACK_NOT_HANDLED;
+}
+
 void ProgramEntry() {
 	global.AddBookmark(OSLiteral("/OS"));
 	global.AddBookmark(OSLiteral("/Programs"));
 
-	((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise();
+	OSSetCallback(osSystemMessages, OS_MAKE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
 }

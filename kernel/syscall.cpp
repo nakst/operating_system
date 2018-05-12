@@ -1026,6 +1026,22 @@ uintptr_t DoSyscall(OSSyscallType index,
 			}
 		} break;
 
+		case OS_SYSCALL_POST_MESSAGE_REMOTE: {
+			KernelObjectType type = KERNEL_OBJECT_PROCESS;
+			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument1, type);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(process, argument1));
+
+			OSMessage *message = (OSMessage *) argument0;
+			SYSCALL_BUFFER(argument0, sizeof(OSMessage), 1);
+
+			if (process->messageQueue.SendMessage(*message)) {
+				SYSCALL_RETURN(OS_SUCCESS, false);
+			} else {
+				SYSCALL_RETURN(OS_ERROR_MESSAGE_QUEUE_FULL, false);
+			}
+		} break;
+
 		case OS_SYSCALL_GET_THREAD_ID: {
 			KernelObjectType type = KERNEL_OBJECT_THREAD;
 			Thread *thread = (Thread *) currentProcess->handleTable.ResolveHandle(argument0, type);
@@ -1152,7 +1168,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_EXECUTE_PROGRAM: {
 			SYSCALL_BUFFER(argument0, argument1, 1);
 
-			if (argument1 > OS_MAX_PROGRAM_NAME_LENGTH) {
+			if (argument1 > OS_MAX_PROGRAM_NAME_LENGTH || argument1 < 1) {
 				SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_STRING_LENGTH, true);
 			}
 

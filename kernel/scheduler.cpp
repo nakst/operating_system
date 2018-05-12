@@ -764,6 +764,7 @@ void Scheduler::CrashProcess(Process *process, OSCrashReason &crashReason) {
 	OSMessage message = {};
 	message.type = OS_MESSAGE_PROGRAM_CRASH;
 	message.crash.process = handle2;
+	message.crash.pid = process->id;
 	message.crash.processNameBytes = process->executablePathLength;
 	message.crash.processNameBuffer = MakeConstantBufferForDesktop(process->executablePath, process->executablePathLength);
 	CopyMemory(&message.crash.reason, &crashReason, sizeof(OSCrashReason));
