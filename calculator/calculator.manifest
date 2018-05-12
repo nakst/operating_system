@@ -1,9 +1,12 @@
 [program]
 name = "Calculator";
+shortName = "calculator";
 
 [build]
 output = "Calculator.esx";
 source = "calculator/main.cpp";
+installationFolder = "/Programs/Calculator/";
+Install;
 
 [window mainWindow]
 width = 330;

@@ -153,13 +153,14 @@ void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *file
 	}
 
 	*fileSize = information.fileSize;
-	void *buffer = OSHeapAllocate(information.fileSize, false);
+	void *buffer = OSHeapAllocate(information.fileSize + 1, false);
+	((char *) buffer)[information.fileSize] = 0;
 
 	if (information.fileSize != OSReadFileSync(information.handle, 0, information.fileSize, buffer)) {
 		OSHeapFree(buffer);
 		buffer = nullptr;
 	}
-
+	
 	OSCloseHandle(information.handle);
 	return buffer;
 }
@@ -264,4 +265,12 @@ OSError OSDeleteNode(OSHandle node) {
 
 OSError OSMoveNode(OSHandle node, OSHandle directory, char *newPath, size_t newPathLength) {
 	return OSSyscall(OS_SYSCALL_MOVE_NODE, node, directory, (uintptr_t) newPath, newPathLength);
+}
+
+void OSExecuteProgram(const char *name, size_t nameBytes) {
+	OSSyscall(OS_SYSCALL_EXECUTE_PROGRAM, (uintptr_t) name, nameBytes, 0, 0);
+}
+
+void OSReadConstantBuffer(OSHandle buffer, void *output) {
+	OSSyscall(OS_SYSCALL_READ_CONSTANT_BUFFER, buffer, (uintptr_t) output, 0, 0);
 }

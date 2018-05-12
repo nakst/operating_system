@@ -109,6 +109,10 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 
 		void *segment = (void *) header->virtualAddress;
 
+		if (segment > (void *) 0x8000000000000000 || header->segmentSize > 0x1000000000000) {
+			return 0;
+		}
+
 #if 0
 		thisProcess->vmm->lock.Acquire();
 		bool success = thisProcess->vmm->AddRegion((uintptr_t) segment, 

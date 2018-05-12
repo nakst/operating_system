@@ -6,7 +6,7 @@
 #define COMMAND_ROTATE_CLOCKWISE (2)
 
 #define OS_MANIFEST_DEFINITIONS
-#include "../bin/OS/image_viewer.manifest.h"
+#include "../bin/Programs/Image Viewer/manifest.h"
 
 // TODO Be able to open the image viewer from the file manager.
 

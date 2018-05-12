@@ -224,6 +224,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED,
 	OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS,
 	OS_FATAL_ERROR_COUNT,
+	OS_FATAL_ERROR_INVALID_STRING_LENGTH,
 } OSFatalError;
 
 // These must be negative.
@@ -326,6 +327,8 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_PASTE_TEXT,
 	OS_SYSCALL_DELETE_NODE,
 	OS_SYSCALL_MOVE_NODE,
+	OS_SYSCALL_EXECUTE_PROGRAM,
+	OS_SYSCALL_READ_CONSTANT_BUFFER,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -593,8 +596,14 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_SORT_COLUMN		= 0x200F,
 	OS_NOTIFICATION_RIGHT_CLICK		= 0x2010,
 
+	// Desktop messages:
+	OS_MESSAGE_EXECUTE_PROGRAM		= 0x4800,
+
+	// Debugger messages:
+	OS_MESSAGE_PROGRAM_CRASH		= 0x4C00,
+	OS_MESSAGE_PROGRAM_FAILED_TO_START	= 0x4C01,
+
 	// Misc messages:
-	OS_MESSAGE_PROGRAM_CRASH		= 0x5000,
 	OS_MESSAGE_CLIPBOARD_UPDATED		= 0x5001,
 	OS_MESSAGE_SET_PROPERTY			= 0x5002,
 
@@ -655,6 +664,8 @@ typedef struct OSMessage {
 		struct {
 			OSCrashReason reason;
 			OSHandle process;
+			OSHandle processNameBuffer;
+			size_t processNameBytes;
 		} crash;
 
 		struct {
@@ -766,6 +777,11 @@ typedef struct OSMessage {
 		} disable;
 
 		struct OSClipboardHeader clipboard;
+
+		struct {
+			OSHandle nameBuffer;
+			size_t nameBytes;
+		} executeProgram;
 	};
 } OSMessage;
 
@@ -869,7 +885,8 @@ typedef struct OSListViewColumn {
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)
 #define OS_CALLBACK_REJECTED (-2)
-#define OS_CALLBACK_DEBUGGER_MESSAGES ((OSObject) 0x800)
+
+extern OSObject osSystemMessages;
 
 #define OS_CREATE_WINDOW_MENU (2)
 #define OS_CREATE_WINDOW_NORMAL (4)
@@ -982,6 +999,10 @@ OS_EXTERN_C OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThread
 OS_EXTERN_C OSHandle OSCreateSurface(size_t width, size_t height);
 OS_EXTERN_C OSHandle OSCreateMutex();
 OS_EXTERN_C OSHandle OSCreateEvent(bool autoReset);
+
+#define OS_MAX_PROGRAM_NAME_LENGTH (256)
+OS_EXTERN_C void OSExecuteProgram(const char *name, size_t nameBytes);
+OS_EXTERN_C void OSReadConstantBuffer(OSHandle constantBuffer, void *output);
 
 OS_EXTERN_C OSError OSCloseHandle(OSHandle handle);
 
@@ -1153,6 +1174,14 @@ OS_EXTERN_C size_t OSFormatString(char *buffer, size_t bufferLength, const char 
 OS_EXTERN_C void OSHelloWorld();
 OS_EXTERN_C uint8_t OSGetRandomByte();
 OS_EXTERN_C void OSSort(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, const void *, void *), void *argument);
+OS_EXTERN_C int OSCompareStrings(char *s1, char *s2, size_t length1, size_t length2);
+
+OS_EXTERN_C int utf8_length_char(char *character);
+OS_EXTERN_C int utf8_value(char *character);
+OS_EXTERN_C int utf8_encode(int value, char *buffer);
+OS_EXTERN_C char *utf8_advance(char *string);
+OS_EXTERN_C char *utf8_retreat(char *string);
+OS_EXTERN_C int utf8_length(char *string, int max_bytes);
 
 // TODO Possibly remove all of these?
 // 	Or move into a libc library?
@@ -1194,6 +1223,8 @@ OS_EXTERN_C size_t strcspn(const char *s, const char *reject);
 OS_EXTERN_C int memcmp(const void *s1, const void *s2, size_t n);
 OS_EXTERN_C void *memchr(const void *s, int c, size_t n);
 OS_EXTERN_C int isspace(int c);
+OS_EXTERN_C int isalpha(int c);
+OS_EXTERN_C int isdigit(int c);
 OS_EXTERN_C void OSAssertionFailure();
 #define assert(x) do{if (!(x)) OSAssertionFailure();}while(0)
 #ifdef ARCH_X86_64

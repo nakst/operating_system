@@ -229,10 +229,13 @@ OSCallbackResponse Crash(OSObject object, OSMessage *message) {
 
 OSCallbackResponse Launch(OSObject object, OSMessage *message) {
 	(void) object;
+#if 0
 	OSProcessInformation information;
 	OSCreateProcess((char *) message->context, OSCStringLength((char *) message->context), &information, nullptr);
 	OSCloseHandle(information.handle);
 	OSCloseHandle(information.mainThread.handle);
+#endif
+	OSExecuteProgram((char *) message->context, OSCStringLength((char *) message->context));
 	return OS_CALLBACK_HANDLED;
 }
 

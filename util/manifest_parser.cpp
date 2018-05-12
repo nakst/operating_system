@@ -1,9 +1,15 @@
+#ifndef MANIFEST_PARSER_LIBRARY
+#define MANIFEST_PARSER_UTIL
+#endif
+
+#ifdef MANIFEST_PARSER_UTIL
 #include <stdio.h>
 #include <assert.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#define PrintStdout printf
 
 #define OS_NO_CSTDLIB
 #include "../api/os.h"
@@ -12,6 +18,9 @@
 void OSCrashProcess(OSError x) {
 	assert(false);
 }
+#else
+#define PrintStdout(...) do {} while(0)
+#endif
 
 /*
  * Manifest syntax:
@@ -109,7 +118,7 @@ static bool NextToken(char *&buffer, Token *token, bool expect = false) {
 		}
 
 		if (!c) {
-			printf("Unexpected end of file in string\n");
+			PrintStdout("Unexpected end of file in string\n");
 			return false;
 		}
 
@@ -126,21 +135,21 @@ static bool NextToken(char *&buffer, Token *token, bool expect = false) {
 		}
 
 		if (!c) {
-			printf("Unexpected end of file in string\n");
+			PrintStdout("Unexpected end of file in string\n");
 			return false;
 		}
 
 		token->bytes++;
 		RemoveEscapeSequencesFromString(token);
 	} else {
-		printf("Unexpected character in input: '%c'\n", c);
+		PrintStdout("Unexpected character in input: '%c'\n", c);
 		return false;
 	}
 
 	buffer = token->text + token->bytes;
 
 	if (expect && original.type != token->type) {
-		printf("Unexpected token type. Found '%.*s'\n", token->bytes, token->text);
+		PrintStdout("Unexpected token type. Found '%.*s'\n", token->bytes, token->text);
 		return false;
 	}
 
@@ -184,7 +193,7 @@ bool ParseManifest(char *text, ParseCallback callback) {
 				attribute = (Token) {nullptr, 0, Token::IDENTIFIER};
 				section = token;
 			} else {
-				printf("Unexpected token type. Found '%.*s'\n", token2.bytes, token2.text);
+				PrintStdout("Unexpected token type. Found '%.*s'\n", token2.bytes, token2.text);
 				return false;
 			}
 
@@ -202,7 +211,7 @@ bool ParseManifest(char *text, ParseCallback callback) {
 				if (token.type != Token::IDENTIFIER
 						&& token.type != Token::STRING
 						&& token.type != Token::NUMERIC) {
-					printf("Unexpected token type. Found '%.*s'\n", token.bytes, token.text);
+					PrintStdout("Unexpected token type. Found '%.*s'\n", token.bytes, token.text);
 					return false;
 				}
 
@@ -211,11 +220,11 @@ bool ParseManifest(char *text, ParseCallback callback) {
 				token.type = Token::SEMICOLON;
 				if (!NextToken(text, &token, true)) return false;
 			} else {
-				printf("Unexpected token type. Found '%.*s'\n", token.bytes, token.text);
+				PrintStdout("Unexpected token type. Found '%.*s'\n", token.bytes, token.text);
 				return false;
 			}
 		} else {
-			printf("Unexpected token type. Found '%.*s'\n", token.bytes, token.text);
+			PrintStdout("Unexpected token type. Found '%.*s'\n", token.bytes, token.text);
 			return false;
 		}
 	}
@@ -239,8 +248,8 @@ CommandProperty properties[256];
 int propertyCount, menuItemCount;
 
 struct Build {
-	bool found;
-	Token output, source;
+	bool found, install;
+	Token output, source, installationFolder, name, shortName;
 };
 
 Build autoBuild;
@@ -283,13 +292,18 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			commandCount++;
 		} else if (CompareTokens(attribute, "window")) {
 		} else if (CompareTokens(section, "build")) {
+		} else if (CompareTokens(section, "program")) {
 		} else if (CompareTokens(attribute, "menu")) {
 			fprintf(output, "OSMenuItem __%.*s[] = {\n", section.bytes, section.text);
 		}
 	}
 
 	if (event == EVENT_ATTRIBUTE) { 
-		if (CompareTokens(attribute, "command") || CompareTokens(section, "build") || CompareTokens(attribute, "menu") || CompareTokens(attribute, "window")) {
+		if (CompareTokens(attribute, "command") 
+				|| CompareTokens(section, "build") 
+				|| CompareTokens(attribute, "menu") 
+				|| CompareTokens(section, "program") 
+				|| CompareTokens(attribute, "window")) {
 			properties[propertyCount++] = { name, value };
 		}
 	}
@@ -303,6 +317,10 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			}
 
 			menuItemCount++;
+		} else if (CompareTokens(section, "build") && CompareTokens(attribute, "")) {
+			if (CompareTokens(name, "Install")) {
+				autoBuild.install = true;
+			}
 		}
 	}
 
@@ -484,6 +502,10 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			autoBuild.found = true;
 			FindProperty("source", &autoBuild.source);
 			FindProperty("output", &autoBuild.output);
+			FindProperty("installationFolder", &autoBuild.installationFolder);
+		} else if (CompareTokens(section, "program")) {
+			FindProperty("name", &autoBuild.name);
+			FindProperty("shortName", &autoBuild.shortName);
 		}
 	}
 }
@@ -498,8 +520,25 @@ void GenerateActionList(Token attribute, Token section, Token name, Token value,
 
 int main(int argc, char **argv) {
 	if (argc != 3) {
-		printf("Usage: ./manifest_parser <input> <output>\n");
+		PrintStdout("Usage: ./manifest_parser <input> <output>\n");
 		return 1;
+	}
+
+	{
+		char *output = argv[2];
+		output += strlen(output);
+
+		while (true) {
+			output--;
+
+			if (*output == '/') {
+				break;
+			}
+		}
+
+		char buffer[4096];
+		sprintf(buffer, "mkdir -p \"%.*s\"", (int) (output - argv[2]), argv[2]);
+		system(buffer);
 	}
 
 	size_t fileSize = 0;
@@ -540,16 +579,47 @@ int main(int argc, char **argv) {
 
 	if (autoBuild.found) {
 		char buffer[4096];
-		sprintf(buffer, "x86_64-elf-g++ -c %.*s -o bin/OS/%.*s.o %s %s", autoBuild.source.bytes, autoBuild.source.text, autoBuild.output.bytes, autoBuild.output.text, getenv("BuildFlags"), getenv("Optimise"));
+		sprintf(buffer, "mkdir -p bin%.*s", autoBuild.installationFolder.bytes, autoBuild.installationFolder.text);
+		system(buffer);
+		sprintf(buffer, "x86_64-elf-g++ -c %.*s -o bin%.*s%.*s.o %s %s", 
+				autoBuild.source.bytes, autoBuild.source.text, 
+				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
+				autoBuild.output.bytes, autoBuild.output.text, getenv("BuildFlags"), getenv("Optimise"));
 		system(buffer);
 		system("cp `x86_64-elf-gcc -print-file-name=\"crtbegin.o\"` bin/OS/crtbegin.o");
 		system("cp `x86_64-elf-gcc -print-file-name=\"crtend.o\"` bin/OS/crtend.o");
-		sprintf(buffer, "x86_64-elf-gcc -o bin/OS/%.*s bin/OS/crti.o bin/OS/crtbegin.o bin/OS/%.*s.o bin/OS/crtend.o bin/OS/crtn.o %s", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text, getenv("LinkFlags"));
+		sprintf(buffer, "x86_64-elf-gcc -o bin%.*s%.*s bin/OS/crti.o bin/OS/crtbegin.o bin%.*s%.*s.o bin/OS/crtend.o bin/OS/crtn.o %s", 
+				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
+				autoBuild.output.bytes, autoBuild.output.text, 
+				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
+				autoBuild.output.bytes, autoBuild.output.text, getenv("LinkFlags"));
 		system(buffer);
-		sprintf(buffer, "cp bin/OS/%.*s bin/OS/%.*s_symbols", autoBuild.output.bytes, autoBuild.output.text, autoBuild.output.bytes, autoBuild.output.text);
+		sprintf(buffer, "cp bin%.*s%.*s bin%.*s%.*s_symbols", 
+				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
+				autoBuild.output.bytes, autoBuild.output.text, 
+				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
+				autoBuild.output.bytes, autoBuild.output.text);
 		system(buffer);
-		sprintf(buffer, "x86_64-elf-strip --strip-all bin/OS/%.*s", autoBuild.output.bytes, autoBuild.output.text);
+		sprintf(buffer, "x86_64-elf-strip --strip-all bin%.*s%.*s", 
+				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
+				autoBuild.output.bytes, autoBuild.output.text);
 		system(buffer);
+
+		if (autoBuild.install) {
+			sprintf(buffer, "echo \"\" >> \"bin/OS/Installed Programs.dat\"");
+			system(buffer);
+			sprintf(buffer, "echo \"[program %.*s]\" >> \"bin/OS/Installed Programs.dat\"", autoBuild.shortName.bytes, autoBuild.shortName.text);
+			system(buffer);
+			sprintf(buffer, "echo \"name = \\\"%.*s\\\";\" >> \"bin/OS/Installed Programs.dat\"", autoBuild.name.bytes, autoBuild.name.text);
+			system(buffer);
+			sprintf(buffer, "echo \"executablePath = \\\"%.*s%.*s\\\";\" >> \"bin/OS/Installed Programs.dat\"", 
+					autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
+					autoBuild.output.bytes, autoBuild.output.text);
+			system(buffer);
+			sprintf(buffer, "echo \"workingFolder = \\\"%.*s\\\";\" >> \"bin/OS/Installed Programs.dat\"", 
+					autoBuild.installationFolder.bytes, autoBuild.installationFolder.text);
+			system(buffer);
+		}
 	}
 
 	free(buffer);

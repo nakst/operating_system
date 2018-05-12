@@ -1,9 +1,12 @@
 [program]
 name = "Image Viewer";
+shortName = "imageViewer";
 
 [build]
 output = "Image Viewer.esx";
 source = "image_viewer/main.cpp";
+installationFolder = "/Programs/Image Viewer/";
+Install;
 
 [window mainWindow]
 width = 850;

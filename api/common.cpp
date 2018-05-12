@@ -422,6 +422,70 @@ void OSSort(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, 
 	OSSort(base + j * size, nmemb - j, size, compar, argument);
 }
 
+static int64_t ParseIntegerFromString(char **string, size_t *length, int base) {
+	int64_t value = 0;
+	bool overflow = false;
+
+	while (*length) {
+		char c = (*string)[0];
+
+		if (c >= '0' && c <= '9') {
+			int64_t digit = c - '0';
+			int64_t oldValue = value;
+
+			value *= base;
+			value += digit;
+
+			if (value / base != oldValue) {
+				overflow = true;
+			}
+
+			(*string)++;
+			(*length)--;
+		} else {
+			break;
+		}
+	}
+
+	if (overflow) value = LONG_MAX;
+	return value;
+}
+
+int OSCompareStrings(char *s1, char *s2, size_t length1, size_t length2) {
+	while (length1 || length2) {
+		if (!length1) return -1;
+		if (!length2) return 1;
+
+		char c1 = *s1;
+		char c2 = *s2;
+
+		if (c1 >= '0' && c1 <= '9' && c2 >= '0' && c2 <= '9') {
+			int64_t n1 = ParseIntegerFromString(&s1, &length1, 10);
+			int64_t n2 = ParseIntegerFromString(&s2, &length2, 10);
+
+			if (n1 != n2) {
+				return n1 - n2;
+			}
+		} else {
+			if (c1 >= 'a' && c1 <= 'z') c1 = c1 - 'a' + 'A';
+			if (c2 >= 'a' && c2 <= 'z') c2 = c2 - 'a' + 'A';
+			if (c1 == '.') c1 = ' '; else if (c1 == ' ') c1 = '.';
+			if (c2 == '.') c2 = ' '; else if (c2 == ' ') c2 = '.';
+
+			if (c1 != c2) {
+				return c1 - c2;
+			}
+
+			length1--;
+			length2--;
+			s1++;
+			s2++;
+		}
+	}
+
+	return 0;
+}
+
 void OSClipDrawSourceRegion(OSRectangle *source, OSRectangle *border, OSRectangle *destination, OSRectangle *clip, OSDrawMode mode) {
 	// Clip *clip* to *destination*.
 	if (clip->left < destination->left) clip->left = destination->left;

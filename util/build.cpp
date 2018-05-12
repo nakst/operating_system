@@ -8,6 +8,7 @@
 #include <dirent.h>
 
 #define MANIFEST_PARSER_LIBRARY
+#define MANIFEST_PARSER_UTIL
 #include "manifest_parser.cpp"
 
 bool acceptedLicense;
@@ -43,6 +44,10 @@ void Build(bool enableOptimisations, bool compile = true) {
 
 	printf("Creating output directories...\n");
 	system("mkdir -p bin/OS");
+	system("mkdir -p bin/Programs");
+
+	printf("Clearing program installation data...\n");
+	system("echo \"# Do not modify!\" > \"bin/OS/Installed Programs.dat\"");
 
 	printf("Creating MBR...\n");
 	system("nasm -fbin boot/x86/mbr.s -obin/mbr");
@@ -168,6 +173,7 @@ void BuildCrossCompiler(bool skipQuestions) {
 		printf("The final installation will take up ~1GB.\n");
 		printf("Approximately 100MB of source files will be downloaded.\n");
 		printf("The full build may take over an hour on slower systems; on most modern systems, it should only take ~15 minutes.\n");
+		printf("This does *not* require root permissions.\n");
 
 		printf("\nEnter the ABSOLUTE path of the folder which the cross compiler will be installed into:\n");
 		char installationFolder[4096];

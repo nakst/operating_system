@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 #define OS_MANIFEST_DEFINITIONS
-#include "../bin/OS/calculator.manifest.h"
+#include "../bin/Programs/Calculator/manifest.h"
 
 struct Instance {
 	OSObject textbox;

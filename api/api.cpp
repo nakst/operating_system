@@ -32,6 +32,9 @@ struct APIObject {
 
 OSHandle osMessageMutex;
 
+APIObject _osSystemMessages;
+OSObject osSystemMessages;
+
 extern "C" void ProgramEntry();
 
 extern "C" void OSInitialiseAPI() {
@@ -43,6 +46,7 @@ extern "C" void OSInitialiseAPI() {
 	heapMutex = OSCreateMutex();
 	printMutex = OSCreateMutex();
 	osMessageMutex = OSCreateMutex();
+	osSystemMessages = &_osSystemMessages;
 
 	OSInitialiseGUI();
 }
@@ -57,8 +61,6 @@ extern "C" void _start() {
 	OSTerminateThread(OS_CURRENT_THREAD);
 }
 
-static OSCallback debuggerMessageCallback;
-
 OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message) {
 	APIObject *object = (APIObject *) target;
 	OSCallback to;
@@ -67,11 +69,7 @@ OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	if (object == OS_CALLBACK_DEBUGGER_MESSAGES) {
-		to = debuggerMessageCallback;
-	} else {
-		to = object->callback;
-	}
+	to = object->callback;
 	
 	if (!to.function) {
 		return OS_CALLBACK_NOT_HANDLED;
@@ -103,16 +101,7 @@ void OSProcessMessages() {
 				goto done;
 			}
 
-			switch (message.type) {
-				case OS_MESSAGE_PROGRAM_CRASH: {
-					message.context = OS_CALLBACK_DEBUGGER_MESSAGES;
-					OSSendMessage(message.context, &message);
-				} break;
-
-				default: {
-					// We don't handle this message.
-				} break;
-			}
+			OSSendMessage(osSystemMessages, &message);
 
 			done:;
 			OSReleaseMutex(osMessageMutex);
@@ -122,15 +111,9 @@ void OSProcessMessages() {
 
 OSCallback OSSetCallback(OSObject generator, OSCallback callback) {
 	OSCallback old;
-
-	if (generator == OS_CALLBACK_DEBUGGER_MESSAGES) {
-		old = debuggerMessageCallback;
-		debuggerMessageCallback = callback;
-	} else {
-		APIObject *object = (APIObject *) generator;
-		old = object->callback;
-		object->callback = callback;
-	}
+	APIObject *object = (APIObject *) generator;
+	old = object->callback;
+	object->callback = callback;
 
 	return old;
 }

@@ -4,3 +4,4 @@ name = "Desktop";
 [build]
 output = "Desktop.esx";
 source = "desktop/main.cpp";
+installationFolder = "/OS/";

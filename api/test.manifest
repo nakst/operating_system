@@ -47,12 +47,12 @@ dangerous = true;
 [command commandLaunchCalculator]
 label = "Calculator";
 callback = Launch;
-callbackArgument = "/OS/Calculator.esx";
+callbackArgument = "Calculator";
 
 [command commandLaunchFileManager]
 label = "File Manager";
 callback = Launch;
-callbackArgument = "/OS/File Manager.esx";
+callbackArgument = "File Manager";
 
 [menu menuPrograms]
 commandLaunchCalculator;
@@ -61,3 +61,4 @@ commandLaunchFileManager;
 [build]
 output = "Test.esx";
 source = "api/test.cpp";
+installationFolder = "/OS/";

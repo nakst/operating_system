@@ -1,7 +1,21 @@
 #include "../api/os.h"
 
+#define WALLPAPER ("/OS/Sample Images/Flower.jpg")
+#define FIRST_PROGRAM ("File Manager")
+
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"
+
+#define MANIFEST_PARSER_LIBRARY
+#include "../util/manifest_parser.cpp"
+
+struct InstalledProgram {
+	Token name, shortName, workingFolder, executablePath;
+};
+
+#define MAX_INSTALLED_PROGRAMS (8192)
+InstalledProgram installedPrograms[MAX_INSTALLED_PROGRAMS];
+size_t installedProgramCount;
 
 char *errorMessages[] = {
 	(char *) "INVALID_BUFFER",
@@ -40,7 +54,7 @@ char *errorMessages[] = {
 	(char *) "INDEX_OUT_OF_BOUNDS",
 };
 
-OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) {
+OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	(void) _object;
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 
@@ -62,12 +76,84 @@ OSCallbackResponse ProcessDebuggerMessage(OSObject _object, OSMessage *message) 
 						"Error code: %d (user defined error)", code);
 			}
 
+			size_t processNameBytes = message->crash.processNameBytes;
+			char *processName = (char *) OSHeapAllocate(processNameBytes, false);
+			char *processNameBase = processName;
+			OSReadConstantBuffer(message->crash.processNameBuffer, processName);
+			OSCloseHandle(message->crash.processNameBuffer);
+
+			if (*processName == '/') {
+				processName += processNameBytes;
+				processNameBytes = 0;
+
+				do {
+					processNameBytes++;
+					processName--;
+				} while (*processName != '/');
+
+				processNameBytes--;
+				processName++;
+			}
+
+			char crashMessage2[256];
+			size_t crashMessage2Length;
+
+			crashMessage2Length = OSFormatString(crashMessage2, 256, 
+					"%s has crashed.", processNameBytes, processName);
+
 			OSShowDialogAlert(OSLiteral("Program Crashed"),
-					OSLiteral("A program has crashed."),
+					crashMessage2, crashMessage2Length,
 					crashMessage, crashMessageLength,
 					OS_ICON_ERROR, OS_INVALID_OBJECT);
 
+			OSHeapFree(processNameBase);
+
 			response = OS_CALLBACK_HANDLED;
+		} break;
+
+		case OS_MESSAGE_EXECUTE_PROGRAM: {
+			size_t nameBytes = message->executeProgram.nameBytes;
+			char *name = (char *) OSHeapAllocate(nameBytes, false);
+			OSReadConstantBuffer(message->executeProgram.nameBuffer, name);
+			OSCloseHandle(message->executeProgram.nameBuffer);
+
+			bool found;
+			InstalledProgram *program;
+
+			for (uintptr_t i = 0; i < installedProgramCount; i++) {
+				program = installedPrograms + i;
+
+				if (0 == OSCompareStrings(program->name.text, name, program->name.bytes, nameBytes)) {
+					found = true;
+					break;
+				}
+			}
+
+			if (found) {
+				OSProcessInformation information;
+
+				if (OS_SUCCESS == OSCreateProcess(program->executablePath.text, program->executablePath.bytes, &information, nullptr)) {
+					OSCloseHandle(information.handle);
+					OSCloseHandle(information.mainThread.handle);
+				}
+			} else {
+				char buffer[256];
+				size_t bufferLength = OSFormatString(buffer, 256, "\"%s\" could not be found.", nameBytes, name);
+
+				OSShowDialogAlert(OSLiteral("Invalid Program"),
+						OSLiteral("The program failed to start."),
+						buffer, bufferLength,
+						OS_ICON_ERROR, OS_INVALID_OBJECT);
+			}
+
+			OSHeapFree(name);
+		} break;
+
+		case OS_MESSAGE_PROGRAM_FAILED_TO_START: {
+			OSShowDialogAlert(OSLiteral("Invalid Program"),
+					OSLiteral("The program failed to start."),
+					OSLiteral("The executable file was either corrupt, or not designed to run on your computer."),
+					OS_ICON_ERROR, OS_INVALID_OBJECT);
 		} break;
 
 		default: {
@@ -145,6 +231,59 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center, uintptr_t 
 	return true;
 }
 
+void InitialiseGUI() {
+	LoadImageIntoSurface((char *) "/OS/Visual Styles/Default.png", OS_SURFACE_UI_SHEET, false);
+	LoadImageIntoSurface((char *) "/OS/Icons/Tango Icons 16x16.png", OS_SURFACE_UI_SHEET, false, 512, 0);
+
+#ifdef WALLPAPER
+	LoadImageIntoSurface((char *) WALLPAPER, OS_SURFACE_WALLPAPER, true);
+#else
+	OSHandle surface = OS_SURFACE_WALLPAPER;
+	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
+	OSFillRectangle(surface, OS_MAKE_RECTANGLE(0, buffer.width, 0, buffer.height), OSColor(0x5372A6));
+#endif
+
+	OSInitialiseGUI();
+	OSRedrawAll();
+}
+
+void LoadInstalledPrograms(Token attribute, Token section, Token name, Token value, int event) {
+	if (installedProgramCount == MAX_INSTALLED_PROGRAMS) {
+		return;
+	}
+
+	if (event == EVENT_START_SECTION) { 
+		if (CompareTokens(attribute, "program")) {
+			installedPrograms[installedProgramCount].shortName = section;
+		}
+	}
+
+	if (event == EVENT_ATTRIBUTE) { 
+		if (CompareTokens(attribute, "program")) {
+			if (CompareTokens(name, "name")) {
+				installedPrograms[installedProgramCount].name = value;
+				installedPrograms[installedProgramCount].name.text++;
+				installedPrograms[installedProgramCount].name.bytes -= 2;
+			} else if (CompareTokens(name, "workingFolder")) {
+				installedPrograms[installedProgramCount].workingFolder = value;
+				installedPrograms[installedProgramCount].workingFolder.text++;
+				installedPrograms[installedProgramCount].workingFolder.bytes -= 2;
+			} else if (CompareTokens(name, "executablePath")) {
+				installedPrograms[installedProgramCount].executablePath = value;
+				installedPrograms[installedProgramCount].executablePath.text++;
+				installedPrograms[installedProgramCount].executablePath.bytes -= 2;
+			}
+		}
+	}
+
+	if (event == EVENT_END_SECTION) { 
+		if (CompareTokens(attribute, "program")) {
+			installedProgramCount++;
+
+		}
+	}
+}
+
 extern "C" void ProgramEntry() {
 	OSHandle handle = OSOpenSharedMemory(1, OSLiteral("DesktopInstance"), OS_OPEN_SHARED_MEMORY_FAIL_IF_FOUND);
 
@@ -157,43 +296,24 @@ extern "C" void ProgramEntry() {
 		return;
 	}
 
-	LoadImageIntoSurface((char *) "/OS/Visual Styles/Default.png", OS_SURFACE_UI_SHEET, false);
-	LoadImageIntoSurface((char *) "/OS/Icons/Tango Icons 16x16.png", OS_SURFACE_UI_SHEET, false, 512, 0);
+	InitialiseGUI();
 
-#if 0
-	LoadImageIntoSurface((char *) "/OS/Sample Images/Blue.jpg", OS_SURFACE_WALLPAPER, true);
-#else
-	OSHandle surface = OS_SURFACE_WALLPAPER;
-	OSLinearBuffer buffer; OSGetLinearBuffer(surface, &buffer);
-	OSFillRectangle(surface, OS_MAKE_RECTANGLE(0, buffer.width, 0, buffer.height), OSColor(0x5372A6));
-#endif
-
-	OSInitialiseGUI();
-	OSRedrawAll();
-
-#if 0
 	{
-		OSProcessInformation process;
-		// OSCreateProcess(OSLiteral("/OS/Calculator.esx"), &process, nullptr);
-		OSCreateProcess(OSLiteral("/OS/Test.esx"), &process, nullptr);
-		OSCreateProcess(OSLiteral("/OS/File Manager.esx"), &process, nullptr);
-		// OSCreateProcess(OSLiteral("/OS/Image Viewer.esx"), &process, nullptr);
-	}
-#else
-	{
-		for (int i = 0; i < 1; i++) {
-			// const char *path = "/OS/Calculator.esx";
-			// const char *path = "/OS/Test.esx";
-			const char *path = "/OS/File Manager.esx";
-			// const char *path = "/OS/Image Viewer.esx";
-			OSProcessInformation process;
-			OSCreateProcess(path, OSCStringLength((char *) path), &process, nullptr);
-			OSCloseHandle(process.mainThread.handle);
-			OSCloseHandle(process.handle);
+		size_t fileSize;
+		char *file = (char *) OSReadEntireFile(OSLiteral("/OS/Installed Programs.dat"), &fileSize); 
+
+		if (!file || !ParseManifest(file, LoadInstalledPrograms)
+				|| installedProgramCount == MAX_INSTALLED_PROGRAMS) {
+			OSShowDialogAlert(OSLiteral("System Configuration Error"),
+					OSLiteral("The system configuration could not be loaded."),
+					OSLiteral(""),
+					OS_ICON_ERROR, OS_INVALID_OBJECT);
+			OSProcessMessages();
 		}
 	}
-#endif
 
-	OSSetCallback(OS_CALLBACK_DEBUGGER_MESSAGES, OS_MAKE_CALLBACK(ProcessDebuggerMessage, nullptr));
+	OSExecuteProgram(OSLiteral(FIRST_PROGRAM));
+
+	OSSetCallback(osSystemMessages, OS_MAKE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
 }

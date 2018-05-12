@@ -1,9 +1,12 @@
 [program]
 name = "File Manager";
+shortName = "fileManager";
 
 [build]
 output = "File Manager.esx";
 source = "file_manager/main.cpp";
+installationFolder = "/Programs/File Manager/";
+Install;
 
 [window mainWindow]
 width = 850;

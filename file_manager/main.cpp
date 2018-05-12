@@ -10,7 +10,7 @@
 #define COMMAND_NEW_FOLDER         (1)
 
 #define OS_MANIFEST_DEFINITIONS
-#include "../bin/OS/file_manager.manifest.h"
+#include "../bin/Programs/File Manager/manifest.h"
 
 // TODO Why doesn't running the kernel executable crash?
 
@@ -91,70 +91,6 @@ OSListViewColumn folderListingColumns[] = {
 
 #define GUI_STRING_BUFFER_LENGTH (1024)
 char guiStringBuffer[GUI_STRING_BUFFER_LENGTH];
-
-int64_t ParseIntegerFromString(char **string, size_t *length, int base) {
-	int64_t value = 0;
-	bool overflow = false;
-
-	while (*length) {
-		char c = (*string)[0];
-
-		if (c >= '0' && c <= '9') {
-			int64_t digit = c - '0';
-			int64_t oldValue = value;
-
-			value *= base;
-			value += digit;
-
-			if (value / base != oldValue) {
-				overflow = true;
-			}
-
-			(*string)++;
-			(*length)--;
-		} else {
-			break;
-		}
-	}
-
-	if (overflow) value = LONG_MAX;
-	return value;
-}
-
-int CompareStrings(char *s1, char *s2, size_t length1, size_t length2) {
-	while (length1 || length2) {
-		if (!length1) return -1;
-		if (!length2) return 1;
-
-		char c1 = *s1;
-		char c2 = *s2;
-
-		if (c1 >= '0' && c1 <= '9' && c2 >= '0' && c2 <= '9') {
-			int64_t n1 = ParseIntegerFromString(&s1, &length1, 10);
-			int64_t n2 = ParseIntegerFromString(&s2, &length2, 10);
-
-			if (n1 != n2) {
-				return n1 - n2;
-			}
-		} else {
-			if (c1 >= 'a' && c1 <= 'z') c1 = c1 - 'a' + 'A';
-			if (c2 >= 'a' && c2 <= 'z') c2 = c2 - 'a' + 'A';
-			if (c1 == '.') c1 = ' '; else if (c1 == ' ') c1 = '.';
-			if (c2 == '.') c2 = ' '; else if (c2 == ' ') c2 = '.';
-
-			if (c1 != c2) {
-				return c1 - c2;
-			}
-
-			length1--;
-			length2--;
-			s1++;
-			s2++;
-		}
-	}
-
-	return 0;
-}
 
 int GetFileType(char *name, size_t bytes) {
 	int lastSeparator = 0;
@@ -245,14 +181,14 @@ int SortFolder(const void *_a, const void *_b, void *argument) {
 
 	switch (instance->sortColumn) {
 		case COLUMN_NAME: {
-			result = CompareStrings(a->data.name, b->data.name, a->data.nameLengthBytes, b->data.nameLengthBytes);
+			result = OSCompareStrings(a->data.name, b->data.name, a->data.nameLengthBytes, b->data.nameLengthBytes);
 		} break;
 
 		case COLUMN_TYPE: {
 			if (a->data.information.type == OS_NODE_FILE) {
 				char *s1 = (char *) GetFileType(GetFileType(a->data.name, a->data.nameLengthBytes));
 				char *s2 = (char *) GetFileType(GetFileType(b->data.name, b->data.nameLengthBytes));
-				result = CompareStrings(s1, s2, OSCStringLength(s1), OSCStringLength(s2));
+				result = OSCompareStrings(s1, s2, OSCStringLength(s1), OSCStringLength(s2));
 			}
 		} break;
 
@@ -271,7 +207,7 @@ int SortFolder(const void *_a, const void *_b, void *argument) {
 
 	if (!result && instance->sortColumn) {
 		// If the two strings were equal, then fallback by sorting by their names.
-		result = CompareStrings(a->data.name, b->data.name, a->data.nameLengthBytes, b->data.nameLengthBytes);
+		result = OSCompareStrings(a->data.name, b->data.name, a->data.nameLengthBytes, b->data.nameLengthBytes);
 	}
 
 	return result * (instance->sortDescending ? -1 : 1);
@@ -309,9 +245,12 @@ OSCallbackResponse CallbackOpenItem(OSObject object, OSMessage *message) {
 			size_t length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "%s/%s", 
 					instance->pathBytes, instance->path, data->nameLengthBytes, data->name);
 			OSProcessInformation information;
-			OSCreateProcess(guiStringBuffer, length, &information, nullptr);
-			OSCloseHandle(information.handle);
-			OSCloseHandle(information.mainThread.handle);
+
+			if (OS_SUCCESS == OSCreateProcess(guiStringBuffer, length, &information, nullptr)) {
+				OSCloseHandle(information.handle);
+				OSCloseHandle(information.mainThread.handle);
+			}
+
 		}
 	} else if (data->information.type == OS_NODE_DIRECTORY) {
 		char *existingPath = instance->path;
@@ -350,7 +289,7 @@ OSCallbackResponse CommandNew(OSObject object, OSMessage *message) {
 				for (uintptr_t i = 0; i < instance->folderChildCount; i++) {
 					FolderChild *child = instance->folderChildren + i;
 
-					if (CompareStrings(child->data.name, guiStringBuffer, child->data.nameLengthBytes, length) == 0) {
+					if (OSCompareStrings(child->data.name, guiStringBuffer, child->data.nameLengthBytes, length) == 0) {
 						goto nextAttempt;
 					}
 				}
@@ -487,7 +426,7 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 			}
 
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
-				if (!CompareStrings(bookmark->path, instance->path, bookmark->pathBytes, instance->pathBytes)) {
+				if (!OSCompareStrings(bookmark->path, instance->path, bookmark->pathBytes, instance->pathBytes)) {
 					message->listViewItem.state |= OS_LIST_VIEW_ITEM_SELECTED;
 				}
 			}
@@ -690,7 +629,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 
 bool Global::RemoveBookmark(char *path, size_t pathBytes) {
 	for (uintptr_t i = 0; i < bookmarkCount; i++) {
-		if (CompareStrings(bookmarks[i].path, path, bookmarks[i].pathBytes, pathBytes) == 0) {
+		if (OSCompareStrings(bookmarks[i].path, path, bookmarks[i].pathBytes, pathBytes) == 0) {
 			OSMoveMemory(bookmarks + i + 1, bookmarks + bookmarkCount, -1 * sizeof(Bookmark), false);
 			bookmarkCount--;
 
@@ -884,7 +823,7 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 		bool found = false;
 
 		for (uintptr_t i = 0; i < global.bookmarkCount; i++) {
-			if (CompareStrings(global.bookmarks[i].path, path, global.bookmarks[i].pathBytes, pathBytes) == 0) {
+			if (OSCompareStrings(global.bookmarks[i].path, path, global.bookmarks[i].pathBytes, pathBytes) == 0) {
 				found = true;
 				break;
 			}
@@ -998,7 +937,7 @@ void Instance::Initialise() {
 	statusLabel = OSCreateLabel(OSLiteral(""));
 	OSAddControl(statusBar, 1, 0, statusLabel, OS_FLAGS_DEFAULT);
 
-	LoadFolder(OSLiteral("/OS"));
+	LoadFolder(OSLiteral("/"));
 	OSSetFocusedControl(folderListing, true);
 
 	OSEndGUIAllocationBlock();
@@ -1006,6 +945,8 @@ void Instance::Initialise() {
 
 void ProgramEntry() {
 	global.AddBookmark(OSLiteral("/OS"));
+	global.AddBookmark(OSLiteral("/Programs"));
+
 	((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise();
 	OSProcessMessages();
 }

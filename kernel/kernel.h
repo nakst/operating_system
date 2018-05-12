@@ -188,6 +188,11 @@ struct UniqueIdentifier {
 	uint8_t d[16];
 };
 
+struct ConstantBuffer {
+	size_t bytes;
+	// Data follows;
+};
+
 UniqueIdentifier installationID; // The identifier of this OS installation, given to us by the bootloader.
 
 struct Process *desktopProcess;

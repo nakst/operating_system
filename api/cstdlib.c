@@ -535,3 +535,10 @@ void *memchr(const void *_s, int _c, size_t n) {
 	return nullptr;
 }
 
+int isalpha(int c) {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+}
+
+int isdigit(int c) {
+	return (c >= '0' && c <= '9');
+}

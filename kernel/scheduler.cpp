@@ -533,7 +533,9 @@ void NewProcess() {
 		thisProcess->executableMainThread = scheduler.SpawnThread(processStartAddress, 0, thisProcess, true);
 	} else {
 		thisProcess->executableState = PROCESS_EXECUTABLE_FAILED_TO_LOAD;
-		KernelPanic("NewProcess - Could not start a new process.\n");
+		OSMessage message = {};
+		message.type = OS_MESSAGE_PROGRAM_FAILED_TO_START;
+		desktopProcess->messageQueue.SendMessage(message);
 	}
 
 	KernelLog(LOG_VERBOSE, "Created process %d %x, %s.\n", thisProcess->id, thisProcess, thisProcess->executablePathLength, thisProcess->executablePath);
@@ -762,6 +764,8 @@ void Scheduler::CrashProcess(Process *process, OSCrashReason &crashReason) {
 	OSMessage message = {};
 	message.type = OS_MESSAGE_PROGRAM_CRASH;
 	message.crash.process = handle2;
+	message.crash.processNameBytes = process->executablePathLength;
+	message.crash.processNameBuffer = MakeConstantBufferForDesktop(process->executablePath, process->executablePathLength);
 	CopyMemory(&message.crash.reason, &crashReason, sizeof(OSCrashReason));
 	desktopProcess->messageQueue.SendMessage(message);
 

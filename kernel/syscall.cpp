@@ -1148,6 +1148,39 @@ uintptr_t DoSyscall(OSSyscallType index,
 			clipboard.PasteText(buffer, argument1);
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
+
+		case OS_SYSCALL_EXECUTE_PROGRAM: {
+			SYSCALL_BUFFER(argument0, argument1, 1);
+
+			if (argument1 > OS_MAX_PROGRAM_NAME_LENGTH) {
+				SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_STRING_LENGTH, true);
+			}
+
+			OSMessage m = {};
+			m.type = OS_MESSAGE_EXECUTE_PROGRAM;
+			m.executeProgram.nameBuffer = MakeConstantBufferForDesktop((void *) argument0, argument1);
+			m.executeProgram.nameBytes = argument1;
+
+			if (m.executeProgram.nameBuffer == OS_INVALID_HANDLE) {
+				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
+			}
+
+			if (!desktopProcess->messageQueue.SendMessage(m)) {
+				SYSCALL_RETURN(OS_ERROR_MESSAGE_QUEUE_FULL, false);
+			}
+
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
+		case OS_SYSCALL_READ_CONSTANT_BUFFER: {
+			KernelObjectType type = KERNEL_OBJECT_CONSTANT_BUFFER;
+			ConstantBuffer *buffer = (ConstantBuffer *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(buffer, argument0));
+			SYSCALL_BUFFER(argument1, buffer->bytes, 1);
+			CopyMemory((void *) argument1, buffer + 1, buffer->bytes);
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
 	}
 
 	end:;

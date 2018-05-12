@@ -2570,7 +2570,7 @@ void OSSetText(OSObject _control, char *text, size_t textBytes, unsigned resizeM
 	CreateString(text, textBytes, &control->text);
 
 	int suggestedWidth = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 8;
-	int suggestedHeight = FONT_SIZE + 8;
+	int suggestedHeight = GetLineHeight(fontRegular, FONT_SIZE);
 
 	if (control->icon) {
 		suggestedWidth += control->icon->region.right - control->icon->region.left + ICON_TEXT_GAP;

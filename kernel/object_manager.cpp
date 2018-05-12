@@ -5,7 +5,8 @@
 #define CLOSABLE_OBJECT_TYPES ((KernelObjectType) \
 		(KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_THREAD \
 		 | KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_NODE | KERNEL_OBJECT_EVENT \
-		 | KERNEL_OBJECT_SURFACE | KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_IO_REQUEST))
+		 | KERNEL_OBJECT_SURFACE | KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_IO_REQUEST \
+		 | KERNEL_OBJECT_CONSTANT_BUFFER))
 
 enum KernelObjectType {
 	COULD_NOT_RESOLVE_HANDLE	= 0x00000000,
@@ -18,6 +19,7 @@ enum KernelObjectType {
 	KERNEL_OBJECT_NODE		= 0x00000040,
 	KERNEL_OBJECT_EVENT		= 0x00000080,
 	KERNEL_OBJECT_IO_REQUEST	= 0x00000100,
+	KERNEL_OBJECT_CONSTANT_BUFFER	= 0x00000200,
 	KERNEL_OBJECT_NONE		= 0x00008000,
 };
 
@@ -185,6 +187,11 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			if (destroy) {
 				OSHeapFree(request, sizeof(IORequest));
 			}
+		} break;
+
+		case KERNEL_OBJECT_CONSTANT_BUFFER: {
+			ConstantBuffer *buffer = (ConstantBuffer *) object;
+			OSHeapFree(object, sizeof(ConstantBuffer) + buffer->bytes);
 		} break;
 
 		default: {
@@ -469,6 +476,33 @@ void HandleTable::Destroy() {
 
 void InitialiseObjectManager() {
 	emptyHandlePage = pmm.AllocatePage(true);
+}
+
+ConstantBuffer *MakeConstantBuffer(void *data, size_t bytes) {
+	ConstantBuffer *buffer = (ConstantBuffer *) OSHeapAllocate(sizeof(ConstantBuffer) + bytes, false);
+	ZeroMemory(buffer, sizeof(ConstantBuffer));
+	buffer->bytes = bytes;
+	CopyMemory(buffer + 1, data, buffer->bytes);
+	return buffer;
+}
+
+OSHandle MakeConstantBufferForDesktop(void *data, size_t bytes) {
+	Handle handle = {};
+	handle.type = KERNEL_OBJECT_CONSTANT_BUFFER;
+	handle.object = MakeConstantBuffer(data, bytes);
+
+	if (!handle.object) {
+		return OS_INVALID_HANDLE;
+	}
+
+	OSHandle h = desktopProcess->handleTable.OpenHandle(handle); 
+
+	if (h == OS_INVALID_HANDLE) {
+		CloseHandleToObject(handle.object, KERNEL_OBJECT_CONSTANT_BUFFER, 0);
+		return OS_INVALID_HANDLE;
+	}
+
+	return h;
 }
 
 #endif
