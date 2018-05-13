@@ -13,11 +13,6 @@ _OSSyscall:
 	pop	r12
 	ret
 
-[global sqrt]
-sqrt:
-	sqrtsd	xmm0,xmm0
-	ret
-
 [global OSFPInitialise]
 OSFPInitialise:
 	mov	rax,.init

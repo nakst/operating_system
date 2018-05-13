@@ -59,54 +59,9 @@ void free(void *ptr) {
 	OSHeapFree(ptr);
 }
 
-double fabs(double x) {
-	if (x < 0) 	return 0 - x;
-	else		return x;
-}
-
-double ceil(double x) {
-	if (x == INFINITY || x == -INFINITY || x == NAN) return x;
-
-	if (x < 0) {
-		int64_t truncate = (int64_t) x;
-		return truncate;
-	} else if (x > 0) {
-		int64_t truncate = (int64_t) x;
-		if ((double) truncate == x) return x;
-		return truncate + 1;
-	} else {
-		return x;
-	}
-}
-
-double floor(double x) {
-	if (x == INFINITY || x == -INFINITY || x == NAN) return x;
-
-	if (x < 0) {
-		int64_t truncate = (int64_t) x;
-		if ((double) truncate == x) return x;
-		return truncate - 1;
-	} else if (x > 0) {
-		int64_t truncate = (int64_t) x;
-		return truncate;
-	} else {
-		return x;
-	}
-}
-
 int abs(int n) {
 	if (n < 0)	return 0 - n;
 	else		return n;
-}
-
-int ifloor(double x) {
-	int trunc = (int) x;
-	double dt = (double) trunc;
-	return x < 0 ? (dt == x ? trunc : trunc - 1) : trunc;
-}
-
-int iceil(double x) {
-	return ifloor(x + 1.0);
 }
 
 void *realloc(void *ptr, size_t size) {

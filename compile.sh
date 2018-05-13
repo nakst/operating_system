@@ -13,10 +13,11 @@ echo -e "-> Building ${ColorBlue}API${ColorNormal}..."
 nasm -felf64 api/api.s -o bin/OS/api1.o -Fdwarf
 nasm -felf64 api/crti.s -o bin/OS/crti.o -Fdwarf
 nasm -felf64 api/crtn.s -o bin/OS/crtn.o -Fdwarf
-x86_64-elf-g++ -c api/api.cpp -o bin/OS/api2.o $BuildFlags -Wno-unused-function $Optimise
+x86_64-elf-g++ -c api/api.cpp -o bin/OS/api2.o $BuildFlags -Wno-unused-function $Optimise -fPIC
 x86_64-elf-ar -rcs bin/OS/libapi.a bin/OS/api1.o bin/OS/api2.o 
 x86_64-elf-g++ -c api/glue.cpp -o bin/OS/glue.o $BuildFlags -Wno-unused-function $Optimise
 x86_64-elf-ar -rcs bin/OS/libglue.a bin/OS/glue.o 
+x86_64-elf-ld -shared -o bin/OS/libapis.so bin/OS/api1.o bin/OS/api2.o -lms -Lports/musl
 
 echo -e "-> Building ${ColorBlue}desktop${ColorNormal}..."
 ./manifest_parser desktop/desktop.manifest bin/OS/desktop.manifest.h
@@ -36,5 +37,5 @@ x86_64-elf-gcc -T util/linker64.ld -o bin/OS/Kernel.esx bin/OS/kernel_x86_64.o b
 cp bin/OS/Kernel.esx bin/OS/Kernel.esx_symbols
 x86_64-elf-strip --strip-all bin/OS/Kernel.esx
 
-# echo "-> Removing temporary files..."
-# rm bin/OS/*.o
+echo "-> Removing temporary files..."
+rm bin/OS/*.o

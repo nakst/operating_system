@@ -909,9 +909,6 @@ void KillThread(void *_thread) {
 		scheduler.allProcesses.Remove(&thread->process->allItem);
 		scheduler.lock.Release();
 
-		// TODO Destroy all the windows this process owns.
-		// TODO Destroy all the surfaces this process owns.
-
 		// There are no threads left in this process.
 		// We should destroy the handle table at this point.
 		// Otherwise, the process might never be freed
@@ -1207,10 +1204,6 @@ void Scheduler::NotifyObject(LinkedList<Thread> *blockedThreads, bool schedulerA
 
 void Mutex::Acquire() {
 	if (scheduler.panic) return;
-
-	if (((uintptr_t) this & 0xFFFFFFFF00000000) == 0xFFFF8F8000000000) {
-		ProcessorBreakpointHelper();
-	}
 
 	Thread *currentThread = GetCurrentThread();
 	bool hasThread = currentThread;

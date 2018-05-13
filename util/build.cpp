@@ -199,11 +199,11 @@ void BuildCrossCompiler(bool skipQuestions) {
 			if (system("rm binutils.tar")) goto fail;
 		}
 
-		test = opendir("gcc-7.3.0");
+		test = opendir("gcc-8.1.0");
 		if (test) closedir(test);
 		else {
 			printf("Downloading GCC source...\n");
-			if (system("curl ftp://ftp.gnu.org/gnu/gcc/gcc-7.3.0/gcc-7.3.0.tar.xz > gcc.tar.xz")) goto fail;
+			if (system("curl ftp://ftp.gnu.org/gnu/gcc/gcc-8.1.0/gcc-8.1.0.tar.xz > gcc.tar.xz")) goto fail;
 			printf("Extracting GCC source...\n");
 			if (system("xz -d gcc.tar.xz")) goto fail;
 			if (system("tar -xf gcc.tar")) goto fail;
@@ -228,7 +228,7 @@ void BuildCrossCompiler(bool skipQuestions) {
 		FILE *file;
 
 		printf("Modifying source for libgcc w/o red zone...\n");
-		file = fopen("gcc-7.3.0/gcc/config/i386/t-x86_64-elf", "w");
+		file = fopen("gcc-8.1.0/gcc/config/i386/t-x86_64-elf", "w");
 		if (!file) {
 			printf("Couldn't modify source\n");
 			goto fail;
@@ -244,7 +244,7 @@ void BuildCrossCompiler(bool skipQuestions) {
 			fprintf(file, "\ttmake_file=\"${tmake_file} i386/t-x86_64-elf\"\n");
 			fclose(file);
 		}
-		if (system("sed -i '1460r temp.txt' gcc-7.3.0/gcc/config.gcc")) goto fail;
+		if (system("sed -i '1496r temp.txt' gcc-8.1.0/gcc/config.gcc")) goto fail;
 		if (system("rm temp.txt")) goto fail;
 
 		char cmdbuf[65536];
@@ -259,7 +259,7 @@ void BuildCrossCompiler(bool skipQuestions) {
 
 		printf("Building GCC...\n");
 		if (chdir("build-gcc")) goto fail;
-		sprintf(cmdbuf, "../gcc-7.3.0/configure --target=x86_64-elf --prefix=\"%s\" --enable-languages=c,c++ --without-headers --disable-nls", installationFolder);
+		sprintf(cmdbuf, "../gcc-8.1.0/configure --target=x86_64-elf --prefix=\"%s\" --enable-languages=c,c++ --without-headers --disable-nls", installationFolder);
 		if (system(cmdbuf)) goto fail;
 		if (system("make all-gcc")) goto fail;
 		if (system("make all-target-libgcc")) goto fail;
@@ -269,12 +269,12 @@ void BuildCrossCompiler(bool skipQuestions) {
 
 		printf("Cleaning up...\n");
 		system("rm -r binutils-2.30/");
-		system("rm -r gcc-7.3.0/");
+		system("rm -r gcc-8.1.0/");
 		system("rm -rf build-binutils");
 		system("rm -rf build-gcc");
 
 		printf("Modifying headers...\n");
-		sprintf(path, "%s/lib/gcc/x86_64-elf/7.3.0/include/mm_malloc.h", installationFolder);
+		sprintf(path, "%s/lib/gcc/x86_64-elf/8.1.0/include/mm_malloc.h", installationFolder);
 		file = fopen(path, "w");
 		if (!file) {
 			printf("Couldn't modify header files\n");
