@@ -570,6 +570,11 @@ int rand() {
 	return (a << 16) | (b << 8) | (c << 0);
 }
 
+int vsnprintf(char *str, size_t size, const char *format, va_list arguments) {
+	int x = stbsp_vsnprintf(str, size, format, arguments );
+	return x;
+}
+
 int snprintf(char *str, size_t size, const char *format, ...) {
 	va_list arguments;
 	va_start(arguments, format);

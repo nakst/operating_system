@@ -32,8 +32,8 @@ echo -e "-> Building ${ColorBlue}image viewer${ColorNormal}..."
 
 echo -e "-> Building ${ColorBlue}kernel${ColorNormal}..."
 nasm -felf64 kernel/x86_64.s -o bin/OS/kernel_x86_64.o -Fdwarf
-x86_64-elf-g++ -c kernel/main.cpp -o bin/OS/kernel.o -mno-red-zone $BuildFlags $OptimiseKernel
-x86_64-elf-gcc -T util/linker64.ld -o bin/OS/Kernel.esx bin/OS/kernel_x86_64.o bin/OS/kernel.o -mno-red-zone $KernelLinkFlags
+x86_64-elf-g++ -c kernel/main.cpp -o bin/OS/kernel.o -mno-red-zone $BuildFlags $OptimiseKernel -DUSE_ACPICA -Wno-unused-function
+x86_64-elf-gcc -T util/linker64.ld -o bin/OS/Kernel.esx bin/OS/kernel_x86_64.o bin/OS/kernel.o -mno-red-zone $KernelLinkFlags -lacpica -Lports/acpica
 cp bin/OS/Kernel.esx bin/OS/Kernel.esx_symbols
 x86_64-elf-strip --strip-all bin/OS/Kernel.esx
 

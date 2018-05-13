@@ -102,6 +102,7 @@ void ACPILapic::WriteRegister(uint32_t reg, uint32_t value) {
 
 struct ACPI {
 	void Initialise();
+	void Initialise2();
 	void FindRootSystemDescriptorPointer();
 	void *FindTable(uint32_t tableSignature, ACPIDescriptorTable **header = nullptr);
 
@@ -198,6 +199,8 @@ void ACPI::Initialise() {
 
 		uintptr_t tableListAddress = (uintptr_t) sdt + ACPI_DESCRIPTOR_TABLE_HEADER_LENGTH;
 
+		// KernelLog(LOG_VERBOSE, "ACPI::Initialise - Found %d tables.\n", tablesCount);
+
 		for (uintptr_t i = 0; i < tablesCount; i++) {
 			uintptr_t address;
 
@@ -208,6 +211,8 @@ void ACPI::Initialise() {
 			}
 
 			tables[i] = (ACPIDescriptorTable *) kernelVMM.Allocate("ACPI", ACPI_MAX_TABLE_LENGTH, VMM_MAP_ALL, VMM_REGION_PHYSICAL, address);
+
+			// KernelLog(LOG_VERBOSE, "ACPI::Initialise - Found ACPI table '%s'.\n", 4, &tables[i]->signature);
 
 			if (tables[i]->length > ACPI_MAX_TABLE_LENGTH || SumBytes((uint8_t *) tables[i], tables[i]->length)) {
 				KernelPanic("ACPI::Initialise - ACPI table %d with signature %s was invalid or unsupported.\n", i, 4, &tables[i]->signature);
@@ -434,5 +439,319 @@ void *ACPI::FindTable(uint32_t tableSignature, ACPIDescriptorTable **header) {
 	// The system does not have the ACPI table.
 	return nullptr;
 }
+
+#ifdef USE_ACPICA
+
+extern "C"  {
+#include "../ports/acpica/files/acpi.h"
+}
+
+#define STB_SPRINTF_IMPLEMENTATION
+#define STB_SPRINTF_STATIC
+#include "../api/stb_sprintf.h"
+
+bool acpiOSLayerActive = false;
+
+OS_EXTERN_C ACPI_STATUS AcpiOsInitialize() {
+	if (acpiOSLayerActive) KernelPanic("AcpiOsInitialize - ACPI has already been initialised.\n");
+	acpiOSLayerActive = true;
+	KernelLog(LOG_VERBOSE, "AcpiOsInitialize - Initialising ACPICA OS layer...\n");
+	return AE_OK;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsTerminate() {
+	if (!acpiOSLayerActive) KernelPanic("AcpiOsTerminate - ACPI has not been initialised.\n");
+	acpiOSLayerActive = false;
+	KernelLog(LOG_VERBOSE, "AcpiOsTerminate - Terminating ACPICA OS layer...\n");
+	return AE_OK;
+}
+
+OS_EXTERN_C ACPI_PHYSICAL_ADDRESS AcpiOsGetRootPointer() {
+	ACPI_PHYSICAL_ADDRESS address = 0;
+	AcpiFindRootPointer(&address);
+	return address;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsPredefinedOverride(const ACPI_PREDEFINED_NAMES *predefinedObject, ACPI_STRING *newValue) {
+	(void) predefinedObject;
+	*newValue = nullptr;
+	return AE_OK;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsTableOverride(ACPI_TABLE_HEADER *existingTable, ACPI_TABLE_HEADER **newTable) {
+	(void) existingTable;
+	*newTable = nullptr;
+	return AE_OK;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsPhysicalTableOverride(ACPI_TABLE_HEADER *existingTable, ACPI_PHYSICAL_ADDRESS *newAddress, uint32_t *newTableLength) {
+	(void) existingTable;
+	*newAddress = 0;
+	*newTableLength = 0;
+	return AE_OK;
+}
+
+OS_EXTERN_C void *AcpiOsMapMemory(ACPI_PHYSICAL_ADDRESS physicalAddress, ACPI_SIZE length) {
+#ifdef ARCH_X86_64
+	if ((uintptr_t) physicalAddress + (uintptr_t) length < (uintptr_t) 0x100000000) {
+		return (void *) (LOW_MEMORY_MAP_START + physicalAddress);
+	}
+#endif
+
+	void *address = kernelVMM.Allocate("acpica", length, 
+			VMM_MAP_ALL, VMM_REGION_PHYSICAL, 
+			physicalAddress, VMM_REGION_FLAG_NOT_CACHABLE);
+	return address;
+}
+
+OS_EXTERN_C void AcpiOsUnmapMemory(void *address, ACPI_SIZE length) {
+#ifdef ARCH_X86_64
+	if ((uintptr_t) address - (uintptr_t) LOW_MEMORY_MAP_START < (uintptr_t) 0x100000000) {
+		return;
+	}
+#endif
+
+	(void) length;
+	kernelVMM.Free(address);
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsGetPhysicalAddress(void *virtualAddress, ACPI_PHYSICAL_ADDRESS *physicalAddress) {
+	kernelVMM.virtualAddressSpace->lock.Acquire();
+	*physicalAddress = kernelVMM.virtualAddressSpace->Get((uintptr_t) virtualAddress);
+	kernelVMM.virtualAddressSpace->lock.Release();
+	return AE_OK;
+}
+
+OS_EXTERN_C void *AcpiOsAllocate(ACPI_SIZE size) {
+	return OSHeapAllocate(size, false);
+}
+
+OS_EXTERN_C void AcpiOsFree(void *memory) {
+	OSHeapFree(memory);
+}
+
+OS_EXTERN_C BOOLEAN AcpiOsReadable(void *memory, ACPI_SIZE length) {
+	(void) memory;
+	(void) length;
+	// TODO 
+	KernelPanic("AcpiOsReadable - Function not supported.\n");
+	return TRUE;
+}
+
+OS_EXTERN_C BOOLEAN AcpiOsWritable(void *memory, ACPI_SIZE length) {
+	(void) memory;
+	(void) length;
+	// TODO 
+	KernelPanic("AcpiOsWritable - Function not supported.\n");
+	return TRUE;
+}
+
+OS_EXTERN_C ACPI_THREAD_ID AcpiOsGetThreadId() {
+	return GetCurrentThread()->id;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsExecute(ACPI_EXECUTE_TYPE type, ACPI_OSD_EXEC_CALLBACK function, void *context) {
+	(void) type;
+	Thread *thread = scheduler.SpawnThread((uintptr_t) function, (uintptr_t) context, kernelProcess, false);
+	CloseHandleToObject(thread, KERNEL_OBJECT_THREAD);
+	return AE_OK;
+}
+
+OS_EXTERN_C void AcpiOsSleep(UINT64 ms) {
+	Timer timer = {};
+	timer.Set(ms, true);
+	timer.event.Wait(ms);
+	timer.Remove();
+}
+
+OS_EXTERN_C void AcpiOsStall(UINT32 mcs) {
+	(void) mcs;
+	// TODO 
+	KernelPanic("AcpiOsStall - Function not supported.\n");
+}
+
+OS_EXTERN_C void AcpiOsWaitEventsComplete() {
+	// TODO 
+	KernelPanic("AcpiOsWaitEventsComplete - Function not supported.\n");
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsCreateSemaphore(UINT32 maxUnits, UINT32 initialUnits, ACPI_SEMAPHORE *handle) {
+	(void) maxUnits;
+	Semaphore *semaphore = (Semaphore *) OSHeapAllocate(sizeof(Semaphore), true);
+	semaphore->Return(initialUnits);
+	*handle = semaphore;
+	return AE_OK;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsDeleteSemaphore(ACPI_SEMAPHORE handle) {
+	OSHeapFree(handle, sizeof(Semaphore));
+	return AE_OK;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsWaitSemaphore(ACPI_SEMAPHORE handle, UINT32 units, UINT16 timeout) {
+	(void) timeout;
+	Semaphore *semaphore = (Semaphore *) handle;
+
+	if (semaphore->Take(units, timeout == (UINT16) -1 ? OS_WAIT_NO_TIMEOUT : timeout)) {
+		return AE_OK;
+	} else {
+		return AE_TIME;
+	}
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsSignalSemaphore(ACPI_SEMAPHORE handle, UINT32 units) {
+	Semaphore *semaphore = (Semaphore *) handle;
+	semaphore->Return(units);
+	return AE_OK;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsCreateLock(ACPI_SPINLOCK *handle) {
+	Spinlock *spinlock = (Spinlock *) OSHeapAllocate(sizeof(Spinlock), true);
+	*handle = spinlock;
+	return AE_OK;
+}
+
+OS_EXTERN_C void AcpiOsDeleteLock(ACPI_HANDLE handle) {
+	OSHeapFree(handle, sizeof(Spinlock));
+}
+
+OS_EXTERN_C ACPI_CPU_FLAGS AcpiOsAcquireLock(ACPI_SPINLOCK handle) {
+	Spinlock *spinlock = (Spinlock *) handle;
+	spinlock->Acquire();
+	return 0;
+}
+
+OS_EXTERN_C void AcpiOsReleaseLock(ACPI_SPINLOCK handle, ACPI_CPU_FLAGS flags) {
+	(void) flags;
+	Spinlock *spinlock = (Spinlock *) handle;
+	spinlock->Release();
+}
+
+ACPI_OSD_HANDLER acpiInterruptHandlers[256];
+void *acpiInterruptContexts[256];
+
+bool ACPIInterrupt(uintptr_t interruptIndex) {
+	return ACPI_INTERRUPT_HANDLED == acpiInterruptHandlers[interruptIndex](acpiInterruptContexts[interruptIndex]);
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 interruptLevel, ACPI_OSD_HANDLER handler, void *context) {
+	acpiInterruptHandlers[interruptLevel] = handler;
+	acpiInterruptContexts[interruptLevel] = context;
+	return RegisterIRQHandler(interruptLevel, ACPIInterrupt) ? AE_OK : AE_ERROR;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 interruptNumber, ACPI_OSD_HANDLER handler) {
+	(void) interruptNumber;
+	(void) handler;
+	// TODO 
+	KernelPanic("AcpiOsRemoveInterruptHandler - Function not supported.\n");
+	return AE_ERROR;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 *value, UINT32 width) {
+	(void) address;
+	(void) value;
+	(void) width;
+	// TODO 
+	KernelPanic("AcpiOsReadMemory - Function not supported.\n");
+	return AE_ERROR;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsWriteMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 value, UINT32 width) {
+	(void) address;
+	(void) value;
+	(void) width;
+	// TODO 
+	KernelPanic("AcpiOsWriteMemory - Function not supported.\n");
+	return AE_ERROR;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsReadPort(ACPI_IO_ADDRESS address, UINT32 *value, UINT32 width) {
+	if (width == 8) {
+		*value = ProcessorIn8(address);
+	} else if (width == 16) {
+		*value = ProcessorIn16(address);
+	} else if (width == 32) {
+		*value = ProcessorIn32(address);
+	} else {
+		return AE_ERROR;
+	}
+
+	return AE_OK;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsWritePort(ACPI_IO_ADDRESS address, UINT32 value, UINT32 width) {
+	if (width == 8) {
+		ProcessorOut8(address, (uint8_t) value);
+	} else if (width == 16) {
+		ProcessorOut16(address, (uint16_t) value);
+	} else if (width == 32) {
+		ProcessorOut32(address, (uint32_t) value);
+	} else {
+		return AE_ERROR;
+	}
+
+	return AE_OK;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsReadPciConfiguration(ACPI_PCI_ID *pciId, UINT32 reg, UINT64 *value, UINT32 width) {
+	(void) pciId;
+	(void) reg;
+	(void) value;
+	(void) width;
+	// TODO 
+	KernelPanic("AcpiOsReadPciConfiguration - Function not supported.\n");
+	return AE_ERROR;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID *pciId, UINT32 reg, UINT64 value, UINT32 width) {
+	(void) pciId;
+	(void) reg;
+	(void) value;
+	(void) width;
+	// TODO 
+	KernelPanic("AcpiOsReadPciConfiguration - Function not supported.\n");
+	return AE_ERROR;
+}
+
+char acpiPrintf[65536];
+
+OS_EXTERN_C void AcpiOsPrintf(const char *format, ...) {
+	va_list arguments;
+	va_start(arguments, format);
+	int x = stbsp_vsnprintf(acpiPrintf, 65536, format, arguments);
+	Print("%s", x, acpiPrintf);
+	va_end(arguments);
+}
+
+OS_EXTERN_C void AcpiOsVprintf(const char *format, va_list arguments) {
+	int x = stbsp_vsnprintf(acpiPrintf, 65536, format, arguments);
+	Print("%s", x, acpiPrintf);
+}
+
+OS_EXTERN_C UINT64 AcpiOsGetTimer() {
+	// TODO 
+	KernelPanic("AcpiOsGetTimer - Function not supported.\n");
+	return 0;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsSignal(UINT32 function, void *information) {
+	(void) function;
+	(void) information;
+	KernelPanic("AcpiOsSignal - ACPI requested kernel panic.\n");
+	return AE_OK;
+}
+
+void ACPI::Initialise2() {
+#ifdef USE_ACPICA
+	AcpiInitializeSubsystem();
+	AcpiInitializeTables(nullptr, 256, true);
+	AcpiLoadTables();
+	AcpiEnableSubsystem(ACPI_FULL_INITIALIZATION);
+	AcpiInitializeObjects(ACPI_FULL_INITIALIZATION);
+#endif
+}
+
+#endif
 
 #endif

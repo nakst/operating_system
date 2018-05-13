@@ -559,7 +559,7 @@ void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMM
 
 			vfs.NodeMapped(region->node);
 		}
-	}
+	} 
 
 	lock.Acquire();
 	Defer(lock.Release());

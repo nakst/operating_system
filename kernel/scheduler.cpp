@@ -10,7 +10,7 @@ void KillThread(void *_thread);
 void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, struct Process *targetProcess, bool needed /*If false, the task may not be registered if there are many queued tasks.*/);
 
 struct Semaphore {
-	void Take(uintptr_t units = 1);
+	bool Take(uintptr_t units = 1, uintptr_t timeoutMs = OS_WAIT_NO_TIMEOUT);
 	void Return(uintptr_t units = 1);
 	void Set(uintptr_t units = 1);
 
@@ -1301,17 +1301,24 @@ void Mutex::AssertLocked() {
 	}
 }
 
-void Semaphore::Take(uintptr_t u) {
+bool Semaphore::Take(uintptr_t u, uintptr_t timeoutMs) {
+	uintptr_t taken = 0;
+
 	while (u) {
-		available.Wait(OS_WAIT_NO_TIMEOUT);
+		if (!available.Wait(timeoutMs)) {
+			Return(taken);
+			return false;
+		}
 
 		mutex.Acquire();
-		if (units) { units--; u--; }
+		if (units) { units--; u--; taken++; }
 		if (!units && available.state) available.Reset();
 		mutex.Release();
 
 		lastTaken = (uintptr_t) __builtin_return_address(0);
 	}
+
+	return true;
 }
 
 void Semaphore::Return(uintptr_t u) {
