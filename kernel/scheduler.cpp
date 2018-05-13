@@ -142,9 +142,6 @@ struct Process {
 	uintptr_t id;
 	volatile size_t handles;
 
-#define PROCESS_EXECUTABLE_NOT_LOADED 0
-#define PROCESS_EXECUTABLE_FAILED_TO_LOAD 1
-#define PROCESS_EXECUTABLE_LOADED 2
 	uintptr_t executableState;
 	Event executableLoadAttemptComplete;
 	Thread *executableMainThread;
@@ -529,10 +526,10 @@ void NewProcess() {
 	uintptr_t processStartAddress = LoadELF(thisProcess->executablePath, thisProcess->executablePathLength);
 
 	if (processStartAddress) {
-		thisProcess->executableState = PROCESS_EXECUTABLE_LOADED;
+		thisProcess->executableState = OS_PROCESS_EXECUTABLE_LOADED;
 		thisProcess->executableMainThread = scheduler.SpawnThread(processStartAddress, 0, thisProcess, true);
 	} else {
-		thisProcess->executableState = PROCESS_EXECUTABLE_FAILED_TO_LOAD;
+		thisProcess->executableState = OS_PROCESS_EXECUTABLE_FAILED_TO_LOAD;
 		OSMessage message = {};
 		message.type = OS_MESSAGE_PROGRAM_FAILED_TO_START;
 		desktopProcess->messageQueue.SendMessage(message);
@@ -575,7 +572,7 @@ Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool k
 		CloseHandleToObject(newProcessThread, KERNEL_OBJECT_THREAD);
 		process->executableLoadAttemptComplete.Wait(OS_WAIT_NO_TIMEOUT);
 
-		if (process->executableState == PROCESS_EXECUTABLE_FAILED_TO_LOAD) {
+		if (process->executableState == OS_PROCESS_EXECUTABLE_FAILED_TO_LOAD) {
 			KernelLog(LOG_VERBOSE, "Executable failed to load, closing handle to process...\n");
 			CloseHandleToObject(process, KERNEL_OBJECT_PROCESS);
 			return nullptr;

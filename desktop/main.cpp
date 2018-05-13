@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 #define WALLPAPER ("/OS/Sample Images/Flower.jpg")
-#define FIRST_PROGRAM ("File Manager")
+#define FIRST_PROGRAM ("/OS/Test.esx")
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"
@@ -145,9 +145,29 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 			}
 
 			if (found) {
+				bool start = false, close = false;
+
 				if (!program->process) {
 					// The program hasn't been started yet.
+					start = true;
+				} else {
+					OSProcessState state;
+					OSGetProcessState(program->process, &state);
 
+					if (state.terminating) {
+						// The program has been terminated.
+						close = true;
+					}
+				}
+
+				if (close) {
+					start = true;
+					OSCloseHandle(program->process);
+					program->pid = 0;
+					program->process = 0;
+				}
+
+				if (start) {
 					OSProcessInformation information;
 
 					if (OS_SUCCESS == OSCreateProcess(program->executablePath.text, program->executablePath.bytes, &information, nullptr)) {
@@ -284,6 +304,19 @@ void InitialiseGUI() {
 	OSRedrawAll();
 }
 
+Token RemoveQuotes(Token token) {
+	if (*token.text == '"') {
+		token.text++;
+		token.bytes--;
+	}
+
+	if (token.text[token.bytes - 1] == '"') {
+		token.bytes--;
+	}
+
+	return token;
+}
+
 void LoadInstalledPrograms(Token attribute, Token section, Token name, Token value, int event) {
 	if (installedProgramCount == MAX_INSTALLED_PROGRAMS) {
 		return;
@@ -298,17 +331,11 @@ void LoadInstalledPrograms(Token attribute, Token section, Token name, Token val
 	if (event == EVENT_ATTRIBUTE) { 
 		if (CompareTokens(attribute, "program")) {
 			if (CompareTokens(name, "name")) {
-				installedPrograms[installedProgramCount].name = value;
-				installedPrograms[installedProgramCount].name.text++;
-				installedPrograms[installedProgramCount].name.bytes -= 2;
+				installedPrograms[installedProgramCount].name = RemoveQuotes(value);
 			} else if (CompareTokens(name, "workingFolder")) {
-				installedPrograms[installedProgramCount].workingFolder = value;
-				installedPrograms[installedProgramCount].workingFolder.text++;
-				installedPrograms[installedProgramCount].workingFolder.bytes -= 2;
+				installedPrograms[installedProgramCount].workingFolder = RemoveQuotes(value);
 			} else if (CompareTokens(name, "executablePath")) {
-				installedPrograms[installedProgramCount].executablePath = value;
-				installedPrograms[installedProgramCount].executablePath.text++;
-				installedPrograms[installedProgramCount].executablePath.bytes -= 2;
+				installedPrograms[installedProgramCount].executablePath = RemoveQuotes(value);
 			}
 		}
 	}

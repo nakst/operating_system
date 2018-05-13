@@ -330,6 +330,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_MOVE_NODE,
 	OS_SYSCALL_EXECUTE_PROGRAM,
 	OS_SYSCALL_READ_CONSTANT_BUFFER,
+	OS_SYSCALL_GET_PROCESS_STATE,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -480,6 +481,17 @@ typedef struct OSCaret {
 typedef struct OSCrashReason {
 	OSError errorCode;
 } OSCrashReason;
+
+typedef struct OSProcessState {
+	OSCrashReason crashReason;
+	void *creationArgument;
+	uintptr_t id;
+#define OS_PROCESS_EXECUTABLE_NOT_LOADED 0
+#define OS_PROCESS_EXECUTABLE_FAILED_TO_LOAD 1
+#define OS_PROCESS_EXECUTABLE_LOADED 2
+	uintptr_t executableState;
+	uint8_t allThreadsTerminated : 1, terminating : 1, crashed : 1;
+} OSProcessState;
 
 typedef struct OSIORequestProgress {
 	uint64_t accessed;
@@ -1054,6 +1066,7 @@ OS_EXTERN_C void *OSAllocate(size_t size);
 OS_EXTERN_C OSError OSFree(void *address);
 
 OS_EXTERN_C void *OSGetCreationArgument(OSHandle object);
+OS_EXTERN_C void OSGetProcessState(OSHandle process, OSProcessState *state);
 
 OS_EXTERN_C OSError OSGetLinearBuffer(OSHandle surface, OSLinearBuffer *linearBuffer);
 OS_EXTERN_C OSError OSInvalidateRectangle(OSHandle surface, OSRectangle rectangle);

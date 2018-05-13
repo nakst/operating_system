@@ -278,3 +278,7 @@ void OSExecuteProgram(const char *name, size_t nameBytes) {
 void OSReadConstantBuffer(OSHandle buffer, void *output) {
 	OSSyscall(OS_SYSCALL_READ_CONSTANT_BUFFER, buffer, (uintptr_t) output, 0, 0);
 }
+
+void OSGetProcessState(OSHandle process, OSProcessState *state) {
+	OSSyscall(OS_SYSCALL_GET_PROCESS_STATE, process, (uintptr_t) state, 0, 0);
+}

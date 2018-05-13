@@ -1197,6 +1197,26 @@ uintptr_t DoSyscall(OSSyscallType index,
 			CopyMemory((void *) argument1, buffer + 1, buffer->bytes);
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
+
+		case OS_SYSCALL_GET_PROCESS_STATE: {
+			KernelObjectType type = KERNEL_OBJECT_PROCESS;
+			Process *process = (Process *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(process, argument0));
+
+			SYSCALL_BUFFER(argument1, sizeof(OSProcessState), 1);
+
+			OSProcessState *state = (OSProcessState *) argument1;
+			state->crashReason = process->crashReason;
+			state->creationArgument = process->creationArgument;
+			state->id = process->id;
+			state->executableState = process->executableState;
+			state->allThreadsTerminated = process->allThreadsTerminated;
+			state->terminating = process->terminating;
+			state->crashed = process->crashed;
+
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
 	}
 
 	end:;
