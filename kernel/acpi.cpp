@@ -118,6 +118,8 @@ struct ACPI {
 	ACPILapicNMI lapicNMIs[32];
 	ACPILapic lapic;
 
+	uint64_t timestampTicksPerMs;
+
 	private:
 
 	RootSystemDescriptorPointer *rsdp;
@@ -414,12 +416,15 @@ void ACPI::Initialise() {
 			kernelVMM.virtualAddressSpace->lock.Release();
 		}
 
-		// Set up the LAPIC's time
+		// Calibrate the LAPIC's timer and processor's timestamp counter.
 		ProcessorDisableInterrupts();
+		uint64_t start = ProcessorReadTimeStamp();
 		acpi.lapic.WriteRegister(0x380 >> 2, (uint32_t) -1); 
 		for (int i = 0; i < 8; i++) Delay1MS(); // Average over 8ms
 		acpi.lapic.ticksPerMs = ((uint32_t) -1 - acpi.lapic.ReadRegister(0x390 >> 2)) >> 4;
 		osRandomByteSeed ^= acpi.lapic.ReadRegister(0x390 >> 2);
+		uint64_t end = ProcessorReadTimeStamp();
+		timestampTicksPerMs = (end - start) >> 3;
 		ProcessorEnableInterrupts();
 	}
 #endif
@@ -533,16 +538,14 @@ OS_EXTERN_C void AcpiOsFree(void *memory) {
 OS_EXTERN_C BOOLEAN AcpiOsReadable(void *memory, ACPI_SIZE length) {
 	(void) memory;
 	(void) length;
-	// TODO 
-	KernelPanic("AcpiOsReadable - Function not supported.\n");
+	// This is only used by the debugger, which we don't use...
 	return TRUE;
 }
 
 OS_EXTERN_C BOOLEAN AcpiOsWritable(void *memory, ACPI_SIZE length) {
 	(void) memory;
 	(void) length;
-	// TODO 
-	KernelPanic("AcpiOsWritable - Function not supported.\n");
+	// This is only used by the debugger, which we don't use...
 	return TRUE;
 }
 
@@ -550,10 +553,35 @@ OS_EXTERN_C ACPI_THREAD_ID AcpiOsGetThreadId() {
 	return GetCurrentThread()->id;
 }
 
+Thread *acpiEvents[256];
+size_t acpiEventCount;
+
+struct ACPICAEvent {
+	ACPI_OSD_EXEC_CALLBACK function;
+	void *context;
+};
+
+void RunACPICAEvent(void *e) {
+	ACPICAEvent *event = (ACPICAEvent *) e;
+	event->function(event->context);
+	OSHeapFree(event);
+	scheduler.TerminateThread(GetCurrentThread());
+}
+
 OS_EXTERN_C ACPI_STATUS AcpiOsExecute(ACPI_EXECUTE_TYPE type, ACPI_OSD_EXEC_CALLBACK function, void *context) {
 	(void) type;
-	Thread *thread = scheduler.SpawnThread((uintptr_t) function, (uintptr_t) context, kernelProcess, false);
-	CloseHandleToObject(thread, KERNEL_OBJECT_THREAD);
+
+	ACPICAEvent *event = (ACPICAEvent *) OSHeapAllocate(sizeof(ACPICAEvent), true);
+	event->function = function;
+	event->context = context;
+
+	Thread *thread = scheduler.SpawnThread((uintptr_t) RunACPICAEvent, (uintptr_t) event, kernelProcess, false);
+
+	if (acpiEventCount == 256) {
+		KernelPanic("AcpiOsExecute - Exceeded maximum event count, 256.\n");
+	}
+
+	acpiEvents[acpiEventCount++] = thread;
 	return AE_OK;
 }
 
@@ -566,13 +594,19 @@ OS_EXTERN_C void AcpiOsSleep(UINT64 ms) {
 
 OS_EXTERN_C void AcpiOsStall(UINT32 mcs) {
 	(void) mcs;
-	// TODO 
-	KernelPanic("AcpiOsStall - Function not supported.\n");
+	uint64_t start = ProcessorReadTimeStamp();
+	uint64_t end = start + mcs * (acpi.timestampTicksPerMs / 1000);
+	while (ProcessorReadTimeStamp() < end);
 }
 
 OS_EXTERN_C void AcpiOsWaitEventsComplete() {
-	// TODO 
-	KernelPanic("AcpiOsWaitEventsComplete - Function not supported.\n");
+	for (uintptr_t i = 0; i < acpiEventCount; i++) {
+		Thread *thread = acpiEvents[i];
+		thread->killedEvent.Wait(OS_WAIT_NO_TIMEOUT);
+		CloseHandleToObject(thread, KERNEL_OBJECT_THREAD);
+	}
+
+	acpiEventCount = 0;
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsCreateSemaphore(UINT32 maxUnits, UINT32 initialUnits, ACPI_SEMAPHORE *handle) {
@@ -631,21 +665,32 @@ ACPI_OSD_HANDLER acpiInterruptHandlers[256];
 void *acpiInterruptContexts[256];
 
 bool ACPIInterrupt(uintptr_t interruptIndex) {
-	return ACPI_INTERRUPT_HANDLED == acpiInterruptHandlers[interruptIndex](acpiInterruptContexts[interruptIndex]);
+	if (acpiInterruptHandlers[interruptIndex]) {
+		return ACPI_INTERRUPT_HANDLED == acpiInterruptHandlers[interruptIndex](acpiInterruptContexts[interruptIndex]);
+	} else {
+		return false;
+	}
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 interruptLevel, ACPI_OSD_HANDLER handler, void *context) {
+	if (acpiInterruptHandlers[interruptLevel]) {
+		return AE_ALREADY_EXISTS;
+	}
+
 	acpiInterruptHandlers[interruptLevel] = handler;
 	acpiInterruptContexts[interruptLevel] = context;
+
 	return RegisterIRQHandler(interruptLevel, ACPIInterrupt) ? AE_OK : AE_ERROR;
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 interruptNumber, ACPI_OSD_HANDLER handler) {
-	(void) interruptNumber;
-	(void) handler;
-	// TODO 
-	KernelPanic("AcpiOsRemoveInterruptHandler - Function not supported.\n");
-	return AE_ERROR;
+	if (handler != acpiInterruptHandlers[interruptNumber]) {
+		return AE_ERROR;
+	}
+
+	acpiInterruptHandlers[interruptNumber] = nullptr;
+
+	return AE_OK;
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 *value, UINT32 width) {
@@ -710,7 +755,7 @@ OS_EXTERN_C ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID *pciId, UINT32 r
 	(void) value;
 	(void) width;
 	// TODO 
-	KernelPanic("AcpiOsReadPciConfiguration - Function not supported.\n");
+	KernelPanic("AcpiOsWritePciConfiguration - Function not supported.\n");
 	return AE_ERROR;
 }
 
@@ -730,9 +775,11 @@ OS_EXTERN_C void AcpiOsVprintf(const char *format, va_list arguments) {
 }
 
 OS_EXTERN_C UINT64 AcpiOsGetTimer() {
-	// TODO 
-	KernelPanic("AcpiOsGetTimer - Function not supported.\n");
-	return 0;
+	uint64_t tick = ProcessorReadTimeStamp();
+	uint64_t ticksPerMs = acpi.timestampTicksPerMs;
+	uint64_t ticksPer100Ns = ticksPerMs / 1000 / 10;
+	if (ticksPer100Ns == 0) return tick;
+	return tick / ticksPer100Ns;
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsSignal(UINT32 function, void *information) {
