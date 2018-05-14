@@ -103,8 +103,11 @@ void ACPILapic::WriteRegister(uint32_t reg, uint32_t value) {
 struct ACPI {
 	void Initialise();
 	void Initialise2();
+
 	void FindRootSystemDescriptorPointer();
 	void *FindTable(uint32_t tableSignature, ACPIDescriptorTable **header = nullptr);
+
+	void ShutdownComputer();
 
 	size_t processorCount;
 	size_t ioapicCount;
@@ -447,6 +450,8 @@ void *ACPI::FindTable(uint32_t tableSignature, ACPIDescriptorTable **header) {
 
 #ifdef USE_ACPICA
 
+// TODO Warning: Not all of the OSL has been tested.
+
 extern "C"  {
 #include "../ports/acpica/files/acpi.h"
 }
@@ -693,22 +698,53 @@ OS_EXTERN_C ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 interruptNumber, ACP
 	return AE_OK;
 }
 
+uint8_t acpicaPageBuffer[PAGE_SIZE];
+Mutex acpicaPageBufferMutex;
+
 OS_EXTERN_C ACPI_STATUS AcpiOsReadMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 *value, UINT32 width) {
-	(void) address;
-	(void) value;
-	(void) width;
-	// TODO 
-	KernelPanic("AcpiOsReadMemory - Function not supported.\n");
-	return AE_ERROR;
+	acpicaPageBufferMutex.Acquire();
+	Defer(acpicaPageBufferMutex.Release());
+
+	uintptr_t page = (uintptr_t) address & ~(PAGE_SIZE - 1);
+	uintptr_t offset = (uintptr_t) address & (PAGE_SIZE - 1);
+
+	ReadPhysicalMemory(page, acpicaPageBuffer, 1);
+	
+	if (width == 64) {
+		*value = *((uint64_t *) (acpicaPageBuffer + offset));
+	} else if (width == 32) {
+		*value = *((uint32_t *) (acpicaPageBuffer + offset));
+	} else if (width == 16) {
+		*value = *((uint16_t *) (acpicaPageBuffer + offset));
+	} else {
+		*value = acpicaPageBuffer[offset];
+	}
+
+	return AE_OK;
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsWriteMemory(ACPI_PHYSICAL_ADDRESS address, UINT64 value, UINT32 width) {
-	(void) address;
-	(void) value;
-	(void) width;
-	// TODO 
-	KernelPanic("AcpiOsWriteMemory - Function not supported.\n");
-	return AE_ERROR;
+	acpicaPageBufferMutex.Acquire();
+	Defer(acpicaPageBufferMutex.Release());
+
+	uintptr_t page = (uintptr_t) address & ~(PAGE_SIZE - 1);
+	uintptr_t offset = (uintptr_t) address & (PAGE_SIZE - 1);
+
+	ReadPhysicalMemory(page, acpicaPageBuffer, 1);
+	
+	if (width == 64) {
+		*((uint64_t *) (acpicaPageBuffer + offset)) = value;
+	} else if (width == 32) {
+		*((uint32_t *) (acpicaPageBuffer + offset)) = value;
+	} else if (width == 16) {
+		*((uint16_t *) (acpicaPageBuffer + offset)) = value;
+	} else {
+		*((uint8_t *) (acpicaPageBuffer + offset)) = value;
+	}
+
+	CopyIntoPhysicalMemory(page, acpicaPageBuffer, 1);
+
+	return AE_OK;
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsReadPort(ACPI_IO_ADDRESS address, UINT32 *value, UINT32 width) {
@@ -739,39 +775,83 @@ OS_EXTERN_C ACPI_STATUS AcpiOsWritePort(ACPI_IO_ADDRESS address, UINT32 value, U
 	return AE_OK;
 }
 
-OS_EXTERN_C ACPI_STATUS AcpiOsReadPciConfiguration(ACPI_PCI_ID *pciId, UINT32 reg, UINT64 *value, UINT32 width) {
-	(void) pciId;
-	(void) reg;
-	(void) value;
-	(void) width;
-	// TODO 
-	KernelPanic("AcpiOsReadPciConfiguration - Function not supported.\n");
-	return AE_ERROR;
+OS_EXTERN_C ACPI_STATUS AcpiOsReadPciConfiguration(ACPI_PCI_ID *address, UINT32 reg, UINT64 *value, UINT32 width) {
+	if (width == 64) {
+		uint64_t x = (uint64_t) pci.ReadConfig(address->Bus, address->Device, address->Function, reg)
+			| ((uint64_t) pci.ReadConfig(address->Bus, address->Device, address->Function, reg + 4) << 32);
+		*value = x;
+	} else {
+		uint32_t x = pci.ReadConfig(address->Bus, address->Device, address->Function, reg & ~3);
+		x >>= (reg & 3) * 8;
+
+		if (width == 8) x &= 0xFF;
+		if (width == 16) x &= 0xFFFF;
+
+		*value = x;
+	}
+
+	return AE_OK;
 }
 
-OS_EXTERN_C ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID *pciId, UINT32 reg, UINT64 value, UINT32 width) {
-	(void) pciId;
-	(void) reg;
-	(void) value;
-	(void) width;
-	// TODO 
-	KernelPanic("AcpiOsWritePciConfiguration - Function not supported.\n");
-	return AE_ERROR;
+OS_EXTERN_C ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID *address, UINT32 reg, UINT64 value, UINT32 width) {
+	if (width == 64) {
+		pci.WriteConfig(address->Bus, address->Device, address->Function, reg, value);
+		pci.WriteConfig(address->Bus, address->Device, address->Function, reg + 4, value >> 32);
+	} else if (width == 32) {
+		pci.WriteConfig(address->Bus, address->Device, address->Function, reg, value);
+	} else {
+		uint32_t x = pci.ReadConfig(address->Bus, address->Device, address->Function, reg & ~3);
+		uint32_t o = reg & 3;
+
+		if (width == 16) {
+			if (o == 2) {
+				x = (x & ~0xFFFF0000) | (value << 16);
+			} else {
+				x = (x & ~0x0000FFFF) | (value << 0);
+			}
+		} else if (width == 8) {
+			if (o == 3) {
+				x = (x & ~0xFF000000) | (value << 24);
+			} else if (o == 2) {
+				x = (x & ~0x00FF0000) | (value << 16);
+			} else if (o == 1) {
+				x = (x & ~0x0000FF00) | (value << 8);
+			} else {
+				x = (x & ~0x000000FF) | (value << 0);
+			}
+		}
+
+		pci.WriteConfig(address->Bus, address->Device, address->Function, reg & ~3, x);
+	}
+
+	return AE_OK;
 }
 
 char acpiPrintf[65536];
+
+#if 0
+#define ENABLE_ACPICA_OUTPUT
+#endif
 
 OS_EXTERN_C void AcpiOsPrintf(const char *format, ...) {
 	va_list arguments;
 	va_start(arguments, format);
 	int x = stbsp_vsnprintf(acpiPrintf, 65536, format, arguments);
+#ifdef ENABLE_ACPICA_OUTPUT
 	Print("%s", x, acpiPrintf);
+#else 
+	(void) x;
+#endif
 	va_end(arguments);
 }
 
 OS_EXTERN_C void AcpiOsVprintf(const char *format, va_list arguments) {
 	int x = stbsp_vsnprintf(acpiPrintf, 65536, format, arguments);
+#ifdef ENABLE_ACPICA_OUTPUT
 	Print("%s", x, acpiPrintf);
+#else 
+	(void) x;
+#endif
 }
 
 OS_EXTERN_C UINT64 AcpiOsGetTimer() {
@@ -787,6 +867,19 @@ OS_EXTERN_C ACPI_STATUS AcpiOsSignal(UINT32 function, void *information) {
 	(void) information;
 	KernelPanic("AcpiOsSignal - ACPI requested kernel panic.\n");
 	return AE_OK;
+}
+
+OS_EXTERN_C ACPI_STATUS AcpiOsEnterSleep(UINT8 sleepState, UINT32 registerAValue, UINT32 registerBValue) {
+	(void) sleepState;
+	(void) registerAValue;
+	(void) registerBValue;
+	return AE_OK;
+}
+
+void ACPI::ShutdownComputer() {
+	AcpiEnterSleepStatePrep(5);
+	ProcessorDisableInterrupts();
+	AcpiEnterSleepState(5);
 }
 
 void ACPI::Initialise2() {

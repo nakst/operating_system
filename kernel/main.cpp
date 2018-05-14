@@ -6,9 +6,9 @@
 #include "kernel.h"
 
 void KernelInitialisation() {
-	acpi.Initialise2();
 	pmm.Initialise2();
 	InitialiseObjectManager();
+	acpi.Initialise2();
 	graphics.Initialise(); 
 	vfs.Initialise();
 	deviceManager.Initialise();

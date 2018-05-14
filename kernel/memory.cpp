@@ -1999,4 +1999,44 @@ void CopyIntoPhysicalMemory(uintptr_t page, void *_source, size_t pageCount) {
 	physicalMemoryManipulationLock.Release();
 }
 
+void ReadPhysicalMemory(uintptr_t page, void *_source, size_t pageCount) {
+	uint8_t *source = (uint8_t *) _source;
+	physicalMemoryManipulationLock.Acquire();
+
+	repeat:;
+	size_t doCount = pageCount > PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES ? PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES : pageCount;
+	pageCount -= doCount;
+
+	{
+		VirtualAddressSpace *vas = kernelVMM.virtualAddressSpace;
+		void *region = physicalMemoryManipulationRegion;
+
+		vas->lock.Acquire();
+
+		for (uintptr_t i = 0; i < doCount; i++) {
+			vas->Map(page + PAGE_SIZE * i, (uintptr_t) region + PAGE_SIZE * i, VMM_REGION_FLAG_CACHABLE | VMM_REGION_FLAG_OVERWRITABLE);
+		}
+
+		vas->lock.Release();
+
+		physicalMemoryManipulationProcessorLock.Acquire();
+
+		for (uintptr_t i = 0; i < doCount; i++) {
+			ProcessorInvalidatePage((uintptr_t) region + doCount * PAGE_SIZE);
+		}
+
+		CopyMemory(source, region, doCount * PAGE_SIZE);
+
+		physicalMemoryManipulationProcessorLock.Release();
+	}
+
+	if (pageCount) {
+		page += PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES * PAGE_SIZE;
+		source += PHYSICAL_MEMORY_MANIPULATION_REGION_PAGES * PAGE_SIZE;
+		goto repeat;
+	}
+
+	physicalMemoryManipulationLock.Release();
+}
+
 #endif

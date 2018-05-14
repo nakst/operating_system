@@ -206,6 +206,7 @@ struct Process *desktopProcess;
 #include "terminal.cpp"
 #include "vga.cpp"
 #include "graphics.cpp"
+#include "pci.cpp"
 #include "acpi.cpp"
 
 #ifndef IMPLEMENTATION
@@ -216,16 +217,13 @@ struct Process *desktopProcess;
 #include "x86_64.cpp"
 #endif
 
-#include "pci.cpp"
 #include "ata.cpp"
 #include "ahci.cpp"
-
 #include "vfs.cpp"
 #include "esfs.cpp"
 #include "ps2.cpp"
 #include "devices.cpp"
 #include "elf.cpp"
-
 #include "window_manager.cpp"
 #include "syscall.cpp"
 
