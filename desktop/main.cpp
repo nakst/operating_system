@@ -56,6 +56,21 @@ char *errorMessages[] = {
 	(char *) "INDEX_OUT_OF_BOUNDS",
 };
 
+OSCallbackResponse CommandShutdown(OSObject object, OSMessage *message) {
+	if (message->type != OS_NOTIFICATION_COMMAND) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	OSObject window = OSGetWindow(object);
+	OSMessage m;
+	m.type = OS_MESSAGE_DESTROY;
+	OSSendMessage(window, &m);
+
+	OSSyscall(OS_SYSCALL_SHUTDOWN, 0, 0, 0, 0);
+
+	return OS_CALLBACK_HANDLED;
+}
+
 OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	(void) _object;
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
@@ -211,6 +226,13 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 					OSLiteral("The program failed to start."),
 					OSLiteral("The executable file was either corrupt, or not designed to run on your computer."),
 					OS_ICON_ERROR, OS_INVALID_OBJECT);
+		} break;
+
+		case OS_MESSAGE_POWER_BUTTON_PRESSED: {
+			OSShowDialogConfirm(OSLiteral("Shutdown"),
+					OSLiteral("Are you sure you want to shutdown?"),
+					OSLiteral("Any unsaved work will be lost."),
+					OS_ICON_SHUTDOWN, OS_INVALID_OBJECT, commandShutdown);
 		} break;
 
 		default: {

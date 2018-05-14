@@ -906,6 +906,19 @@ void ACPI::ShutdownComputer() {
 	AcpiEnterSleepState(5);
 }
 
+void ACPIPowerButtonPressed2(void *context) {
+	(void) context;
+	OSMessage message = {};
+	message.type = OS_MESSAGE_POWER_BUTTON_PRESSED;
+	desktopProcess->messageQueue.SendMessage(message);
+}
+
+UINT32 ACPIPowerButtonPressed(void *context) {
+	(void) context;
+	RegisterAsyncTask2(ACPIPowerButtonPressed2, nullptr);
+	return 0;
+}
+
 void ACPI::Initialise2() {
 #ifdef USE_ACPICA
 	AcpiInitializeSubsystem();
@@ -913,6 +926,13 @@ void ACPI::Initialise2() {
 	AcpiLoadTables();
 	AcpiEnableSubsystem(ACPI_FULL_INITIALIZATION);
 	AcpiInitializeObjects(ACPI_FULL_INITIALIZATION);
+
+	if (AE_OK == AcpiEnableEvent(ACPI_EVENT_POWER_BUTTON, 0)) {
+		Print("enabled event....\n");
+		if (AE_OK == AcpiInstallFixedEventHandler(ACPI_EVENT_POWER_BUTTON, ACPIPowerButtonPressed, nullptr)) {
+			Print("installed handler....\n");
+		}
+	}
 #endif
 }
 

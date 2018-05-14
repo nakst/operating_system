@@ -1217,6 +1217,10 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
+
+		case OS_SYSCALL_SHUTDOWN: {
+			acpi.ShutdownComputer();
+		} break;
 	}
 
 	end:;

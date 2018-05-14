@@ -177,6 +177,7 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OS_ICON_ROTATE_CLOCKWISE 	(8)
 #define OS_ICON_ROTATE_ANTI_CLOCKWISE 	(9)
 #define OS_ICON_MAGNIFYING_GLASS	(10)
+#define OS_ICON_SHUTDOWN		(11)
 
 #define OS_FLAGS_DEFAULT (0)
 
@@ -331,6 +332,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_EXECUTE_PROGRAM,
 	OS_SYSCALL_READ_CONSTANT_BUFFER,
 	OS_SYSCALL_GET_PROCESS_STATE,
+	OS_SYSCALL_SHUTDOWN,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -611,6 +613,7 @@ typedef enum OSMessageType {
 
 	// Desktop messages:
 	OS_MESSAGE_EXECUTE_PROGRAM		= 0x4800,
+	OS_MESSAGE_POWER_BUTTON_PRESSED		= 0x4801,
 
 	// Instance messages:
 	OS_MESSAGE_CREATE_INSTANCE		= 0x4A00,
@@ -1138,6 +1141,11 @@ OS_EXTERN_C void OSShowDialogAlert(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
 				   uint16_t iconID, OSObject modalParent);
+OS_EXTERN_C void OSShowDialogConfirm(char *title, size_t titleBytes,
+				   char *message, size_t messageBytes,
+				   char *description, size_t descriptionBytes,
+				   uint16_t iconID, OSObject modalParent,
+				   OSCommand *command);
 
 OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 OS_EXTERN_C OSRectangle OSGetControlBounds(OSObject control);

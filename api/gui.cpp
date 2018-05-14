@@ -325,6 +325,12 @@ static UIImage icons32[] = {
 	ICON32(220, 135),
 	{{}, {}},
 	{{}, {}},
+	{{}, {}},
+	{{}, {}},
+	{{}, {}},
+	{{}, {}},
+	{{}, {}},
+	ICON32(512 + 0, 480),
 };
 
 static UIImage *scrollbarButtonHorizontalBackgrounds[] = {
@@ -5178,6 +5184,60 @@ static OSCallbackResponse CommandDialogAlertOK(OSObject object, OSMessage *messa
 	}
 
 	return OS_CALLBACK_NOT_HANDLED;
+}
+
+static OSCallbackResponse CommandDialogAlertCancel(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type == OS_NOTIFICATION_COMMAND) {
+		OSMessage m;
+		m.type = OS_MESSAGE_DESTROY;
+		OSSendMessage(message->context, &m);
+		return OS_CALLBACK_HANDLED;
+	}
+
+	return OS_CALLBACK_NOT_HANDLED;
+}
+
+void OSShowDialogConfirm(char *title, size_t titleBytes,
+				   char *message, size_t messageBytes,
+				   char *description, size_t descriptionBytes,
+				   uint16_t iconID, OSObject modalParent, OSCommand *command) {
+	OSWindowSpecification specification = *osDialogStandard;
+	specification.title = title;
+	specification.titleBytes = titleBytes;
+
+	OSObject dialog = CreateWindow(&specification, nullptr, 0, 0, (Window *) modalParent);
+
+	OSObject layout1 = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
+	OSObject layout2 = OSCreateGrid(3, 1, OS_GRID_STYLE_CONTAINER);
+	OSObject layout3 = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER_WITHOUT_BORDER);
+	OSObject layout4 = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER_ALT);
+	OSObject layout5 = OSCreateGrid(2, 1, OS_GRID_STYLE_CONTAINER_WITHOUT_BORDER);
+
+	OSSetRootGrid(dialog, layout1);
+	OSAddGrid(layout1, 0, 0, layout2, OS_CELL_FILL);
+	OSAddGrid(layout2, 2, 0, layout3, OS_CELL_FILL);
+	OSAddGrid(layout1, 0, 1, layout4, OS_CELL_H_EXPAND);
+	OSAddGrid(layout4, 0, 0, layout5, OS_CELL_H_RIGHT | OS_CELL_H_PUSH);
+
+	OSObject okButton = OSCreateButton(command, OS_BUTTON_STYLE_NORMAL);
+	OSAddControl(layout5, 0, 0, okButton, OS_CELL_H_RIGHT);
+	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
+
+	OSObject cancelButton = OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL);
+	OSAddControl(layout5, 1, 0, cancelButton, OS_CELL_H_RIGHT);
+	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertCancel, dialog));
+
+	Control *label = (Control *) OSCreateLabel(message, messageBytes);
+	label->textSize = 10;
+	label->textColor = TEXT_COLOR_HEADING;
+	OSAddControl(layout3, 0, 0, label, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+
+	OSAddControl(layout3, 0, 1, OSCreateLabel(description, descriptionBytes), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddControl(layout2, 0, 0, OSCreateIconDisplay(iconID), OS_CELL_V_TOP);
+
+	OSSetFocusedControl(cancelButton, false);
 }
 
 void OSShowDialogAlert(char *title, size_t titleBytes,

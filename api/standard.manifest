@@ -54,6 +54,9 @@ osCommandSelectAll;
 [command osDialogStandardOK]
 label = "\$OK";
 
+[command osDialogStandardCancel]
+label = "\$Cancel";
+
 [window osDialogStandard]
 width = 400;
 height = 100;

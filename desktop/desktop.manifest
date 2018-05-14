@@ -5,3 +5,8 @@ name = "Desktop";
 output = "Desktop.esx";
 source = "desktop/main.cpp";
 installationFolder = "/OS/";
+
+[command commandShutdown]
+label = "Shutdown";
+callback = CommandShutdown;
+dangerous = true;

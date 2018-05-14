@@ -689,6 +689,12 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, Process *targ
 	local->asyncTasksWrite++;
 }
 
+void RegisterAsyncTask2(AsyncTaskCallback callback, void *argument) {
+	scheduler.lock.Acquire();
+	RegisterAsyncTask(callback, argument, kernelProcess, false);
+	scheduler.lock.Release();
+}
+
 void Scheduler::RemoveProcess(Process *process) {
 	// KernelLog(LOG_INFO, "Removing process %d.\n", process->id);
 
