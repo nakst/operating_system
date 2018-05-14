@@ -762,6 +762,11 @@ ProcessorReadTimeStamp:
 	or	rax,rdx
 	ret
 
+[global ProcessorFlushCodeCache]
+ProcessorFlushCodeCache:
+	wbinvd
+	ret
+
 [global ProcessorInstallTSS]
 ProcessorInstallTSS:
 	push	rbx

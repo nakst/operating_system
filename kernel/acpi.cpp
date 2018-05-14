@@ -453,7 +453,9 @@ void *ACPI::FindTable(uint32_t tableSignature, ACPIDescriptorTable **header) {
 // TODO Warning: Not all of the OSL has been tested.
 
 extern "C"  {
+#pragma GCC diagnostic ignored "-Wunused-parameter" push
 #include "../ports/acpica/files/acpi.h"
+#pragma GCC diagnostic pop
 }
 
 #define STB_SPRINTF_IMPLEMENTATION
@@ -526,9 +528,14 @@ OS_EXTERN_C void AcpiOsUnmapMemory(void *address, ACPI_SIZE length) {
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsGetPhysicalAddress(void *virtualAddress, ACPI_PHYSICAL_ADDRESS *physicalAddress) {
+	if (!virtualAddress || !physicalAddress) {
+		return AE_BAD_PARAMETER;
+	}
+
 	kernelVMM.virtualAddressSpace->lock.Acquire();
 	*physicalAddress = kernelVMM.virtualAddressSpace->Get((uintptr_t) virtualAddress);
 	kernelVMM.virtualAddressSpace->lock.Release();
+	
 	return AE_OK;
 }
 
@@ -576,6 +583,8 @@ void RunACPICAEvent(void *e) {
 OS_EXTERN_C ACPI_STATUS AcpiOsExecute(ACPI_EXECUTE_TYPE type, ACPI_OSD_EXEC_CALLBACK function, void *context) {
 	(void) type;
 
+	if (!function) return AE_BAD_PARAMETER;
+
 	ACPICAEvent *event = (ACPICAEvent *) OSHeapAllocate(sizeof(ACPICAEvent), true);
 	event->function = function;
 	event->context = context;
@@ -615,20 +624,24 @@ OS_EXTERN_C void AcpiOsWaitEventsComplete() {
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsCreateSemaphore(UINT32 maxUnits, UINT32 initialUnits, ACPI_SEMAPHORE *handle) {
-	(void) maxUnits;
+	if (!handle) return AE_BAD_PARAMETER;
+
 	Semaphore *semaphore = (Semaphore *) OSHeapAllocate(sizeof(Semaphore), true);
 	semaphore->Return(initialUnits);
+	semaphore->_custom = maxUnits;
 	*handle = semaphore;
 	return AE_OK;
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsDeleteSemaphore(ACPI_SEMAPHORE handle) {
+	if (!handle) return AE_BAD_PARAMETER;
 	OSHeapFree(handle, sizeof(Semaphore));
 	return AE_OK;
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsWaitSemaphore(ACPI_SEMAPHORE handle, UINT32 units, UINT16 timeout) {
 	(void) timeout;
+	if (!handle) return AE_BAD_PARAMETER;
 	Semaphore *semaphore = (Semaphore *) handle;
 
 	if (semaphore->Take(units, timeout == (UINT16) -1 ? OS_WAIT_NO_TIMEOUT : timeout)) {
@@ -639,12 +652,15 @@ OS_EXTERN_C ACPI_STATUS AcpiOsWaitSemaphore(ACPI_SEMAPHORE handle, UINT32 units,
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsSignalSemaphore(ACPI_SEMAPHORE handle, UINT32 units) {
+	if (!handle) return AE_BAD_PARAMETER;
 	Semaphore *semaphore = (Semaphore *) handle;
+	if (semaphore->units + units > semaphore->_custom) return AE_LIMIT;
 	semaphore->Return(units);
 	return AE_OK;
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsCreateLock(ACPI_SPINLOCK *handle) {
+	if (!handle) return AE_BAD_PARAMETER;
 	Spinlock *spinlock = (Spinlock *) OSHeapAllocate(sizeof(Spinlock), true);
 	*handle = spinlock;
 	return AE_OK;
@@ -678,6 +694,8 @@ bool ACPIInterrupt(uintptr_t interruptIndex) {
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 interruptLevel, ACPI_OSD_HANDLER handler, void *context) {
+	if (interruptLevel > 256 || !handler) return AE_BAD_PARAMETER;
+	
 	if (acpiInterruptHandlers[interruptLevel]) {
 		return AE_ALREADY_EXISTS;
 	}
@@ -689,8 +707,14 @@ OS_EXTERN_C ACPI_STATUS AcpiOsInstallInterruptHandler(UINT32 interruptLevel, ACP
 }
 
 OS_EXTERN_C ACPI_STATUS AcpiOsRemoveInterruptHandler(UINT32 interruptNumber, ACPI_OSD_HANDLER handler) {
+	if (interruptNumber > 256 || !handler) return AE_BAD_PARAMETER;
+
+	if (!acpiInterruptHandlers[interruptNumber]) {
+		return AE_NOT_EXIST;
+	}
+
 	if (handler != acpiInterruptHandlers[interruptNumber]) {
-		return AE_ERROR;
+		return AE_BAD_PARAMETER;
 	}
 
 	acpiInterruptHandlers[interruptNumber] = nullptr;

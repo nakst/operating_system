@@ -17,6 +17,7 @@ struct Semaphore {
 	Event available;
 	Mutex mutex;
 	volatile uintptr_t units;
+	uintptr_t _custom;
 	uintptr_t lastTaken;
 };
 

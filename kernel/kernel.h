@@ -85,6 +85,7 @@ extern "C" void DoContextSwitch(struct InterruptContext *context,
 extern "C" void ProcessorSetAddressSpace(uintptr_t virtualAddressSpaceIdentifier);
 extern "C" uintptr_t ProcessorGetAddressSpace();
 extern "C" uintptr_t ProcessorGetRSP();
+extern "C" void ProcessorFlushCodeCache();
 
 volatile uintptr_t ipiVector;
 extern struct Spinlock ipiLock;
