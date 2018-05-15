@@ -336,6 +336,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_SHUTDOWN,
 	OS_SYSCALL_SET_FOCUSED_WINDOW,
 	OS_SYSCALL_YIELD_SCHEDULER,
+	OS_SYSCALL_ACQUIRE_MULTIPLE_MUTEXES,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -1066,8 +1067,9 @@ OS_EXTERN_C void OSCrashProcess(OSError error);
 
 OS_EXTERN_C uintptr_t OSGetThreadID(OSHandle thread);
 
-OS_EXTERN_C OSError OSReleaseGlobalMutex(OSHandle mutex);
-OS_EXTERN_C OSError OSAcquireGlobalMutex(OSHandle mutex);
+OS_EXTERN_C void OSReleaseGlobalMutex(OSHandle mutex);
+OS_EXTERN_C void OSAcquireGlobalMutex(OSHandle mutex);
+OS_EXTERN_C void OSAcquireMultipleGlobalMutexes(OSHandle *mutexes, size_t count);
 OS_EXTERN_C void OSReleaseSpinlock(OSSpinlock *spinlock);
 OS_EXTERN_C void OSAcquireSpinlock(OSSpinlock *spinlock);
 OS_EXTERN_C void OSReleaseMutex(OSMutex *mutex);

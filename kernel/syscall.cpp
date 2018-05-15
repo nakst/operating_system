@@ -829,6 +829,50 @@ uintptr_t DoSyscall(OSSyscallType index,
 			SYSCALL_RETURN(eventWasSet ? OS_SUCCESS : OS_ERROR_EVENT_NOT_SET, false);
 		} break;
 
+		case OS_SYSCALL_ACQUIRE_MULTIPLE_MUTEXES: {
+			if (argument1 >= OS_MAX_WAIT_COUNT) {
+				SYSCALL_RETURN(OS_FATAL_ERROR_TOO_MANY_WAIT_OBJECTS, true);
+			}
+
+			SYSCALL_BUFFER(argument0, argument1 * sizeof(OSHandle), 1);
+
+			OSHandle *_handles = (OSHandle *) argument0;
+			volatile OSHandle handles[OS_MAX_WAIT_COUNT];
+			CopyMemory((void *) handles, _handles, argument1 * sizeof(OSHandle));
+
+			Mutex *mutexes[OS_MAX_WAIT_COUNT];
+
+			for (uintptr_t i = 0; i < argument1; i++) {
+				KernelObjectType type = KERNEL_OBJECT_MUTEX;
+				Mutex *mutex = (Mutex *) currentProcess->handleTable.ResolveHandle(handles[i], type);
+				if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+				mutexes[i] = mutex;
+
+				if (mutex->owner == currentThread) {
+					SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED, true);
+				}
+			}
+
+			// Check for duplicates.
+			for (uintptr_t i = 0; i < argument1; i++) {
+				for (uintptr_t j = 0; j < i; j++) {
+					if (mutexes[i] == mutexes[j]) {
+						SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED, true);
+					}
+				}
+			}
+
+			if (!fromKernel) currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
+			AcquireMultipleMutexes(mutexes, argument1);
+			currentThread->terminatableState = THREAD_IN_SYSCALL;
+
+			for (uintptr_t i = 0; i < argument1; i++) {
+				currentProcess->handleTable.CompleteHandle(mutexes[i], handles[i]);
+			}
+
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
 		case OS_SYSCALL_WAIT: {
 			if (argument1 >= OS_MAX_WAIT_COUNT) {
 				SYSCALL_RETURN(OS_FATAL_ERROR_TOO_MANY_WAIT_OBJECTS, true);
@@ -858,6 +902,8 @@ uintptr_t DoSyscall(OSSyscallType index,
 						currentProcess->handleTable.CompleteHandle(objects[j], handles[j]);
 					}
 
+					// TODO Do we need to Complete other handles?
+					// 	- Same thing with ACQUIRE_MULTIPLE_MUTEXES.
 					SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 				}
 
@@ -1220,6 +1266,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		} break;
 
 		case OS_SYSCALL_SHUTDOWN: {
+			// TODO Shutdown sequence.
 			acpi.ShutdownComputer();
 		} break;
 

@@ -229,11 +229,15 @@ void Graphics::UpdateScreen() {
 	Defer(frameBuffer.mutex.Release());
 
 	OSRectangle sourceRectangle = OS_MAKE_RECTANGLE(cursorX, cursorX + CURSOR_SWAP_SIZE, cursorY, cursorY + CURSOR_SWAP_SIZE);
+
 	if (sourceRectangle.left < 0) sourceRectangle.left = 0;
 	if (sourceRectangle.top < 0) sourceRectangle.top = 0;
 	if (sourceRectangle.right > (int) frameBuffer.resX) sourceRectangle.right = frameBuffer.resX;
 	if (sourceRectangle.bottom > (int) frameBuffer.resY) sourceRectangle.bottom = frameBuffer.resY;
-	cursorSwap.Copy(frameBuffer, OS_MAKE_POINT(0, 0), sourceRectangle, false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING);
+
+	cursorSwap.mutex.Acquire();
+	cursorSwap.Copy(frameBuffer, OS_MAKE_POINT(0, 0), sourceRectangle, false, SURFACE_COPY_WITHOUT_DEPTH_CHECKING, true);
+	cursorSwap.mutex.Release();
 
 	frameBuffer.Draw(uiSheetSurface, OS_MAKE_RECTANGLE(cursorX, cursorX + cursorImageWidth,
 						     cursorY, cursorY + cursorImageHeight),
@@ -468,8 +472,8 @@ void Surface::Copy(Surface &source, OSPoint destinationPoint, OSRectangle source
 						    destinationPoint.y,
 						    destinationPoint.y + sourceRegion.bottom - sourceRegion.top);
 
-	if (!alreadyLocked) mutex.Acquire();
-	Defer(if (!alreadyLocked) mutex.Release());
+	if (!alreadyLocked) AcquireMutexPair(&mutex, &source.mutex);
+	Defer(if (!alreadyLocked) ReleaseMutexPair(&mutex, &source.mutex););
 
 	uint8_t *destinationPixel = linearBuffer + destinationRegion.top * stride + destinationRegion.left * 4;
 	uint8_t *sourcePixel = source.linearBuffer + sourceRegion.top * source.stride + sourceRegion.left * 4;
@@ -687,8 +691,8 @@ void Surface::Draw(Surface &source, OSRectangle destinationRegion, OSRectangle s
 
 	// Acquire the lock (if we haven't already).
 
-	if (!alreadyLocked) mutex.Acquire();
-	Defer(if (!alreadyLocked) mutex.Release());
+	if (!alreadyLocked) AcquireMutexPair(&mutex, &source.mutex);
+	Defer(if (!alreadyLocked) ReleaseMutexPair(&mutex, &source.mutex));
 
 	// Clip the destination region to the bounds of the destination.
 

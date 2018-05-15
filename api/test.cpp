@@ -30,9 +30,28 @@ size_t wordCount;
 Word words[50000];
 char buffer[1024];
 
+OSHandle mutexes[2];
+
 void LocalMutexTest(void *argument) {
 	int i = (uintptr_t) argument;
 	
+	OSPrint("i = %d\n", i);
+
+	OSAcquireMultipleGlobalMutexes(mutexes, 2);
+	OSReleaseGlobalMutex(mutexes[0]);
+	OSReleaseGlobalMutex(mutexes[1]);
+
+	OSAcquireGlobalMutex(mutexes[0]);
+	OSReleaseGlobalMutex(mutexes[0]);
+
+	OSAcquireGlobalMutex(mutexes[1]);
+	OSReleaseGlobalMutex(mutexes[1]);
+
+	OSAcquireGlobalMutex(mutexes[1]);
+	OSAcquireGlobalMutex(mutexes[0]);
+	OSReleaseGlobalMutex(mutexes[0]);
+	OSReleaseGlobalMutex(mutexes[1]);
+
 	OSPrint("i = %d\n", i);
 
 	OSTerminateThread(OS_CURRENT_THREAD);
@@ -889,6 +908,9 @@ extern "C" void ProgramEntry() {
 		double x = strtod("    -0x12.3aA4P-1", nullptr);
 		OSPrint("x = %F\n", x);
 	}
+
+	mutexes[0] = OSCreateGlobalMutex();
+	mutexes[1] = OSCreateGlobalMutex();
 
 	for (int i = 0; i < 20; i++) {
 		OSThreadInformation information;

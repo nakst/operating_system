@@ -1113,7 +1113,7 @@ void Scheduler::WaitMutex(Mutex *mutex) {
 
 	lock.Release();
 
-	if (!spin) {
+	if (!spin && thread->blockingMutex->owner) {
 		ProcessorFakeTimerInterrupt();
 	}
 
@@ -1213,6 +1213,89 @@ void Scheduler::NotifyObject(LinkedList<Thread> *blockedThreads, bool schedulerA
 	if (schedulerAlreadyLocked == false) lock.Release();
 }
 
+Thread *AttemptMutexAcquisition(Mutex *mutex, Thread *currentThread) {
+	scheduler.lock.Acquire();
+
+	Thread *old = mutex->owner;
+
+	if (!old) {
+		mutex->owner = currentThread;
+	}
+
+	scheduler.lock.Release();
+
+	return old;
+}
+
+void AcquireMultipleMutexes(Mutex **mutexes, size_t count) {
+	if (scheduler.panic) return;
+	if (!GetLocalStorage()->schedulerReady) KernelPanic("AcquireMultipleMutexes - Called before the scheduler is ready.");
+
+	Thread *currentThread = GetCurrentThread();
+	uintptr_t acquireAddress = (uintptr_t) __builtin_return_address(0);
+
+	while (true) {
+		scheduler.lock.Acquire();
+
+		bool success = true;
+
+		// Can we acquire all of the mutexes?
+		for (uintptr_t i = 0; i < count; i++) {
+			Mutex *mutex = mutexes[i];
+
+			if (mutex->owner) {
+				if (mutex->owner == currentThread) {
+					KernelPanic("AcquireMultipleMutexes - Attempt to acquire mutex (%x) at %x owned by current thread (%x) acquired at %x.\n", 
+							mutex, __builtin_return_address(0), currentThread, mutex->acquireAddress);
+				}
+
+				success = false;
+				break;
+			}
+		}
+
+		// If so, acquire all of the mutexes.
+		if (success) {
+			for (uintptr_t i = 0; i < count; i++) {
+				Mutex *mutex = mutexes[i];
+				mutex->owner = currentThread;
+				mutex->acquireAddress = acquireAddress;
+			}
+		}
+
+		scheduler.lock.Release();
+
+		// Otherwise, wait for all the mutexes to become available.
+		if (!success) {
+			for (uintptr_t i = 0; i < count; i++) {
+				currentThread->blockingEventCount = 1;
+				Mutex *mutex = mutexes[i];
+				scheduler.WaitMutex(mutex);
+			}
+		} else {
+			break;
+		}
+	}
+}
+
+void ReleaseMutexPair(Mutex *a, Mutex *b) {
+	if (a == b) {
+		a->Release();
+	} else {
+		a->Release();
+		b->Release();
+	}
+}
+
+void AcquireMutexPair(Mutex *a, Mutex *b) {
+	if (a == b) {
+		a->Acquire();
+	} else {
+		Mutex *pair[2] = {a, b};
+		AcquireMultipleMutexes(pair, 2);
+	}
+}
+
 void Mutex::Acquire() {
 	if (scheduler.panic) return;
 
@@ -1235,10 +1318,10 @@ void Mutex::Acquire() {
 	}
 
 	if (!ProcessorAreInterruptsEnabled()) {
-		KernelPanic("Mutex::Acquire - Trying to wait on a mutex while interrupts are disabled.\n");
+		KernelPanic("Mutex::Acquire - Trying to acquire a mutex while interrupts are disabled.\n");
 	}
 
-	while (__sync_val_compare_and_swap(&owner, nullptr, currentThread)) {
+	while (AttemptMutexAcquisition(this, currentThread)) {
 		__sync_synchronize();
 
 		if (GetLocalStorage() && GetLocalStorage()->schedulerReady) {
