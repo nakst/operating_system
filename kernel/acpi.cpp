@@ -928,10 +928,7 @@ void ACPI::Initialise2() {
 	AcpiInitializeObjects(ACPI_FULL_INITIALIZATION);
 
 	if (AE_OK == AcpiEnableEvent(ACPI_EVENT_POWER_BUTTON, 0)) {
-		Print("enabled event....\n");
-		if (AE_OK == AcpiInstallFixedEventHandler(ACPI_EVENT_POWER_BUTTON, ACPIPowerButtonPressed, nullptr)) {
-			Print("installed handler....\n");
-		}
+		AcpiInstallFixedEventHandler(ACPI_EVENT_POWER_BUTTON, ACPIPowerButtonPressed, nullptr);
 	}
 #endif
 }

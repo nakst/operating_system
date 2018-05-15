@@ -450,6 +450,7 @@ static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
 
 struct GUIObject : APIObject {
+	OSCallback notificationCallback;
 	struct Window *window;
 	OSRectangle bounds, cellBounds, inputBounds;
 	uint16_t descendentInvalidationFlags;
@@ -483,7 +484,6 @@ struct Control : GUIObject {
 	OSCommand *command;
 	LinkedItem<Control> commandItem;
 
-	OSCallback notificationCallback;
 	OSMenuSpecification *rightClickMenu;
 
 	OSString text;
@@ -597,7 +597,6 @@ struct Grid : GUIObject {
 	uint16_t gapSize;
 	UIImage *background;
 	uint32_t backgroundColor;
-	OSCallback notificationCallback;
 	int xOffset, yOffset;
 	bool treatPreferredDimensionsAsMinima; // Used with scroll panes for PUSH objects.
 };
@@ -837,6 +836,11 @@ static inline bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 	}
 	
 	return true;
+}
+
+void OSSetFocusedWindow(OSObject object) {
+	Window *window = (Window *) object;
+	OSSyscall(OS_SYSCALL_SET_FOCUSED_WINDOW, window->window, 0, 0, 0);
 }
 
 void OSSetControlCommand(OSObject _control, OSCommand *_command) {
@@ -3965,17 +3969,8 @@ void OSDisableControl(OSObject _control, bool disabled) {
 }
 
 void OSSetObjectNotificationCallback(OSObject _object, OSCallback callback) {
-	APIObject *object = (APIObject *) _object;
-
-	if (object->type == API_OBJECT_CONTROL) {
-		Control *control = (Control *) _object;
-		control->notificationCallback = callback;
-	} else if (object->type == API_OBJECT_GRID) {
-		Grid *grid = (Grid *) _object;
-		grid->notificationCallback = callback;
-	} else {
-		OSCrashProcess(OS_FATAL_ERROR_BAD_OBJECT_TYPE);
-	}
+	GUIObject *object = (GUIObject *) _object;
+	object->notificationCallback = callback;
 }
 
 void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback) {
@@ -4548,6 +4543,12 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
+			{
+				OSMessage m;
+				m.type = OS_NOTIFICATION_DIALOG_CLOSE;
+				response = OSForwardMessage(window, window->notificationCallback, &m);
+			}
+
 			if (!window->hasMenuParent) {
 				GUIFree(window->commands);
 			}
@@ -5177,9 +5178,7 @@ static OSCallbackResponse CommandDialogAlertOK(OSObject object, OSMessage *messa
 	(void) object;
 
 	if (message->type == OS_NOTIFICATION_COMMAND) {
-		OSMessage m;
-		m.type = OS_MESSAGE_DESTROY;
-		OSSendMessage(message->context, &m);
+		OSCloseWindow(message->context);
 		return OS_CALLBACK_HANDLED;
 	}
 
@@ -5190,16 +5189,20 @@ static OSCallbackResponse CommandDialogAlertCancel(OSObject object, OSMessage *m
 	(void) object;
 
 	if (message->type == OS_NOTIFICATION_COMMAND) {
-		OSMessage m;
-		m.type = OS_MESSAGE_DESTROY;
-		OSSendMessage(message->context, &m);
+		OSCloseWindow(message->context);
 		return OS_CALLBACK_HANDLED;
 	}
 
 	return OS_CALLBACK_NOT_HANDLED;
 }
 
-void OSShowDialogConfirm(char *title, size_t titleBytes,
+void OSCloseWindow(OSObject window) {
+	OSMessage m;
+	m.type = OS_MESSAGE_DESTROY;
+	OSSendMessage(window, &m);
+}
+
+OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
 				   uint16_t iconID, OSObject modalParent, OSCommand *command) {
@@ -5238,9 +5241,11 @@ void OSShowDialogConfirm(char *title, size_t titleBytes,
 	OSAddControl(layout2, 0, 0, OSCreateIconDisplay(iconID), OS_CELL_V_TOP);
 
 	OSSetFocusedControl(cancelButton, false);
+
+	return dialog;
 }
 
-void OSShowDialogAlert(char *title, size_t titleBytes,
+OSObject OSShowDialogAlert(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
 				   uint16_t iconID, OSObject modalParent) {
@@ -5273,6 +5278,8 @@ void OSShowDialogAlert(char *title, size_t titleBytes,
 	OSAddControl(layout2, 0, 0, OSCreateIconDisplay(iconID), OS_CELL_V_TOP);
 
 	OSSetFocusedControl(okButton, false);
+
+	return dialog;
 }
 
 OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, OSPoint position, unsigned flags) {

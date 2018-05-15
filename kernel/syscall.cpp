@@ -804,7 +804,8 @@ uintptr_t DoSyscall(OSSyscallType index,
 			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(event, argument0));
 
-			event->Set();
+			event->Set(false, true);
+
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
@@ -1220,6 +1221,24 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 		case OS_SYSCALL_SHUTDOWN: {
 			acpi.ShutdownComputer();
+		} break;
+
+		case OS_SYSCALL_SET_FOCUSED_WINDOW: {
+			KernelObjectType type = KERNEL_OBJECT_WINDOW;
+			Window *window = (Window *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(window, argument0));
+
+			windowManager.mutex.Acquire();
+			windowManager.SetActiveWindow(window);
+			windowManager.mutex.Release();
+
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
+		case OS_SYSCALL_YIELD_SCHEDULER: {
+			ProcessorFakeTimerInterrupt();
+			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 	}
 

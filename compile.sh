@@ -17,7 +17,7 @@ x86_64-elf-g++ -c api/api.cpp -o bin/OS/api2.o $BuildFlags -Wno-unused-function 
 x86_64-elf-ar -rcs bin/OS/libapi.a bin/OS/api1.o bin/OS/api2.o 
 x86_64-elf-g++ -c api/glue.cpp -o bin/OS/glue.o $BuildFlags -Wno-unused-function $Optimise
 x86_64-elf-ar -rcs bin/OS/libglue.a bin/OS/glue.o 
-x86_64-elf-ld -shared -o bin/OS/libapis.so bin/OS/api1.o bin/OS/api2.o -lms -Lports/musl
+x86_64-elf-gcc -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Wl,-shared -o bin/OS/libapis.so bin/OS/api1.o bin/OS/api2.o -lms -Lports/musl
 
 echo -e "-> Building ${ColorBlue}desktop${ColorNormal}..."
 ./manifest_parser desktop/desktop.manifest bin/OS/desktop.manifest.h

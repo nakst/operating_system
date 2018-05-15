@@ -351,7 +351,7 @@ void CF(FormatStringCallback)(int character, void *data) {
 }
 
 #ifndef KERNEL
-static OSHandle printMutex;
+static OSMutex printMutex;
 
 static char printBuffer[4096];
 static uintptr_t printBufferPosition = 0;
@@ -368,14 +368,14 @@ void CF(PrintCallback)(int character, void *data) {
 }
 
 void CF(Print)(const char *format, ...) {
-	OSAcquireMutex(printMutex);
+	OSAcquireMutex(&printMutex);
 	printBufferPosition = 0;
 	va_list arguments;
 	va_start(arguments, format);
 	CF(_FormatString)(CF(PrintCallback), nullptr, format, arguments);
 	va_end(arguments);
 	OSSyscall(OS_SYSCALL_PRINT, (uintptr_t) printBuffer, printBufferPosition, 0, 0);
-	OSReleaseMutex(printMutex);
+	OSReleaseMutex(&printMutex);
 }
 
 void CF(PrintDirect)(char *string, size_t stringLength) {
@@ -577,3 +577,69 @@ void OSAssertionFailure() {
 }
 #include "cstdlib.c"
 #endif
+
+void OSAcquireSpinlock(OSSpinlock *spinlock) {
+	__sync_synchronize();
+	while (__sync_val_compare_and_swap(&spinlock->state, 0, 1));
+	__sync_synchronize();
+}
+
+void OSReleaseSpinlock(OSSpinlock *spinlock) {
+	__sync_synchronize();
+	if (!spinlock->state) OSCrashProcess(OS_FATAL_ERROR_SPINLOCK_NOT_ACQUIRED);
+	spinlock->state = 0;
+	__sync_synchronize();
+}
+
+void OSAcquireMutex(OSMutex *mutex) {
+	bool acquired = false;
+
+	while (true) {
+		OSAcquireSpinlock(&mutex->spinlock);
+
+		if (mutex->event == OS_INVALID_HANDLE) {
+			mutex->event = OSCreateEvent(false);
+		}
+
+		if (mutex->state == 0) {
+			acquired = true;
+			mutex->state = 1;
+		} 
+
+		__sync_fetch_and_add(&mutex->queued, 1);
+		OSResetEvent(mutex->event);
+		OSReleaseSpinlock(&mutex->spinlock);
+		if (acquired) return;
+		OSWaitSingle(mutex->event);
+		__sync_fetch_and_sub(&mutex->queued, 1);
+	} 
+}
+
+void OSReleaseMutex(OSMutex *mutex) {
+	volatile bool queued = false;
+
+	OSAcquireSpinlock(&mutex->spinlock);
+
+	if (!mutex->state) {
+		OSCrashProcess(OS_FATAL_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD);
+	}
+
+	mutex->state = 0;
+
+	if (mutex->queued) {
+		queued = true;
+		OSSetEvent(mutex->event);
+	}
+
+	OSReleaseSpinlock(&mutex->spinlock);
+
+	if (queued) {
+		OSYieldScheduler();
+	}
+}
+
+void OSDestroyMutex(OSMutex *mutex) {
+	if (mutex->event != OS_INVALID_HANDLE) {
+		OSCloseHandle(mutex->event);
+	}
+}

@@ -101,7 +101,7 @@ OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, OSRectangle 
 	return OSDrawSurface(destination, source, clipRegion, sourceRegion, borderRegion, mode, alpha);
 }
 
-OSHandle OSCreateMutex() {
+OSHandle OSCreateGlobalMutex() {
 	return OSSyscall(OS_SYSCALL_CREATE_MUTEX, 0, 0, 0, 0);
 }
 
@@ -121,11 +121,11 @@ OSError OSPollEvent(OSHandle handle) {
 	return OSSyscall(OS_SYSCALL_POLL_EVENT, handle, 0, 0, 0);
 }
 
-OSError OSAcquireMutex(OSHandle handle) {
+OSError OSAcquireGlobalMutex(OSHandle handle) {
 	return OSSyscall(OS_SYSCALL_ACQUIRE_MUTEX, handle, 0, 0, 0);
 }
 
-OSError OSReleaseMutex(OSHandle handle) {
+OSError OSReleaseGlobalMutex(OSHandle handle) {
 	return OSSyscall(OS_SYSCALL_RELEASE_MUTEX, handle, 0, 0, 0);
 }
 
@@ -281,4 +281,8 @@ void OSReadConstantBuffer(OSHandle buffer, void *output) {
 
 void OSGetProcessState(OSHandle process, OSProcessState *state) {
 	OSSyscall(OS_SYSCALL_GET_PROCESS_STATE, process, (uintptr_t) state, 0, 0);
+}
+
+void OSYieldScheduler() {
+	OSSyscall(OS_SYSCALL_YIELD_SCHEDULER, 0, 0, 0, 0);
 }

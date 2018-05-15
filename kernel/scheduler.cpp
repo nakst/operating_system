@@ -268,6 +268,8 @@ void Spinlock::Release(bool force) {
 	
 	volatile bool wereInterruptsEnabled = interruptsEnabled;
 
+	__sync_synchronize();
+
 	owner = nullptr;
 	state = 0;
 
@@ -804,7 +806,9 @@ void Scheduler::PauseThread(Thread *thread, bool resume, bool lockAlreadyAcquire
 					// The thread is executing, but on a different processor.
 					// Send them an IPI to stop.
 					thread->receivedYieldIPI = false;
+					ipiLock.Acquire();
 					ProcessorSendIPI(YIELD_IPI, false);
+					ipiLock.Release();
 					while (!thread->receivedYieldIPI); // Spin until the thread gets the IPI.
 					// TODO The interrupt context might not be set at this point.
 				}
@@ -1343,7 +1347,7 @@ void Semaphore::Set(uintptr_t u) {
 	mutex.Release();
 }
 
-void Event::Set(bool schedulerAlreadyLocked, bool maybeAlreadySet) {
+bool Event::Set(bool schedulerAlreadyLocked, bool maybeAlreadySet) {
 	if (state && !maybeAlreadySet) {
 		KernelLog(LOG_WARNING, "Event::Set - Attempt to set a event that had already been set\n");
 	}
@@ -1353,18 +1357,26 @@ void Event::Set(bool schedulerAlreadyLocked, bool maybeAlreadySet) {
 	}
 
 	state = true;
+	
+	volatile bool unblockedThreads = false;
 
 	if (scheduler.started) {
+		if (blockedThreads.count) {
+			unblockedThreads = true;
+		}
+
 		scheduler.NotifyObject(&blockedThreads, true, !autoReset /*If this is a manually reset event, unblock all the waiting threads.*/);
 	}
 
 	if (!schedulerAlreadyLocked) {
 		scheduler.lock.Release();
 	}
+
+	return unblockedThreads;
 }
 
 void Event::Reset() {
-	if (blockedThreads.firstItem) {
+	if (blockedThreads.firstItem && state) {
 		KernelLog(LOG_WARNING, "Event::Reset - Attempt to reset a event while threads are blocking on the event\n");
 	}
 

@@ -36,9 +36,9 @@ static OSHeapRegion *_heapRegions[12], *_heapRegions2[12];
 #define OS_HEAP_FREE_CALL(x) (mmvmm ? memoryManagerVMM : kernelVMM).Free(x)
 #else
 static OSHeapRegion *heapRegions[12];
-static OSHandle heapMutex;
-#define OS_HEAP_ACQUIRE_MUTEX() OSAcquireMutex(heapMutex)
-#define OS_HEAP_RELEASE_MUTEX() OSReleaseMutex(heapMutex)
+static OSMutex heapMutex;
+#define OS_HEAP_ACQUIRE_MUTEX() OSAcquireMutex(&heapMutex)
+#define OS_HEAP_RELEASE_MUTEX() OSReleaseMutex(&heapMutex)
 #define OS_HEAP_PANIC(n) { OSCrashProcess(OS_FATAL_ERROR_CORRUPT_HEAP); }
 #define OS_HEAP_ALLOCATE_CALL(x) OSAllocate(x)
 #define OS_HEAP_FREE_CALL(x) OSFree(x)

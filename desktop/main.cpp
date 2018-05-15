@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 #define WALLPAPER ("/OS/Sample Images/Flower.jpg")
-#define FIRST_PROGRAM ("File Manager")
+#define FIRST_PROGRAM ("/OS/Test.esx")
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"
@@ -18,6 +18,8 @@ struct InstalledProgram {
 #define MAX_INSTALLED_PROGRAMS (8192)
 InstalledProgram installedPrograms[MAX_INSTALLED_PROGRAMS];
 size_t installedProgramCount;
+
+OSObject shutdownDialog;
 
 char *errorMessages[] = {
 	(char *) "INVALID_BUFFER",
@@ -57,18 +59,26 @@ char *errorMessages[] = {
 };
 
 OSCallbackResponse CommandShutdown(OSObject object, OSMessage *message) {
+	(void) object;
+
 	if (message->type != OS_NOTIFICATION_COMMAND) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	OSObject window = OSGetWindow(object);
-	OSMessage m;
-	m.type = OS_MESSAGE_DESTROY;
-	OSSendMessage(window, &m);
-
 	OSSyscall(OS_SYSCALL_SHUTDOWN, 0, 0, 0, 0);
 
 	return OS_CALLBACK_HANDLED;
+}
+
+OSCallbackResponse ShutdownDialogCallback(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type == OS_NOTIFICATION_DIALOG_CLOSE) {
+		shutdownDialog = nullptr;
+		return OS_CALLBACK_HANDLED;
+	}
+
+	return OS_CALLBACK_NOT_HANDLED;
 }
 
 OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
@@ -229,10 +239,15 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 		} break;
 
 		case OS_MESSAGE_POWER_BUTTON_PRESSED: {
-			OSShowDialogConfirm(OSLiteral("Shutdown"),
-					OSLiteral("Are you sure you want to shutdown?"),
-					OSLiteral("Any unsaved work will be lost."),
-					OS_ICON_SHUTDOWN, OS_INVALID_OBJECT, commandShutdown);
+			if (!shutdownDialog) {
+				shutdownDialog = OSShowDialogConfirm(OSLiteral("Shutdown"),
+						OSLiteral("Are you sure you want to shutdown?"),
+						OSLiteral("Any unsaved work will be lost."),
+						OS_ICON_SHUTDOWN, OS_INVALID_OBJECT, commandShutdown);
+				OSSetObjectNotificationCallback(shutdownDialog, OS_MAKE_CALLBACK(ShutdownDialogCallback, nullptr));
+			} else {
+				OSSetFocusedWindow(shutdownDialog);
+			}
 		} break;
 
 		default: {

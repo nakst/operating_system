@@ -226,6 +226,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS,
 	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_INVALID_STRING_LENGTH,
+	OS_FATAL_ERROR_SPINLOCK_NOT_ACQUIRED,
 } OSFatalError;
 
 // These must be negative.
@@ -289,8 +290,8 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_UPDATE_WINDOW,
 	OS_SYSCALL_DRAW_SURFACE,
 	OS_SYSCALL_CREATE_MUTEX,
-	OS_SYSCALL_ACQUIRE_MUTEX, // This (and RELEASE_MUTEX) is the most common system call.
-	OS_SYSCALL_RELEASE_MUTEX, // TODO Implement API-side locks?
+	OS_SYSCALL_ACQUIRE_MUTEX,
+	OS_SYSCALL_RELEASE_MUTEX, 
 	OS_SYSCALL_CLOSE_HANDLE,
 	OS_SYSCALL_TERMINATE_THREAD,
 	OS_SYSCALL_CREATE_THREAD,
@@ -333,6 +334,8 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_READ_CONSTANT_BUFFER,
 	OS_SYSCALL_GET_PROCESS_STATE,
 	OS_SYSCALL_SHUTDOWN,
+	OS_SYSCALL_SET_FOCUSED_WINDOW,
+	OS_SYSCALL_YIELD_SCHEDULER,
 } OSSyscallType;
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
@@ -470,6 +473,17 @@ typedef enum OSCursorStyle {
 	OS_CURSOR_PAN_HOVER,
 	OS_CURSOR_PAN_DRAG,
 } OSCursorStyle;
+
+typedef struct OSSpinlock {
+	volatile uint8_t state;
+} OSSpinlock;
+
+typedef struct OSMutex {
+	OSHandle event;
+	OSSpinlock spinlock;
+	volatile uint8_t state;
+	volatile uint32_t queued;
+} OSMutex;
 
 typedef struct OSString {
 	char *buffer;
@@ -610,6 +624,7 @@ typedef enum OSMessageType {
 	OS_NOTIFICATION_SET_ITEM_RANGE		= 0x200E,
 	OS_NOTIFICATION_SORT_COLUMN		= 0x200F,
 	OS_NOTIFICATION_RIGHT_CLICK		= 0x2010,
+	OS_NOTIFICATION_DIALOG_CLOSE		= 0x2011,
 
 	// Desktop messages:
 	OS_MESSAGE_EXECUTE_PROGRAM		= 0x4800,
@@ -1018,7 +1033,7 @@ OS_EXTERN_C void OSBatch(OSBatchCall *calls, size_t count);
 OS_EXTERN_C OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 OS_EXTERN_C OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
 OS_EXTERN_C OSHandle OSCreateSurface(size_t width, size_t height);
-OS_EXTERN_C OSHandle OSCreateMutex();
+OS_EXTERN_C OSHandle OSCreateGlobalMutex();
 OS_EXTERN_C OSHandle OSCreateEvent(bool autoReset);
 
 #define OS_MAX_PROGRAM_NAME_LENGTH (256)
@@ -1051,8 +1066,15 @@ OS_EXTERN_C void OSCrashProcess(OSError error);
 
 OS_EXTERN_C uintptr_t OSGetThreadID(OSHandle thread);
 
-OS_EXTERN_C OSError OSReleaseMutex(OSHandle mutex);
-OS_EXTERN_C OSError OSAcquireMutex(OSHandle mutex);
+OS_EXTERN_C OSError OSReleaseGlobalMutex(OSHandle mutex);
+OS_EXTERN_C OSError OSAcquireGlobalMutex(OSHandle mutex);
+OS_EXTERN_C void OSReleaseSpinlock(OSSpinlock *spinlock);
+OS_EXTERN_C void OSAcquireSpinlock(OSSpinlock *spinlock);
+OS_EXTERN_C void OSReleaseMutex(OSMutex *mutex);
+OS_EXTERN_C void OSAcquireMutex(OSMutex *mutex);
+OS_EXTERN_C void OSDestroyMutex(OSMutex *mutex);
+
+OS_EXTERN_C void OSYieldScheduler();
 
 OS_EXTERN_C OSError OSSetEvent(OSHandle event);
 OS_EXTERN_C OSError OSResetEvent(OSHandle event);
@@ -1137,15 +1159,18 @@ OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSOb
 OS_EXTERN_C void OSStartGUIAllocationBlock(size_t bytes);
 OS_EXTERN_C size_t OSEndGUIAllocationBlock();
 
-OS_EXTERN_C void OSShowDialogAlert(char *title, size_t titleBytes,
+OS_EXTERN_C OSObject OSShowDialogAlert(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
 				   uint16_t iconID, OSObject modalParent);
-OS_EXTERN_C void OSShowDialogConfirm(char *title, size_t titleBytes,
+OS_EXTERN_C OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
 				   uint16_t iconID, OSObject modalParent,
 				   OSCommand *command);
+
+OS_EXTERN_C void OSCloseWindow(OSObject window);
+OS_EXTERN_C void OSSetFocusedWindow(OSObject window);
 
 OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 OS_EXTERN_C OSRectangle OSGetControlBounds(OSObject control);
@@ -1430,7 +1455,7 @@ OS_EXTERN_C __attribute__((noreturn)) void _longjmp(jmp_buf *env, int val);
 #include "stb_image.h"
 
 OS_EXTERN_C uint64_t osRandomByteSeed;
-OS_EXTERN_C OSHandle osMessageMutex;
+OS_EXTERN_C OSMutex osMessageMutex;
 #endif
 
 OS_EXTERN_C void ProgramEntry(); 

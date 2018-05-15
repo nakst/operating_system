@@ -30,6 +30,14 @@ size_t wordCount;
 Word words[50000];
 char buffer[1024];
 
+void LocalMutexTest(void *argument) {
+	int i = (uintptr_t) argument;
+	
+	OSPrint("i = %d\n", i);
+
+	OSTerminateThread(OS_CURRENT_THREAD);
+}
+
 OSCallbackResponse SliderValueChanged(OSObject object, OSMessage *message) {
 	(void) object;
 
@@ -880,6 +888,11 @@ extern "C" void ProgramEntry() {
 	{
 		double x = strtod("    -0x12.3aA4P-1", nullptr);
 		OSPrint("x = %F\n", x);
+	}
+
+	for (int i = 0; i < 20; i++) {
+		OSThreadInformation information;
+		OSCreateThread(LocalMutexTest, &information, (void *) (uintptr_t) i);
 	}
 
 	OSDisableCommand(window, actionToggleEnabled, false);
