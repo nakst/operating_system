@@ -716,6 +716,7 @@ typedef struct OSMessage {
 		} checkLayout;
 
 		struct {
+			int parentWidth, parentHeight;
 			int preferredWidth, preferredHeight;
 		} measure;
 
@@ -970,10 +971,10 @@ extern OSObject osSystemMessages;
 #define OS_DRAW_STRING_HALIGN_LEFT 	(1)
 #define OS_DRAW_STRING_HALIGN_RIGHT 	(2)
 #define OS_DRAW_STRING_HALIGN_CENTER 	(OS_DRAW_STRING_HALIGN_LEFT | OS_DRAW_STRING_HALIGN_RIGHT)
-
 #define OS_DRAW_STRING_VALIGN_TOP 	(4)
 #define OS_DRAW_STRING_VALIGN_BOTTOM 	(8)
 #define OS_DRAW_STRING_VALIGN_CENTER 	(OS_DRAW_STRING_VALIGN_TOP | OS_DRAW_STRING_VALIGN_BOTTOM)
+#define OS_DRAW_STRING_WORD_WRAP 	(16)
 
 #define OS_OPEN_NODE_READ_NONE		(0x0)
 #define OS_OPEN_NODE_READ_BLOCK		(0x1)
@@ -1183,7 +1184,7 @@ OS_EXTERN_C OSObject OSCreateBlankControl(int width, int height, OSCursorStyle c
 OS_EXTERN_C OSObject OSCreateLine(bool orientation);
 OS_EXTERN_C OSObject OSCreateButton(OSCommand *command, OSButtonStyle style);
 OS_EXTERN_C OSObject OSCreateTextbox(OSTextboxStyle style);
-OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes);
+OS_EXTERN_C OSObject OSCreateLabel(char *label, size_t labelBytes, bool wordWrap);
 OS_EXTERN_C OSObject OSCreateIconDisplay(uint16_t iconID);
 OS_EXTERN_C OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool small);
 OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition);

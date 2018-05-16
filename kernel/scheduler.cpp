@@ -961,10 +961,10 @@ void Scheduler::Yield(InterruptContext *context) {
 	}
 #endif
 
-	local->currentThread->interruptContext = context;
-
 	ProcessorDisableInterrupts(); // We don't want interrupts to get reenabled after the context switch.
 	lock.Acquire();
+
+	local->currentThread->interruptContext = context;
 
 	if (lock.interruptsEnabled) {
 		KernelPanic("Scheduler::Yield - Interrupts were enabled when scheduler lock was acquired.\n");
@@ -1142,6 +1142,7 @@ uintptr_t Scheduler::WaitEvents(Event **events, size_t count) {
 
 	while (!thread->terminating || thread->terminatableState != THREAD_USER_BLOCK_REQUEST) {
 		thread->state = THREAD_WAITING_EVENT;
+		ProcessorFakeTimerInterrupt();
 
 		for (uintptr_t i = 0; i < count; i++) {
 			if (events[i]->autoReset) {

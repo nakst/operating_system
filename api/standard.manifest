@@ -59,7 +59,7 @@ label = "\$Cancel";
 
 [window osDialogStandard]
 width = 400;
-height = 100;
+height = 110;
 title = "Message";
 resizable = false;
 defaultCommand = osDialogStandardOK;

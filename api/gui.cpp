@@ -53,6 +53,10 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Limit the length to 1024 characters?
 // TODO Multiple-cell positions.
 // TODO Wrapping.
+// TODO New controls.
+// 	- Comboboxes.
+// 	- Tabs.
+// 	- Toggle buttons.
 
 struct UIImage {
 	OSRectangle region;
@@ -1103,6 +1107,10 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					break;
 				}
 #endif
+
+				if (control->verbose) {
+					OSPrint("Painting control %x\n", control);
+				}
 
 				bool isDefaultCommand = !control->pressedByKeyboard && control->window->defaultCommand == control->command && control->command;
 
@@ -2431,14 +2439,41 @@ OSObject OSCreateIconDisplay(uint16_t iconID) {
 	return control;
 }
 
-OSObject OSCreateLabel(char *text, size_t textBytes) {
+
+static OSCallbackResponse ProcessLabelMessage(OSObject _object, OSMessage *message) {
+	Control *control = (Control *) _object;
+	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
+
+	if (message->type == OS_MESSAGE_MEASURE && (control->textAlign & OS_DRAW_STRING_WORD_WRAP)) {
+		message->measure.preferredWidth = message->measure.parentWidth;
+		message->measure.preferredHeight = MeasureString(control->text.buffer, control->text.bytes, FONT_SIZE, fontRegular, message->measure.parentWidth);
+		response = OS_CALLBACK_HANDLED;
+		// OSPrint("Measure label: %d by %d (given width of %d)\n", message->measure.preferredWidth, message->measure.preferredHeight, message->measure.parentWidth);
+	}
+
+#if 0
+	if (message->type == OS_MESSAGE_PAINT) {
+		OSRectangle r;
+		ClipRectangle(control->bounds, message->paint.clip, &r);
+		OSFillRectangle(message->paint.surface, r, OSColor(255, 0, 255));
+	}
+#endif
+	
+	if (response == OS_CALLBACK_NOT_HANDLED) {
+		return OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+	}
+
+	return response;
+}
+
+OSObject OSCreateLabel(char *text, size_t textBytes, bool wordWrap) {
 	Control *control = (Control *) GUIAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
 	control->drawParentBackground = true;
-	control->textAlign = OS_DRAW_STRING_HALIGN_LEFT;
+	control->textAlign = OS_DRAW_STRING_HALIGN_LEFT | (wordWrap ? (OS_DRAW_STRING_WORD_WRAP | OS_DRAW_STRING_VALIGN_TOP) : OS_DRAW_STRING_VALIGN_CENTER);
 
 	OSSetText(control, text, textBytes, OS_RESIZE_MODE_EXACT);
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
+	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessLabelMessage, nullptr));
 
 	return control;
 }
@@ -2706,17 +2741,19 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 				int pushH = 0, pushV = 0;
 
-#if 0
-				OSPrint("->Laying out grid %x (%d by %d) into %d->%d, %d->%d (given %d->%d, %d->%d), layout = %X%X\n", 
- 						grid, grid->columns, grid->rows, grid->bounds.left, grid->bounds.right, grid->bounds.top, grid->bounds.bottom,
- 						message->layout.left, message->layout.right, message->layout.top, message->layout.bottom, grid->layout);
-#endif
+				if (grid->verbose) {
+					OSPrint("->Laying out grid %x (%d by %d) into %d->%d, %d->%d (given %d->%d, %d->%d), layout = %X%X\n", 
+							grid, grid->columns, grid->rows, grid->bounds.left, grid->bounds.right, grid->bounds.top, grid->bounds.bottom,
+							message->layout.left, message->layout.right, message->layout.top, message->layout.bottom, grid->layout);
+				}
 
 				for (uintptr_t i = 0; i < grid->columns; i++) {
 					for (uintptr_t j = 0; j < grid->rows; j++) {
 						GUIObject **object = grid->objects + (j * grid->columns + i);
 						OSMessage message;
 						message.type = OS_MESSAGE_MEASURE;
+						message.measure.parentWidth = grid->bounds.right - grid->bounds.left - (grid->borderSize.left + grid->borderSize.right + grid->gapSize * (grid->columns - 1)); 
+						message.measure.parentHeight = grid->bounds.bottom - grid->bounds.top - (grid->borderSize.top + grid->borderSize.bottom + grid->gapSize * (grid->rows - 1)); 
 						if (OSSendMessage(*object, &message) == OS_CALLBACK_NOT_HANDLED) continue;
 
 						int width = message.measure.preferredWidth;
@@ -2734,17 +2771,17 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 					}
 				}
 
-#if 0
-				OSPrint("->Results for grid %x (%d by %d)\n", grid, grid->columns, grid->rows);
+				if (grid->verbose) {
+					OSPrint("->Results for grid %x (%d by %d)\n", grid, grid->columns, grid->rows);
 
-				for (uintptr_t i = 0; i < grid->columns; i++) {
-					OSPrint("Column %d is pref: %dpx, min: %dpx\n", i, grid->widths[i], grid->minimumWidths[i]);
-				}
+					for (uintptr_t i = 0; i < grid->columns; i++) {
+						OSPrint("Column %d is pref: %dpx, min: %dpx\n", i, grid->widths[i], grid->minimumWidths[i]);
+					}
 
-				for (uintptr_t j = 0; j < grid->rows; j++) {
-					OSPrint("Row %d is pref: %dpx, min: %dpx\n", j, grid->heights[j], grid->minimumHeights[j]);
+					for (uintptr_t j = 0; j < grid->rows; j++) {
+						OSPrint("Row %d is pref: %dpx, min: %dpx\n", j, grid->heights[j], grid->minimumHeights[j]);
+					}
 				}
-#endif
 
 				if (pushH) {
 					int usedWidth = grid->borderSize.left + grid->borderSize.right + grid->gapSize * (grid->columns - 1); 
@@ -2845,6 +2882,11 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 			for (uintptr_t i = 0; i < grid->columns; i++) {
 				for (uintptr_t j = 0; j < grid->rows; j++) {
 					GUIObject **object = grid->objects + (j * grid->columns + i);
+					if (!(*object)) continue;
+
+					OSRectangle oldBounds = (*object)->bounds;
+					message->measure.parentWidth = oldBounds.right - oldBounds.left;
+					message->measure.parentHeight = oldBounds.bottom - oldBounds.top;
 					if (OSSendMessage(*object, message) == OS_CALLBACK_NOT_HANDLED) continue;
 
 					int width = message->measure.preferredWidth;
@@ -3482,12 +3524,26 @@ static OSCallbackResponse ProcessScrollPaneMessage(OSObject _object, OSMessage *
 #endif
 
 			OSMessage m = {};
-			m.type = OS_MESSAGE_MEASURE;
-			OSCallbackResponse r = OSSendMessage(grid->objects[0], &m);
-			if (r != OS_CALLBACK_HANDLED) OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 
 			int contentWidth = message->layout.right - message->layout.left - (grid->objects[1] ? SCROLLBAR_SIZE : 0);
 			int contentHeight = message->layout.bottom - message->layout.top - (grid->objects[2] ? SCROLLBAR_SIZE : 0);
+
+			m.type = OS_MESSAGE_LAYOUT;
+			m.layout.force = true;
+			m.layout.clip = message->layout.clip;
+
+			m.layout.top = message->layout.top;
+			m.layout.bottom = message->layout.top + contentHeight;
+			m.layout.left = message->layout.left;
+			m.layout.right = message->layout.left + contentWidth;
+			OSSendMessage(grid->objects[0], &m);
+
+			m.type = OS_MESSAGE_MEASURE;
+			m.measure.parentWidth = grid->bounds.right - grid->bounds.left - (grid->objects[1] ? SCROLLBAR_SIZE : 0);
+			m.measure.parentHeight = grid->bounds.bottom - grid->bounds.top - (grid->objects[2] ? SCROLLBAR_SIZE : 0);;
+			OSCallbackResponse r = OSSendMessage(grid->objects[0], &m);
+			if (r != OS_CALLBACK_HANDLED) OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+
 			int minimumWidth = m.measure.preferredWidth;
 			int minimumHeight = m.measure.preferredHeight;
 
@@ -3520,12 +3576,6 @@ static OSCallbackResponse ProcessScrollPaneMessage(OSObject _object, OSMessage *
 				m.layout.right = message->layout.right;
 				OSSendMessage(grid->objects[3], &m);
 			}
-
-			m.layout.top = message->layout.top;
-			m.layout.bottom = message->layout.top + contentHeight;
-			m.layout.left = message->layout.left;
-			m.layout.right = message->layout.left + contentWidth;
-			OSSendMessage(grid->objects[0], &m);
 
 			response = OS_CALLBACK_HANDLED;
 		}
@@ -3581,7 +3631,7 @@ OSObject OSCreateScrollPane(OSObject content, unsigned flags) {
 		// OSPrint("horizontal %x\n", scrollbar);
 	}
 
-	{
+	if ((flags & OS_CREATE_SCROLL_PANE_VERTICAL) && (flags & OS_CREATE_SCROLL_PANE_HORIZONTAL)) {
 		OSObject corner = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
 		OSAddGrid(grid, 1, 1, corner, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	}
@@ -3869,6 +3919,8 @@ void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewpo
 
 		if (scrollbar->position < 0) scrollbar->position = 0;
 		else if (scrollbar->position >= scrollbar->maxPosition) scrollbar->position = scrollbar->maxPosition;
+		else if (scrollbar->position >= 0 && scrollbar->position < scrollbar->maxPosition) {}
+		else scrollbar->position = 0;
 
 		OSEnableControl(scrollbar->objects[0], true);
 		OSEnableControl(scrollbar->objects[2], true);
@@ -3884,9 +3936,9 @@ void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewpo
 
 	if (scrollbar->automaticallyUpdatePosition) {
 		ScrollbarPositionChanged(scrollbar);
-	} else {
-		RelayoutScrollbar(scrollbar);
 	}
+	
+	RelayoutScrollbar(scrollbar);
 }
 
 OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition) {
@@ -5232,12 +5284,12 @@ OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 	OSAddControl(layout5, 1, 0, cancelButton, OS_CELL_H_RIGHT);
 	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertCancel, dialog));
 
-	Control *label = (Control *) OSCreateLabel(message, messageBytes);
+	Control *label = (Control *) OSCreateLabel(message, messageBytes, true);
 	label->textSize = 10;
 	label->textColor = TEXT_COLOR_HEADING;
-	OSAddControl(layout3, 0, 0, label, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddControl(layout3, 0, 0, label, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
 
-	OSAddControl(layout3, 0, 1, OSCreateLabel(description, descriptionBytes), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddControl(layout3, 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
 	OSAddControl(layout2, 0, 0, OSCreateIconDisplay(iconID), OS_CELL_V_TOP);
 
 	OSSetFocusedControl(cancelButton, false);
@@ -5269,12 +5321,12 @@ OSObject OSShowDialogAlert(char *title, size_t titleBytes,
 	OSAddControl(layout4, 0, 0, okButton, OS_CELL_H_PUSH | OS_CELL_H_RIGHT);
 	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
 
-	Control *label = (Control *) OSCreateLabel(message, messageBytes);
+	Control *label = (Control *) OSCreateLabel(message, messageBytes, true);
 	label->textSize = 10;
 	label->textColor = TEXT_COLOR_HEADING;
-	OSAddControl(layout3, 0, 0, label, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddControl(layout3, 0, 0, label, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
 
-	OSAddControl(layout3, 0, 1, OSCreateLabel(description, descriptionBytes), OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
+	OSAddControl(layout3, 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
 	OSAddControl(layout2, 0, 0, OSCreateIconDisplay(iconID), OS_CELL_V_TOP);
 
 	OSSetFocusedControl(okButton, false);

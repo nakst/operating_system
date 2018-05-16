@@ -928,7 +928,7 @@ void Instance::Initialise() {
 	OSAddControl(toolbar2, 0, 0, OSCreateButton(commandNewFolder, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 	OSAddControl(toolbar2, 1, 0, OSCreateButton(commandOpenItem, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 
-	statusLabel = OSCreateLabel(OSLiteral(""));
+	statusLabel = OSCreateLabel(OSLiteral(""), false);
 	OSAddControl(statusBar, 1, 0, statusLabel, OS_FLAGS_DEFAULT);
 
 	LoadFolder(OSLiteral("/"));

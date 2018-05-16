@@ -1,6 +1,8 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 
+// TODO '...' when clipping text.
+
 #define DEBUG_ADDITIONAL_KERNING (0)
 
 typedef FT_Face Font;
@@ -88,14 +90,8 @@ static void OSFontRendererInitialise() {
 	fontRendererInitialised = true;
 }
 
-static int MeasureStringWidth(char *string, size_t stringLength, int size, Font &font) {
-	char *stringEnd = string + stringLength;
+static int _MeasureStringWidth(char *string, char *stringEnd, Font &font) {
 	int totalWidth = 0;
-
-	OSFontRendererInitialise();
-	if (!fontRendererInitialised) return -1;
-
-	FT_Set_Char_Size(font, 0, size * 64, 100, 100);
 
 	while (string < stringEnd) {
 		int character = utf8_value(string);
@@ -117,6 +113,73 @@ static int MeasureStringWidth(char *string, size_t stringLength, int size, Font 
 	}
 
 	return totalWidth;
+}
+
+static int GetLineHeight(Font &font, int size) {
+	FT_Set_Char_Size(font, 0, size * 64, 100, 100);
+	return font->size->metrics.height >> 6; 
+}
+
+static int MeasureString(char *string, size_t stringLength, int size, Font &font, int wrapX) {
+	OSFontRendererInitialise();
+	if (!fontRendererInitialised) return -1;
+
+	char *stringEnd = string + stringLength;
+
+	int lineHeight = GetLineHeight(font, size);
+
+	int totalWidth = 0;
+	int totalHeight = lineHeight;
+
+	FT_Set_Char_Size(font, 0, size * 64, 100, 100);
+
+	while (string < stringEnd) {
+		int character = utf8_value(string);
+
+		if (character == 0x11 || character == 0x12) {
+			goto invisibleCharacter;
+		}
+
+		if (character == '\n') {
+			totalWidth = 0;
+			totalHeight += lineHeight;
+			goto invisibleCharacter;
+		}
+
+		if (character == ' ') {
+			// Can the next word fit on the line?
+			char *wordStart = string;
+			while (++string != stringEnd) if (*string == ' ') break;
+			int width = _MeasureStringWidth(wordStart, string, font);
+			string = wordStart;
+
+			if (width + totalWidth > wrapX) {
+				totalWidth = 0;
+				totalHeight += lineHeight;
+				goto invisibleCharacter;
+			}
+		}
+
+		{
+			int glyphIndex = FT_Get_Char_Index(font, character);
+			FT_Load_Glyph(font, glyphIndex, FT_LOAD_DEFAULT);
+			int advanceWidth = font->glyph->advance.x >> 6;
+
+			totalWidth += advanceWidth + DEBUG_ADDITIONAL_KERNING;
+		}
+
+		invisibleCharacter:;
+		string = utf8_advance(string);
+	}
+
+	return totalHeight;
+}
+
+static int MeasureStringWidth(char *string, size_t stringLength, int size, Font &font) {
+	OSFontRendererInitialise();
+	if (!fontRendererInitialised) return -1;
+	FT_Set_Char_Size(font, 0, size * 64, 100, 100);
+	return _MeasureStringWidth(string, string + stringLength, font);
 }
 
 static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle &invalidatedRegion, OSLinearBuffer &linearBuffer, int lineHeight, void *bitmap, int descent) {
@@ -181,11 +244,6 @@ inline static void DrawStringPixel(int oX, int oY, void *bitmap, size_t stride, 
 
 		*destination = result;
 	}
-}
-
-static int GetLineHeight(Font &font, int size) {
-	FT_Set_Char_Size(font, 0, size * 64, 100, 100);
-	return font->size->metrics.height >> 6; 
 }
 
 static OSError DrawString(OSHandle surface, OSRectangle region, 
@@ -278,6 +336,26 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 			goto invisibleCharacter;
 		}
 
+		if (character == ' ' && (alignment & OS_DRAW_STRING_WORD_WRAP)) {
+			// Can the next word fit on the line?
+			char *wordStart = buffer;
+			while (++buffer != stringEnd) if (*buffer == ' ') break;
+			int width = _MeasureStringWidth(wordStart, buffer, font);
+			buffer = wordStart;
+
+			if (width + outputPosition.x > region.right) {
+				outputPosition.x = region.left;
+				outputPosition.y += lineHeight;
+				goto invisibleCharacter;
+			}
+		}
+
+		if (character == '\n') {
+			outputPosition.x = region.left;
+			outputPosition.y += lineHeight;
+			goto invisibleCharacter;
+		}
+
 		cacheEntry = LookupFontCacheEntry(character, size, font);
 
 		if (cacheEntry) {
@@ -298,7 +376,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 
 		if (outputPosition.x + advanceWidth < region.left) {
 			goto skipCharacter;
-		} else if (outputPosition.x >= region.right) {
+		} else if (outputPosition.x >= region.right && !(alignment & OS_DRAW_STRING_WORD_WRAP)) {
 			break;
 		}
 

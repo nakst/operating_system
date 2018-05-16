@@ -62,3 +62,10 @@ commandLaunchFileManager;
 output = "Test.esx";
 source = "api/test.cpp";
 installationFolder = "/OS/";
+
+[window windowTest2]
+width = 200;
+height = 200;
+minimumWidth = 50;
+minimumHeight = 50;
+title = "Window Test 2";
