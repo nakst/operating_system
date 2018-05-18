@@ -1719,10 +1719,14 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 		control->sentEditResultNotification = false;
 
-		control->caret.byte = 0;
-		control->caret.character = 0;
-		control->caret2.byte = control->text.bytes;
-		control->caret2.character = control->text.characters;
+		if (control->style == OS_TEXTBOX_STYLE_COMMAND) {
+			control->caret.byte = 0;
+			control->caret.character = 0;
+			control->caret2.byte = control->text.bytes;
+			control->caret2.character = control->text.characters;
+
+			OSSyscall(OS_SYSCALL_RESET_CLICK_CHAIN, 0, 0, 0, 0);
+		}
 
 		OSEnableCommand(control->window, osCommandPaste, ClipboardTextBytes());
 		OSEnableCommand(control->window, osCommandSelectAll, true);
@@ -1744,8 +1748,6 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 				CreateString(control->text.buffer, control->text.bytes, &control->previousString, control->text.characters);
 			}
 		}
-
-		OSSyscall(OS_SYSCALL_RESET_CLICK_CHAIN, 0, 0, 0, 0);
 	} else if (message->type == OS_MESSAGE_CLIPBOARD_UPDATED) {
 		OSEnableCommand(control->window, osCommandPaste, ClipboardTextBytes());
 	} else if (message->type == OS_MESSAGE_END_LAST_FOCUS) {
