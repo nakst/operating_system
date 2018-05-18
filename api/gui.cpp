@@ -46,7 +46,7 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Access keys.
 // 	- List view navigation.
 // 	- Change "default command" to be a special case of dialog box and menu keyboard controls.
-// TODO Scroll-selections in textboxes and list views.
+// TODO Scroll-selections in list views.
 // TODO Textboxes.
 // 	- Undo/redo.
 // 	- Multi-line.
@@ -1596,6 +1596,12 @@ static void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, b
 }
 
 static void FindCaret(Textbox *control, int positionX, int positionY, bool secondCaret, unsigned clickChainCount) {
+	if (positionX < control->textBounds.left) {
+		positionX = control->textBounds.left;
+	} else if (positionX > control->textBounds.right) {
+		positionX = control->textBounds.right;
+	}
+
 	if (clickChainCount >= 3) {
 		control->caret.byte = 0;
 		control->caret.character = 0;
@@ -1807,8 +1813,33 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		control->caret = control->caret2;
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
-		ensureCaretVisible = true;
 		FindCaret(control, message->mouseDragged.newPositionX, message->mouseDragged.newPositionY, true, lastClickChainCount);
+		RepaintControl(control);
+	} else if (message->type == OS_MESSAGE_CLICK_REPEAT) {
+		OSPoint mousePosition;
+		OSGetMousePosition(control->window, &mousePosition);
+
+		if (mousePosition.x < control->textBounds.left) {
+			int difference = control->textBounds.left - mousePosition.x;
+			control->scrollX -= difference / 10;
+			FindCaret(control, control->textBounds.left, mousePosition.y, true, lastClickChainCount);
+		} else if (mousePosition.x > control->textBounds.right) {
+			int difference = mousePosition.x - control->textBounds.right;
+			control->scrollX += difference / 10;
+			FindCaret(control, control->textBounds.right, mousePosition.y, true, lastClickChainCount);
+		}
+
+		int fullWidth = MeasureStringWidth(control->text.buffer, control->text.bytes, control->textSize, fontRegular);
+		int controlWidth = control->textBounds.right - control->textBounds.left;
+
+		if (fullWidth < controlWidth) {
+			control->scrollX = 0;
+		} else if (control->scrollX > fullWidth - controlWidth) {
+			control->scrollX = fullWidth - controlWidth;
+		} else if (control->scrollX < 0) {
+			control->scrollX = 0;
+		}
+
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_TEXT_UPDATED) {
 		if (control->caret2.byte > control->text.bytes) {

@@ -120,6 +120,8 @@ struct MessageQueue {
 	size_t count, allocated;
 
 	uintptr_t mouseMovedMessage; // Index + 1, 0 indicates none.
+	uintptr_t wmTimerMessage; 
+	uintptr_t clickRepeatMessage; 
 
 	Mutex mutex;
 	Event notEmpty;

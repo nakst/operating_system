@@ -28,6 +28,24 @@ bool MessageQueue::SendMessage(OSMessage &_message) {
 		}
 	}
 
+	if (_message.type == OS_MESSAGE_CLICK_REPEAT) {
+		if (clickRepeatMessage) {
+			CopyMemory(messages + clickRepeatMessage - 1, &_message, sizeof(OSMessage));
+			goto done;
+		} else {
+			clickRepeatMessage = count + 1;
+		}
+	}
+
+	if (_message.type == OS_MESSAGE_WM_TIMER) {
+		if (wmTimerMessage) {
+			CopyMemory(messages + wmTimerMessage - 1, &_message, sizeof(OSMessage));
+			goto done;
+		} else {
+			wmTimerMessage = count + 1;
+		}
+	}
+
 	if (count + 1 >= allocated) {
 		allocated = (allocated + 8) * 2;
 		OSMessage *old = messages;
@@ -60,9 +78,9 @@ bool MessageQueue::GetMessage(OSMessage &_message) {
 	CopyMemory(messages, messages + 1, (count - 1) * sizeof(OSMessage));
 	count--;
 
-	if (mouseMovedMessage) {
-		mouseMovedMessage--;
-	}
+	if (mouseMovedMessage) mouseMovedMessage--;
+	if (wmTimerMessage) wmTimerMessage--;
+	if (clickRepeatMessage) clickRepeatMessage--;
 
 	if (!count) {
 		notEmpty.Reset();

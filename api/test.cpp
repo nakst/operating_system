@@ -382,7 +382,7 @@ void EnumerateRootThread(void *argument) {
 }
 
 extern "C" void ProgramEntry() {
-#if 0
+#if 1
 	if (x != 5) OSCrashProcess(600);
 	if (y2.a != 1) OSCrashProcess(601);
 	if (y2.b != 2) OSCrashProcess(602);
@@ -931,25 +931,13 @@ extern "C" void ProgramEntry() {
 		OSSetRootGrid(window, content);
 #endif
 		const char *loremIpsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
-		OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral(loremIpsum), true), OS_CELL_FILL);
+		// OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral(loremIpsum), true), OS_CELL_FILL);
 		// OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral("Hello!"), false), 0);
 
-		OSDebugGUIObject(content);
+		OSObject textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);
+		OSAddControl(content, 0, 0, textbox, OS_CELL_H_PUSH | OS_CELL_V_PUSH | OS_CELL_H_EXPAND);
+		OSSetText(textbox, OSLiteral(loremIpsum), OS_RESIZE_MODE_IGNORE);
 	}
-
-	{
-		OSObject window = OSCreateWindow(windowTest2);
-		OSObject content = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER);
-		OSSetRootGrid(window, content);
-		OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral("Something bad has happened."), true), OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
-		OSAddControl(content, 0, 1, OSCreateLabel(OSLiteral("This is a longer, more detailed description of the bad thing that has happened."), true), OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
-		OSDebugGUIObject(content);
-	}
-
-	OSShowDialogAlert(OSLiteral("Alert!"),
-			OSLiteral("Something bad has happened."),
-			OSLiteral("This is a longer, more detailed description of the bad thing that has happened."),
-			OS_ICON_ERROR, OS_INVALID_OBJECT);
 
 	OSProcessMessages();
 }
