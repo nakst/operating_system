@@ -454,7 +454,7 @@ void *ACPI::FindTable(uint32_t tableSignature, ACPIDescriptorTable **header) {
 
 extern "C"  {
 #pragma GCC diagnostic ignored "-Wunused-parameter" push
-#include "../ports/acpica/files/acpi.h"
+#include "../ports/acpica/include/acpi.h"
 #pragma GCC diagnostic pop
 }
 

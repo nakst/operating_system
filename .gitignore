@@ -27,3 +27,4 @@ Test Image.png
 ports/lua/
 test.c
 ports/acpica/files
+ports/nasm

@@ -23,7 +23,7 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OSDefer(code)   OS_Defer(code)
 
 #else
-#define OS_EXTERN_C 
+#define OS_EXTERN_C extern
 #define OS_CONSTRUCTOR(x)
 #endif
 
@@ -389,7 +389,6 @@ typedef struct OSNodeInformation {
 		bool present; // From OSEnumerateDirectoryChildren.
 	};
 
-	// OSUniqueIdentifier identifier; // This can change when all handles to the node are closed.
 	OSNodeType type;
 
 	union {
@@ -1245,6 +1244,7 @@ OS_EXTERN_C int utf8_length(char *string, int max_bytes);
 typedef volatile int sig_atomic_t;
 typedef int64_t time_t;
 typedef int64_t clock_t;
+typedef int64_t off_t;
 
 typedef struct lconv {
 	char *decimal_point;
@@ -1284,6 +1284,22 @@ typedef struct tm {
 	int tm_yday;
 	int tm_isdst;
 } tm;
+
+struct stat {
+	int64_t st_dev;
+	int64_t st_ino;
+	int64_t st_mode;
+	int64_t st_nlink;
+	int64_t st_uid;
+	int64_t st_gid;
+	int64_t st_rdev;
+	int64_t st_size;
+	int64_t st_blksize;
+	int64_t st_blocks;
+	time_t st_atime;
+	time_t st_mtime;
+	time_t st_ctime;
+};
 
 typedef struct FILE {
 	OSNodeInformation node;
@@ -1327,6 +1343,24 @@ extern FILE *stderr;
 #define LC_MONETARY (8)
 #define LC_NUMERIC (16)
 #define LC_TIME (32)
+#define PRIx8 "x"
+#define PRIx16 "x"
+#define PRId32 "d"
+#define PRIu32 "u"
+#define PRIx32 "x"
+#define PRIX32 "X"
+#define PRId64 "ld"
+#define PRIu64 "lu"
+#define PRIx64 "lx"
+#define PRIX64 "lX"
+#define PROT_READ (0x01)
+#define PROT_WRITE (0x02)
+#define PROT_EXEC (0x04)
+#define PROT_NONE (0x08)
+#define MAP_SHARED (0x10)
+#define MAP_PRIVATE (0x20)
+#define MAP_FIXED (0x40)
+#define MAP_FAILED (NULL)
 
 OS_EXTERN_C int isalnum(int c);
 OS_EXTERN_C int iscntrl(int c);
@@ -1362,9 +1396,12 @@ OS_EXTERN_C size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream);
 OS_EXTERN_C FILE *freopen(const char *path, const char *mode, FILE *stream);
 OS_EXTERN_C double frexp(double x, int *exp);
 OS_EXTERN_C int fseek(FILE *stream, long offset, int whence);
+OS_EXTERN_C int fseeko(FILE *stream, off_t offset, int whence);
 OS_EXTERN_C long ftell(FILE *stream);
+OS_EXTERN_C off_t ftello(FILE *stream);
 OS_EXTERN_C size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream);
-OS_EXTERN_C int getc(FILE *stream);
+#define getc fgetc
+OS_EXTERN_C int fgetc(FILE *stream);
 OS_EXTERN_C struct tm *gmtime(const time_t *time);
 OS_EXTERN_C double ldexp(double x, int exp);
 OS_EXTERN_C struct tm *localtime(const time_t *time);
@@ -1438,10 +1475,27 @@ OS_EXTERN_C void OSAssertionFailure();
 OS_EXTERN_C struct lconv *localeconv();
 OS_EXTERN_C int rand();
 OS_EXTERN_C int ungetc(int c, FILE *stream);
+#define putc fputc
+OS_EXTERN_C int fputc(int c, FILE *stream);
+OS_EXTERN_C int puts(const char *string);
+OS_EXTERN_C void perror(const char *string);
+OS_EXTERN_C int vsnprintf(char *string, size_t size, const char *format, va_list arguments);
+OS_EXTERN_C int ftruncate(int fildes, off_t length);
+OS_EXTERN_C int fileno(FILE *stream);
+OS_EXTERN_C int access(const char *path, int amode);
+OS_EXTERN_C int fstat(int fildes, struct stat *buffer);
+OS_EXTERN_C int stat(const char *path, struct stat *buffer);
+OS_EXTERN_C int getpagesize();
+OS_EXTERN_C void *mmap(void *address, size_t length, int protection, int flags, int fildes, off_t offset);
+OS_EXTERN_C int munmap(void *address, size_t length);
+OS_EXTERN_C char *canonicalize_file_name(const char *path);
+OS_EXTERN_C int atoi(const char *nptr);
+OS_EXTERN_C int sscanf(const char *string, const char *format, ...);
 
 #define assert(x) do{if (!(x)) OSAssertionFailure();}while(0)
 
 #ifdef ARCH_X86_64
+#define OS_PAGE_SIZE (4096)
 typedef struct jmp_buf { uintptr_t rsp, rbp, rbx, r12, r13, r14, r15, returnAddress; } jmp_buf;
 #endif
 OS_EXTERN_C int _setjmp(jmp_buf *env);
@@ -1461,6 +1515,6 @@ OS_EXTERN_C uint64_t osRandomByteSeed;
 OS_EXTERN_C OSMutex osMessageMutex;
 #endif
 
-OS_EXTERN_C void ProgramEntry(); 
+OS_EXTERN_C void ProgramEntry(void); 
 
 #endif

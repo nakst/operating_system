@@ -280,6 +280,14 @@ char *strcat(char *dest, const char *src) {
 	return o;
 }
 
+int atoi(const char *nptr) {
+	return (int) strtol(nptr, NULL, 10);
+}
+
+int getpagesize() {
+	return OS_PAGE_SIZE;
+}
+
 long int strtol(const char *nptr, char **endptr, int base) {
 	// TODO errno
 
@@ -870,6 +878,15 @@ int fputs(const char *s, FILE *stream) {
 	}
 }
 
+int fputc(int c, FILE *stream) {
+	char c2 = c;
+	if (fwrite(&c2, 1, 1, stream)) {
+		return c;
+	} else {
+		return EOF;
+	}
+}
+
 size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
 	size_t per = size;
 
@@ -899,7 +916,7 @@ size_t fwrite(const void *ptr, size_t size, size_t nmemb, FILE *stream) {
 	}
 }
 
-int fseek(FILE *stream, long offset, int whence) {
+int fseeko(FILE *stream, off_t offset, int whence) {
 	if (stream->virtualFile) return -1;
 	int64_t position = 0;
 
@@ -916,7 +933,70 @@ int fseek(FILE *stream, long offset, int whence) {
 	return 0;
 }
 
+int fileno(FILE *stream) {
+	return (int) stream->node.handle;
+}
+
+int ftruncate(int fildes, off_t length) {
+	OSHandle handle = (OSHandle) fildes;
+
+	if (OSResizeFile(handle, length) == OS_SUCCESS) {
+		return 0;
+	} else {
+		return -1;
+	}
+}
+
+int fstat(int fildes, struct stat *buffer) {
+	OSHandle handle = (OSHandle) fildes;
+	OSNodeInformation node;
+	node.handle = handle;
+	OSRefreshNodeInformation(&node);
+
+	buffer->st_dev = 0;
+	buffer->st_ino = 0;
+	buffer->st_mode = 0;
+	buffer->st_nlink = 1;
+	buffer->st_uid = 0;
+	buffer->st_gid = 0;
+	buffer->st_rdev = 0;
+	buffer->st_size = node.fileSize;
+	buffer->st_blksize = 512;
+	buffer->st_blocks = node.fileSize / 512 + 1;
+	buffer->st_atime = 0;
+	buffer->st_mtime = 0;
+	buffer->st_ctime = 0;
+
+	return 0;
+}
+
+int stat(const char *path, struct stat *buffer) {
+	OSNodeInformation node;
+
+	if (OSOpenNode((char *) path, OSCStringLength(path), OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &node) != OS_SUCCESS) {
+		return -1;
+	}
+
+	int result = fstat(node.handle, buffer);
+	OSCloseHandle(node.handle);
+	return result;
+}
+
+int access(const char *path, int amode) {
+	(void) path;
+	(void) amode;
+	return 0;
+}
+
+int fseek(FILE *stream, long offset, int whence) {
+	return fseeko(stream, offset, whence);
+}
+
 long ftell(FILE *stream) {
+	return (long) ftello(stream);
+}
+
+off_t ftello(FILE *stream) {
 	return stream->position;
 }
 
@@ -937,7 +1017,7 @@ FILE *freopen(const char *path, const char *_mode, FILE *stream) {
 	return stream;
 }
 
-int getc(FILE *stream) {
+int fgetc(FILE *stream) {
 	char c;
 
 	if (fread(&c, 1, 1, stream)) {
@@ -1103,6 +1183,16 @@ double strtod(const char *nptr, char **endptr) {
 	return result;
 }
 
+int puts(const char *string) {
+	printf("%s\n", string);
+	return 1;
+}
+
+void perror(const char *string) {
+	if (!string) string = "";
+	printf("perror: %s\n", string);
+}
+
 // ----------- Time function stubs vvvvvvv
 
 clock_t clock() {
@@ -1145,6 +1235,26 @@ struct tm *gmtime(const time_t *time) {
 }
 
 // ----------- Time function stubs ^^^^^^^
+
+char *canonicalize_file_name(const char *path) {
+	(void) path;
+	return nullptr;
+}
+
+void *mmap(void *address, size_t length, int protection, int flags, int fildes, off_t offset) {
+	if (!address) return MAP_FAILED;
+	if (!length) return MAP_FAILED;
+	if (protection != PROT_READ) return MAP_FAILED;
+	if (flags != MAP_SHARED) return MAP_FAILED;
+	if (!fildes) return MAP_FAILED;
+	return OSMapObject((OSHandle) fildes, offset, length, OS_MAP_OBJECT_READ_ONLY);
+}
+
+int munmap(void *address, size_t length) {
+	(void) length;
+	OSFree(address);
+	return 0;
+}
 
 static void InitialiseCStandardLibrary() {
 	stdin = (FILE *) OSHeapAllocate(sizeof(FILE), true);

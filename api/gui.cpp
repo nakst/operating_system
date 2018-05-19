@@ -57,6 +57,8 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Comboboxes.
 // 	- Tabs.
 // 	- Toggle buttons.
+// 	- Splitter.
+// 	- Spinner.
 
 struct UIImage {
 	OSRectangle region;
