@@ -337,7 +337,10 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_SET_FOCUSED_WINDOW,
 	OS_SYSCALL_YIELD_SCHEDULER,
 	OS_SYSCALL_ACQUIRE_MULTIPLE_MUTEXES,
+	OS_SYSCALL_GET_SYSTEM_CONSTANTS,
 } OSSyscallType;
+
+#define OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND (0)
 
 #define OS_INVALID_HANDLE 		((OSHandle) (0))
 #define OS_CURRENT_THREAD	 	((OSHandle) (0x1000))
@@ -641,6 +644,8 @@ typedef enum OSMessageType {
 	// Misc messages:
 	OS_MESSAGE_CLIPBOARD_UPDATED		= 0x5001,
 	OS_MESSAGE_SET_PROPERTY			= 0x5002,
+	OS_MESSAGE_IDLE				= 0x5003,
+	OS_MESSAGE_SYSTEM_CONSTANT_UPDATED	= 0x5004,
 
 	// User messages:
 	OS_MESSAGE_USER_START			= 0x8000,
@@ -819,6 +824,15 @@ typedef struct OSMessage {
 			OSHandle nameBuffer;
 			size_t nameBytes;
 		} executeProgram;
+
+		struct {
+			uint64_t microsecondsSinceLastIdleMessage;
+		} idle;
+
+		struct {
+			uintptr_t index;
+			uint64_t newValue;
+		} systemConstantUpdated;
 	};
 } OSMessage;
 
@@ -1100,6 +1114,7 @@ OS_EXTERN_C OSError OSInvalidateRectangle(OSHandle surface, OSRectangle rectangl
 OS_EXTERN_C OSError OSCopyToScreen(OSHandle source, OSPoint point, uint16_t depth);
 OS_EXTERN_C OSError OSForceScreenUpdate();
 OS_EXTERN_C OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSColor color);
+OS_EXTERN_C OSError OSFillRectangleClipped(OSHandle surface, OSRectangle rectangle, OSColor color, OSRectangle clipRegion);
 OS_EXTERN_C OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
 OS_EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha);
 OS_EXTERN_C OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha, OSRectangle clipRegion);
@@ -1107,6 +1122,7 @@ OS_EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
 OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion, int blur);
 OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize, int scrollX);
 OS_EXTERN_C void OSDrawProgressBar(OSHandle surface, OSRectangle bounds, float progress, OSRectangle clip, bool blue);
+OS_EXTERN_C bool OSClipRectangle(OSRectangle parent, OSRectangle rectangle, OSRectangle *output); // Returns false if the rectangles did not overlap.
 
 // You shouldn't need to call either of these...
 OS_EXTERN_C void OSRedrawAll();
@@ -1126,7 +1142,9 @@ OS_EXTERN_C OSError OSPostMessageRemote(OSHandle process, OSMessage *message);
 OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
 OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSObject target, OSCallback callback, OSMessage *message);
 OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
+
 OS_EXTERN_C void OSProcessMessages();
+OS_EXTERN_C void OSSendIdleMessages(bool enabled);
 
 #define OS_RESIZE_MODE_IGNORE (0)
 #define OS_RESIZE_MODE_GROW_ONLY (1)
@@ -1237,6 +1255,13 @@ OS_EXTERN_C int utf8_encode(int value, char *buffer);
 OS_EXTERN_C char *utf8_advance(char *string);
 OS_EXTERN_C char *utf8_retreat(char *string);
 OS_EXTERN_C int utf8_length(char *string, int max_bytes);
+
+OS_EXTERN_C uint64_t osRandomByteSeed;
+OS_EXTERN_C OSMutex osMessageMutex;
+
+OS_EXTERN_C uint64_t osSystemConstants[256];
+
+OS_EXTERN_C uint64_t OSProcessorReadTimeStamp();
 
 // TODO Possibly remove all of these?
 // 	Or move into a libc library?
@@ -1503,7 +1528,6 @@ OS_EXTERN_C int _setjmp(jmp_buf *env);
 OS_EXTERN_C __attribute__((noreturn)) void _longjmp(jmp_buf *env, int val);
 #define setjmp(x) _setjmp(&(x))
 #define longjmp(x, y) _longjmp(&(x), (y))
-
 #endif
 
 #define STBI_NO_STDIO
@@ -1511,9 +1535,6 @@ OS_EXTERN_C __attribute__((noreturn)) void _longjmp(jmp_buf *env, int val);
 #define STBI_ONLY_JPEG
 #define STBI_NO_LINEAR
 #include "stb_image.h"
-
-OS_EXTERN_C uint64_t osRandomByteSeed;
-OS_EXTERN_C OSMutex osMessageMutex;
 #endif
 
 OS_EXTERN_C void ProgramEntry(void); 

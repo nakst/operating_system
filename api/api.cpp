@@ -26,6 +26,16 @@ struct APIObject {
 	APIObject *parent;
 };
 
+OSMutex osMessageMutex;
+
+APIObject _osSystemMessages;
+OSObject osSystemMessages;
+
+uint64_t osSystemConstants[256];
+
+static bool sendIdleMessages, draggingWindowResizeHandle;
+static uint64_t lastIdleTimeStamp;
+
 #include "utf8.h"
 #include "heap.cpp"
 #include "linked_list.cpp"
@@ -34,17 +44,14 @@ struct APIObject {
 #include "common.cpp"
 #include "syscall.cpp"
 
-OSMutex osMessageMutex;
-
-APIObject _osSystemMessages;
-OSObject osSystemMessages;
-
 extern "C" void ProgramEntry();
 
 extern "C" void OSInitialiseAPI() {
 	// TODO Seed random number generator.
 
 	osSystemMessages = &_osSystemMessages;
+
+	OSSyscall(OS_SYSCALL_GET_SYSTEM_CONSTANTS, (uintptr_t) osSystemConstants, 0, 0, 0);
 
 	OSInitialiseGUI();
 	InitialiseCStandardLibrary();
@@ -81,13 +88,33 @@ OSCallbackResponse OSForwardMessage(OSObject target, OSCallback callback, OSMess
 	return callback.function(target, message);
 }
 
+void OSSendIdleMessages(bool enabled) {
+	sendIdleMessages = enabled;
+	lastIdleTimeStamp = OSProcessorReadTimeStamp();
+}
+
 void OSProcessMessages() {
 	while (true) {
 		OSMessage message;
-		OSWaitMessage(OS_WAIT_NO_TIMEOUT);
+
+		if (sendIdleMessages && !draggingWindowResizeHandle) {
+			uint64_t timeStamp = OSProcessorReadTimeStamp();
+			message.type = OS_MESSAGE_IDLE;
+			message.idle.microsecondsSinceLastIdleMessage = 
+				(timeStamp - lastIdleTimeStamp) / osSystemConstants[OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND];
+			lastIdleTimeStamp = timeStamp;
+			OSSendMessage(osSystemMessages, &message);
+		} else {
+			OSWaitMessage(OS_WAIT_NO_TIMEOUT);
+		}
 
 		if (OSGetMessage(&message) == OS_SUCCESS) {
 			OSAcquireMutex(&osMessageMutex);
+
+			if (message.type == OS_MESSAGE_SYSTEM_CONSTANT_UPDATED) {
+				osSystemConstants[message.systemConstantUpdated.index] = message.systemConstantUpdated.newValue;
+				goto done;
+			}
 
 			if (message.context) {
 				OSSendMessage(message.context, &message);

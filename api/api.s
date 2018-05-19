@@ -44,3 +44,10 @@ _longjmp:
 	mov	rax,1
 	.return:
 	ret
+
+[global OSProcessorReadTimeStamp]
+OSProcessorReadTimeStamp:
+	rdtsc
+	shl	rdx,32
+	or	rax,rdx
+	ret

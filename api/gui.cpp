@@ -803,6 +803,10 @@ static bool ClipRectangle(OSRectangle parent, OSRectangle rectangle, OSRectangle
 	return intersection.left < intersection.right && intersection.top < intersection.bottom;
 }
 
+bool OSClipRectangle(OSRectangle parent, OSRectangle rectangle, OSRectangle *output) {
+	return ClipRectangle(parent, rectangle, output);
+}
+
 void OSDebugGUIObject(OSObject _guiObject) {
 	GUIObject *guiObject = (GUIObject *) _guiObject;
 	guiObject->verbose = true;
@@ -1469,6 +1473,11 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSM
 			layout.layout.clip = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
 			OSSendMessage(window->root, &layout);
 		}
+	} else if (message->type == OS_MESSAGE_START_DRAG) {
+		draggingWindowResizeHandle = true;
+	} else if (message->type == OS_MESSAGE_END_PRESS) {
+		draggingWindowResizeHandle = false;
+		lastIdleTimeStamp = OSProcessorReadTimeStamp();
 	} else if (message->type == OS_MESSAGE_LAYOUT_TEXT) {
 		control->textBounds = control->bounds;
 		control->textBounds.top -= 3;

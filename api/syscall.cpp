@@ -101,6 +101,13 @@ OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, OSRectangle 
 	return OSDrawSurface(destination, source, clipRegion, sourceRegion, borderRegion, mode, alpha);
 }
 
+#ifndef KERNEL
+OSError OSFillRectangleClipped(OSHandle surface, OSRectangle rectangle, OSColor color, OSRectangle clipRegion) {
+	OSClipRectangle(rectangle, clipRegion, &rectangle);
+	return OSFillRectangle(surface, rectangle, color);
+}
+#endif
+
 OSHandle OSCreateGlobalMutex() {
 	return OSSyscall(OS_SYSCALL_CREATE_MUTEX, 0, 0, 0, 0);
 }

@@ -1305,6 +1305,13 @@ uintptr_t DoSyscall(OSSyscallType index,
 			ProcessorFakeTimerInterrupt();
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
+
+		case OS_SYSCALL_GET_SYSTEM_CONSTANTS: {
+			SYSCALL_BUFFER(argument0, sizeof(uint64_t) * 256, 1);
+			uint64_t *systemConstants = (uint64_t *) argument0;
+			systemConstants[OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND] = acpi.timestampTicksPerMs / 1000;
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
 	}
 
 	end:;
