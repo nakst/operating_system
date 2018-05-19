@@ -315,7 +315,7 @@ bool LoadImageIntoSurface(char *cPath, OSHandle surface, bool center, uintptr_t 
 
 			OSInvalidateRectangle(surface, OS_MAKE_RECTANGLE(0, imageX, 0, imageY));
 			OSHeapFree(image);
-			OSFree(bitmap);
+			OSUnmapObject(bitmap);
 			OSCloseHandle(buffer.handle);
 		}
 

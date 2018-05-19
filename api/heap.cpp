@@ -40,8 +40,8 @@ static OSMutex heapMutex;
 #define OS_HEAP_ACQUIRE_MUTEX() OSAcquireMutex(&heapMutex)
 #define OS_HEAP_RELEASE_MUTEX() OSReleaseMutex(&heapMutex)
 #define OS_HEAP_PANIC(n) { OSCrashProcess(OS_FATAL_ERROR_CORRUPT_HEAP); }
-#define OS_HEAP_ALLOCATE_CALL(x) OSAllocate(x)
-#define OS_HEAP_FREE_CALL(x) OSFree(x)
+#define OS_HEAP_ALLOCATE_CALL(x) OSVirtualAllocate(x)
+#define OS_HEAP_FREE_CALL(x) OSVirtualFree(x)
 #endif
 
 #define OS_HEAP_REGION_HEADER(region) ((OSHeapRegion *) ((uint8_t *) region - 0x10))

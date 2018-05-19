@@ -655,9 +655,9 @@ extern "C" void ProgramEntry() {
 		for (uintptr_t i = 4096; i < 262144; i++) if (pointer[i] != buffer[i]) OSCrashProcess(200);
 		for (uintptr_t i = 4096; i < 262144; i++) if (pointer2[i] != buffer[i]) OSCrashProcess(200);
 		// pointer[0]++;
-		OSFree(pointer);
+		OSUnmapObject(pointer);
 		OSCloseHandle(node.handle);
-		OSFree(pointer2);
+		OSUnmapObject(pointer2);
 	}
 
 	{
@@ -800,7 +800,7 @@ extern "C" void ProgramEntry() {
 		OSResizeSharedMemory(region, 400 * 1024 * 1024); // Small -> big
 #endif
 		OSCloseHandle(region);
-		OSFree(pointer);
+		OSUnmapObject(pointer);
 	}
 
 #if 1
@@ -809,7 +809,7 @@ extern "C" void ProgramEntry() {
 		void *pointer = OSMapObject(region, 0, 0, OS_MAP_OBJECT_READ_WRITE);
 		// OSZeroMemory(pointer, 512 * 1024 * 1024);
 		OSCloseHandle(region);
-		OSFree(pointer);
+		OSUnmapObject(pointer);
 	}
 #endif
 

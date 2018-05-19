@@ -1095,8 +1095,9 @@ OS_EXTERN_C OSHandle OSOpenSharedMemory(size_t size, char *name, size_t nameLeng
 OS_EXTERN_C OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);
 OS_EXTERN_C void *OSMapObject(OSHandle object, uintptr_t offset, size_t size, unsigned flags);
 
-OS_EXTERN_C void *OSAllocate(size_t size);
-OS_EXTERN_C OSError OSFree(void *address);
+OS_EXTERN_C void *OSVirtualAllocate(size_t size);
+OS_EXTERN_C OSError OSVirtualFree(void *address);
+#define OSUnmapObject OSVirtualFree
 
 OS_EXTERN_C void *OSGetCreationArgument(OSHandle object);
 OS_EXTERN_C void OSGetProcessState(OSHandle process, OSProcessState *state);

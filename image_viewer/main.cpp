@@ -127,8 +127,8 @@ OSCallbackResponse CommandRotate(OSObject object, OSMessage *message) {
 		}
 	}
 
-	OSFree(oldBitmap);
-	OSFree(newBitmap);
+	OSUnmapObject(oldBitmap);
+	OSUnmapObject(newBitmap);
 
 	return OS_CALLBACK_HANDLED;
 }
@@ -304,7 +304,7 @@ void Instance::Initialise(char *path, size_t pathBytes) {
 			}
 		}
 
-		OSFree(bitmap);
+		OSUnmapObject(bitmap);
 		OSCloseHandle(buffer.handle);
 		OSHeapFree(image);
 

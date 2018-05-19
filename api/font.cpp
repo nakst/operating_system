@@ -575,7 +575,7 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	}
 
 	if (bitmap) {
-		OSFree(bitmap);
+		OSUnmapObject(bitmap);
 		OSCloseHandle(linearBuffer.handle);
 	}
 

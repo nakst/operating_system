@@ -1,5 +1,4 @@
 // TODO Priority inversion
-// TODO Yield on mutex/spinlock release and event set
 
 #ifndef IMPLEMENTATION
 
@@ -706,8 +705,6 @@ void Scheduler::RemoveProcess(Process *process) {
 	// KernelLog(LOG_INFO, "Removing process %d.\n", process->id);
 
 	// At this point, no pointers to the process (should) remain (I think).
-	// TODO Mutex owners?
-
 	if (!process->allThreadsTerminated) {
 		KernelPanic("Scheduler::RemoveProcess - The process is being removed before all its threads have terminated?!\n");
 	}

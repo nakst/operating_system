@@ -6,7 +6,7 @@ uintptr_t _OSSyscall(uintptr_t argument0, uintptr_t argument1, uintptr_t argumen
 }
 #endif
 
-void *OSAllocate(size_t size) {
+void *OSVirtualAllocate(size_t size) {
 	intptr_t result = OSSyscall(OS_SYSCALL_ALLOCATE, size, 0, 0, 0);
 
 	if (result >= 0) {
@@ -16,7 +16,7 @@ void *OSAllocate(size_t size) {
 	}
 }
 
-OSError OSFree(void *address) {
+OSError OSVirtualFree(void *address) {
 	intptr_t result = OSSyscall(OS_SYSCALL_FREE, (uintptr_t) address, 0, 0, 0);
 	return result;
 }

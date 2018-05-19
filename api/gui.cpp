@@ -5572,7 +5572,7 @@ void OSInitialiseGUI() {
 
 	DISABLE_TEXT_SHADOWS = skin[4 * 3 + 28 * buffer.width];
 
-	OSFree(skin);
+	OSUnmapObject(skin);
 	OSCloseHandle(buffer.handle);
 }
 

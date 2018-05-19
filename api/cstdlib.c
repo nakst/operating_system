@@ -1252,7 +1252,7 @@ void *mmap(void *address, size_t length, int protection, int flags, int fildes, 
 
 int munmap(void *address, size_t length) {
 	(void) length;
-	OSFree(address);
+	OSUnmapObject(address);
 	return 0;
 }
 
