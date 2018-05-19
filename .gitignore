@@ -28,3 +28,4 @@ ports/lua/
 test.c
 ports/acpica/files
 ports/nasm
+hello_world

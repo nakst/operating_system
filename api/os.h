@@ -1455,6 +1455,7 @@ OS_EXTERN_C int tolower(int c);
 OS_EXTERN_C char *strncpy(char *dest, const char *src, size_t n);
 OS_EXTERN_C long int strtol(const char *nptr, char **endptr, int base);
 OS_EXTERN_C unsigned long int strtoul(const char *nptr, char **endptr, int base);
+#define strtoull strtoul
 OS_EXTERN_C char *strcat(char *dest, const char *src);
 OS_EXTERN_C char *strsep(char **stringp, const char *delim);
 OS_EXTERN_C char *strstr(const char *haystack, const char *needle);
