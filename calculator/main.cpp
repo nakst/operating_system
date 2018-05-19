@@ -257,6 +257,8 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
 		Instance *instance = (Instance *) OSHeapAllocate(sizeof(Instance), true);
 
+		OSStartGUIAllocationBlock(4096);
+
 		OSObject window = OSCreateWindow(mainWindow);
 		OSSetInstance(window, instance);
 
@@ -287,6 +289,8 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 		OSAddControl(keypad, 4, 0, CreateKeypadButton(insertLeftBracket), 		OS_CELL_FILL);
 		OSAddControl(keypad, 4, 1, CreateKeypadButton(insertRightBracket), 		OS_CELL_FILL);
 		OSAddControl(keypad, 4, 3, CreateKeypadButton(evaluate), 			OS_CELL_FILL);
+
+		OSEndGUIAllocationBlock();
 
 		return OS_CALLBACK_HANDLED;
 	} 

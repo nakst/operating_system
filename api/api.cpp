@@ -44,9 +44,6 @@ extern "C" void ProgramEntry();
 extern "C" void OSInitialiseAPI() {
 	// TODO Seed random number generator.
 
-	void OSFPInitialise();
-	OSFPInitialise();
-
 	osSystemMessages = &_osSystemMessages;
 
 	OSInitialiseGUI();

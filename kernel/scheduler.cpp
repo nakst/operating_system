@@ -400,6 +400,9 @@ Thread *Scheduler::SpawnThread(uintptr_t startAddress, uintptr_t argument, Proce
 	thread->interruptContext = context;
 	thread->kernelStack = kernelStack + kernelStackSize - 8;
 
+	context->fxsave[32] = 0x80;
+	context->fxsave[33] = 0x1F;
+
 	if (userland) {
 		context->cs = 0x5B;
 		context->ds = 0x63;

@@ -30,6 +30,8 @@ echo -e "-> Building ${ColorBlue}file manager${ColorNormal}..."
 echo -e "-> Building ${ColorBlue}image viewer${ColorNormal}..."
 ./manifest_parser image_viewer/image_viewer.manifest "bin/Programs/Image Viewer/manifest.h"
 
+# ./manifest_parser hello_world/hello_world.manifest "bin/Programs/Hello World/manifest.h"
+
 echo -e "-> Building ${ColorBlue}kernel${ColorNormal}..."
 nasm -felf64 kernel/x86_64.s -o bin/OS/kernel_x86_64.o -Fdwarf
 x86_64-elf-g++ -c kernel/main.cpp -o bin/OS/kernel.o -mno-red-zone $BuildFlags $OptimiseKernel -DUSE_ACPICA -Wno-unused-function

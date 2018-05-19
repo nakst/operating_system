@@ -279,6 +279,10 @@ extern "C" void InterruptHandler(InterruptContext *context) {
 				}
 			}
 
+			if (interrupt == 0x13) {
+				Print("ProcessorReadMXCSR() = %x\n", ProcessorReadMXCSR());
+			}
+
 			// TODO Usermode exceptions and debugging.
 			KernelLog(LOG_WARNING, "InterruptHandler - Exception (%z) in userland program (%s).\nRIP = %x (CPU %d)\nRSP = %x\nX86_64 error codes: [err] %x, [cr2] %x\n", 
 					exceptionInformation[interrupt], 

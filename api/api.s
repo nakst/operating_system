@@ -13,13 +13,6 @@ _OSSyscall:
 	pop	r12
 	ret
 
-[global OSFPInitialise]
-OSFPInitialise:
-	mov	rax,.init
-	ldmxcsr	[rax]
-	ret
-.init:	dd	0x00001FC0
-
 [global _setjmp]
 _setjmp:
 	mov	[rdi + 0x00],rsp

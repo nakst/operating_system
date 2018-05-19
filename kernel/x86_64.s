@@ -767,6 +767,15 @@ ProcessorFlushCodeCache:
 	wbinvd
 	ret
 
+[global ProcessorReadMXCSR]
+ProcessorReadMXCSR:
+	mov	rax,.buffer
+	stmxcsr	[rax]
+	mov	rax,.buffer
+	mov	rax,[rax]
+	ret
+	.buffer: dq 0
+
 [global ProcessorInstallTSS]
 ProcessorInstallTSS:
 	push	rbx
