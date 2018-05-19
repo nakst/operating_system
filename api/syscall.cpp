@@ -108,10 +108,6 @@ OSError OSFillRectangleClipped(OSHandle surface, OSRectangle rectangle, OSColor 
 }
 #endif
 
-OSHandle OSCreateGlobalMutex() {
-	return OSSyscall(OS_SYSCALL_CREATE_MUTEX, 0, 0, 0, 0);
-}
-
 OSHandle OSCreateEvent(bool autoReset) {
 	return OSSyscall(OS_SYSCALL_CREATE_EVENT, autoReset, 0, 0, 0);
 }
@@ -126,14 +122,6 @@ OSError OSResetEvent(OSHandle handle) {
 
 OSError OSPollEvent(OSHandle handle) {
 	return OSSyscall(OS_SYSCALL_POLL_EVENT, handle, 0, 0, 0);
-}
-
-void OSAcquireGlobalMutex(OSHandle handle) {
-	OSSyscall(OS_SYSCALL_ACQUIRE_MUTEX, handle, 0, 0, 0);
-}
-
-void OSReleaseGlobalMutex(OSHandle handle) {
-	OSSyscall(OS_SYSCALL_RELEASE_MUTEX, handle, 0, 0, 0);
 }
 
 OSError OSCloseHandle(OSHandle handle) {
@@ -292,8 +280,4 @@ void OSGetProcessState(OSHandle process, OSProcessState *state) {
 
 void OSYieldScheduler() {
 	OSSyscall(OS_SYSCALL_YIELD_SCHEDULER, 0, 0, 0, 0);
-}
-
-void OSAcquireMultipleGlobalMutexes(OSHandle *mutexes, size_t count) {
-	OSSyscall(OS_SYSCALL_ACQUIRE_MULTIPLE_MUTEXES, (uintptr_t) mutexes, count, 0, 0);
 }

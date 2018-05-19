@@ -1,5 +1,5 @@
-// TODO Reduce memory usage.
 // TODO Prevent Meltdown/Spectre exploits.
+// TODO Security.
 
 #include "kernel.h"
 #define IMPLEMENTATION
@@ -28,7 +28,6 @@ extern "C" void KernelAPMain() {
 
 	// The InitialiseAP call makes this an idle thread.
 	// Therefore there are always enough idle threads for all processors.
-	// TODO Enter low power state?
 	ProcessorIdle();
 }
 

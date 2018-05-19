@@ -289,9 +289,6 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_CREATE_WINDOW,
 	OS_SYSCALL_UPDATE_WINDOW,
 	OS_SYSCALL_DRAW_SURFACE,
-	OS_SYSCALL_CREATE_MUTEX,
-	OS_SYSCALL_ACQUIRE_MUTEX,
-	OS_SYSCALL_RELEASE_MUTEX, 
 	OS_SYSCALL_CLOSE_HANDLE,
 	OS_SYSCALL_TERMINATE_THREAD,
 	OS_SYSCALL_CREATE_THREAD,
@@ -336,7 +333,6 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_SHUTDOWN,
 	OS_SYSCALL_SET_FOCUSED_WINDOW,
 	OS_SYSCALL_YIELD_SCHEDULER,
-	OS_SYSCALL_ACQUIRE_MULTIPLE_MUTEXES,
 	OS_SYSCALL_GET_SYSTEM_CONSTANTS,
 } OSSyscallType;
 
@@ -1048,7 +1044,6 @@ OS_EXTERN_C void OSBatch(OSBatchCall *calls, size_t count);
 OS_EXTERN_C OSError OSCreateProcess(const char *executablePath, size_t executablePathLength, OSProcessInformation *information, void *argument);
 OS_EXTERN_C OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
 OS_EXTERN_C OSHandle OSCreateSurface(size_t width, size_t height);
-OS_EXTERN_C OSHandle OSCreateGlobalMutex();
 OS_EXTERN_C OSHandle OSCreateEvent(bool autoReset);
 
 #define OS_MAX_PROGRAM_NAME_LENGTH (256)
@@ -1081,9 +1076,6 @@ OS_EXTERN_C void OSCrashProcess(OSError error);
 
 OS_EXTERN_C uintptr_t OSGetThreadID(OSHandle thread);
 
-OS_EXTERN_C void OSReleaseGlobalMutex(OSHandle mutex);
-OS_EXTERN_C void OSAcquireGlobalMutex(OSHandle mutex);
-OS_EXTERN_C void OSAcquireMultipleGlobalMutexes(OSHandle *mutexes, size_t count);
 OS_EXTERN_C void OSReleaseSpinlock(OSSpinlock *spinlock);
 OS_EXTERN_C void OSAcquireSpinlock(OSSpinlock *spinlock);
 OS_EXTERN_C void OSReleaseMutex(OSMutex *mutex);

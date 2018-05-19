@@ -37,6 +37,7 @@ void LocalMutexTest(void *argument) {
 	
 	OSPrint("i = %d\n", i);
 
+#if 0
 	OSAcquireMultipleGlobalMutexes(mutexes, 2);
 	OSReleaseGlobalMutex(mutexes[0]);
 	OSReleaseGlobalMutex(mutexes[1]);
@@ -51,6 +52,7 @@ void LocalMutexTest(void *argument) {
 	OSAcquireGlobalMutex(mutexes[0]);
 	OSReleaseGlobalMutex(mutexes[0]);
 	OSReleaseGlobalMutex(mutexes[1]);
+#endif
 
 	OSPrint("i = %d\n", i);
 
@@ -909,8 +911,10 @@ extern "C" void ProgramEntry() {
 		OSPrint("x = %F\n", x);
 	}
 
+#if 0
 	mutexes[0] = OSCreateGlobalMutex();
 	mutexes[1] = OSCreateGlobalMutex();
+#endif
 
 	for (int i = 0; i < 20; i++) {
 		OSThreadInformation information;

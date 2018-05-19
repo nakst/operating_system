@@ -442,40 +442,6 @@ uintptr_t DoSyscall(OSSyscallType index,
 			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
 		} break;
 
-		case OS_SYSCALL_CREATE_MUTEX: {
-			Mutex *mutex = (Mutex *) OSHeapAllocate(sizeof(Mutex), true);
-			if (!mutex) SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
-			mutex->handles = 1;
-			Handle handle = {};
-			handle.type = KERNEL_OBJECT_MUTEX;
-			handle.object = mutex;
-			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
-		} break;
-
-		case OS_SYSCALL_ACQUIRE_MUTEX: {
-			KernelObjectType type = KERNEL_OBJECT_MUTEX;
-			Mutex *mutex = (Mutex *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
-			Defer(currentProcess->handleTable.CompleteHandle(mutex, argument0));
-
-			if (mutex->owner == currentThread) SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED, true);
-			if (!fromKernel) currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
-			mutex->Acquire();
-			currentThread->terminatableState = THREAD_IN_SYSCALL;
-			SYSCALL_RETURN(OS_SUCCESS, false);
-		} break;
-
-		case OS_SYSCALL_RELEASE_MUTEX: {
-			KernelObjectType type = KERNEL_OBJECT_MUTEX;
-			Mutex *mutex = (Mutex *) currentProcess->handleTable.ResolveHandle(argument0, type);
-			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
-			Defer(currentProcess->handleTable.CompleteHandle(mutex, argument0));
-
-			if (mutex->owner != currentThread) SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_NOT_ACQUIRED_BY_THREAD, true);
-			mutex->Release();
-			SYSCALL_RETURN(OS_SUCCESS, false);
-		} break;
-
 		case OS_SYSCALL_CLOSE_HANDLE: {
 			KernelObjectType type = CLOSABLE_OBJECT_TYPES; 
 			currentProcess->handleTable.ResolveHandle(argument0, type, RESOLVE_HANDLE_TO_CLOSE);
@@ -845,50 +811,6 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 			bool eventWasSet = event->Poll();
 			SYSCALL_RETURN(eventWasSet ? OS_SUCCESS : OS_ERROR_EVENT_NOT_SET, false);
-		} break;
-
-		case OS_SYSCALL_ACQUIRE_MULTIPLE_MUTEXES: {
-			if (argument1 >= OS_MAX_WAIT_COUNT) {
-				SYSCALL_RETURN(OS_FATAL_ERROR_TOO_MANY_WAIT_OBJECTS, true);
-			}
-
-			SYSCALL_BUFFER(argument0, argument1 * sizeof(OSHandle), 1);
-
-			OSHandle *_handles = (OSHandle *) argument0;
-			volatile OSHandle handles[OS_MAX_WAIT_COUNT];
-			CopyMemory((void *) handles, _handles, argument1 * sizeof(OSHandle));
-
-			Mutex *mutexes[OS_MAX_WAIT_COUNT];
-
-			for (uintptr_t i = 0; i < argument1; i++) {
-				KernelObjectType type = KERNEL_OBJECT_MUTEX;
-				Mutex *mutex = (Mutex *) currentProcess->handleTable.ResolveHandle(handles[i], type);
-				if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
-				mutexes[i] = mutex;
-
-				if (mutex->owner == currentThread) {
-					SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED, true);
-				}
-			}
-
-			// Check for duplicates.
-			for (uintptr_t i = 0; i < argument1; i++) {
-				for (uintptr_t j = 0; j < i; j++) {
-					if (mutexes[i] == mutexes[j]) {
-						SYSCALL_RETURN(OS_FATAL_ERROR_MUTEX_ALREADY_ACQUIRED, true);
-					}
-				}
-			}
-
-			if (!fromKernel) currentThread->terminatableState = THREAD_USER_BLOCK_REQUEST;
-			AcquireMultipleMutexes(mutexes, argument1);
-			currentThread->terminatableState = THREAD_IN_SYSCALL;
-
-			for (uintptr_t i = 0; i < argument1; i++) {
-				currentProcess->handleTable.CompleteHandle(mutexes[i], handles[i]);
-			}
-
-			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_WAIT: {
