@@ -257,7 +257,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
 		Instance *instance = (Instance *) OSHeapAllocate(sizeof(Instance), true);
 
-		OSStartGUIAllocationBlock(4096);
+		OSStartGUIAllocationBlock(16384);
 
 		OSObject window = OSCreateWindow(mainWindow);
 		OSSetInstance(window, instance);

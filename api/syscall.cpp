@@ -34,36 +34,36 @@ OSHandle OSCreateSurface(size_t width, size_t height) {
 	return OSSyscall(OS_SYSCALL_CREATE_SURFACE, width, height, 0, 0);
 }
 
-OSError OSGetLinearBuffer(OSHandle surface, OSLinearBuffer *linearBuffer) {
-	return OSSyscall(OS_SYSCALL_GET_LINEAR_BUFFER, surface, (uintptr_t) linearBuffer, 0, 0);
+void OSGetLinearBuffer(OSHandle surface, OSLinearBuffer *linearBuffer) {
+	OSSyscall(OS_SYSCALL_GET_LINEAR_BUFFER, surface, (uintptr_t) linearBuffer, 0, 0);
 }
 
-OSError OSInvalidateRectangle(OSHandle surface, OSRectangle rectangle) {
-	return OSSyscall(OS_SYSCALL_INVALIDATE_RECTANGLE, surface, (uintptr_t) &rectangle, 0, 0);
+void OSInvalidateRectangle(OSHandle surface, OSRectangle rectangle) {
+	OSSyscall(OS_SYSCALL_INVALIDATE_RECTANGLE, surface, (uintptr_t) &rectangle, 0, 0);
 }
 
-OSError OSCopyToScreen(OSHandle source, OSPoint point, uint16_t depth) {
-	return OSSyscall(OS_SYSCALL_COPY_TO_SCREEN, source, (uintptr_t) &point, depth, 0);
+void OSCopyToScreen(OSHandle source, OSPoint point, uint16_t depth) {
+	OSSyscall(OS_SYSCALL_COPY_TO_SCREEN, source, (uintptr_t) &point, depth, 0);
 }
 
-OSError OSForceScreenUpdate() {
-	return OSSyscall(OS_SYSCALL_FORCE_SCREEN_UPDATE, 0, 0, 0, 0);
+void OSForceScreenUpdate() {
+	OSSyscall(OS_SYSCALL_FORCE_SCREEN_UPDATE, 0, 0, 0, 0);
 }
 
-OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSColor color) {
+void OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSColor color) {
 	_OSRectangleAndColor arg;
 	arg.rectangle = rectangle;
 	arg.color = color;
 
-	return OSSyscall(OS_SYSCALL_FILL_RECTANGLE, surface, (uintptr_t) &arg, 0, 0);
+	OSSyscall(OS_SYSCALL_FILL_RECTANGLE, surface, (uintptr_t) &arg, 0, 0);
 }
 
-OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint) {
-	return OSSyscall(OS_SYSCALL_COPY_SURFACE, destination, source, (uintptr_t) &destinationPoint, 0);
+void OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint) {
+	OSSyscall(OS_SYSCALL_COPY_SURFACE, destination, source, (uintptr_t) &destinationPoint, 0);
 }
 
-OSError OSClearModifiedRegion(OSHandle surface) {
-	return OSSyscall(OS_SYSCALL_CLEAR_MODIFIED_REGION, surface, 0, 0, 0);
+void OSClearModifiedRegion(OSHandle surface) {
+	OSSyscall(OS_SYSCALL_CLEAR_MODIFIED_REGION, surface, 0, 0, 0);
 }
 
 OSError OSGetMessage(OSMessage *message) {
@@ -102,9 +102,9 @@ OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, OSRectangle 
 }
 
 #ifndef KERNEL
-OSError OSFillRectangleClipped(OSHandle surface, OSRectangle rectangle, OSColor color, OSRectangle clipRegion) {
+void OSFillRectangleClipped(OSHandle surface, OSRectangle rectangle, OSColor color, OSRectangle clipRegion) {
 	OSClipRectangle(rectangle, clipRegion, &rectangle);
-	return OSFillRectangle(surface, rectangle, color);
+	OSFillRectangle(surface, rectangle, color);
 }
 #endif
 
@@ -112,12 +112,12 @@ OSHandle OSCreateEvent(bool autoReset) {
 	return OSSyscall(OS_SYSCALL_CREATE_EVENT, autoReset, 0, 0, 0);
 }
 
-OSError OSSetEvent(OSHandle handle) {
-	return OSSyscall(OS_SYSCALL_SET_EVENT, handle, 0, 0, 0);
+void OSSetEvent(OSHandle handle) {
+	OSSyscall(OS_SYSCALL_SET_EVENT, handle, 0, 0, 0);
 }
 
-OSError OSResetEvent(OSHandle handle) {
-	return OSSyscall(OS_SYSCALL_RESET_EVENT, handle, 0, 0, 0);
+void OSResetEvent(OSHandle handle) {
+	OSSyscall(OS_SYSCALL_RESET_EVENT, handle, 0, 0, 0);
 }
 
 OSError OSPollEvent(OSHandle handle) {
@@ -128,16 +128,16 @@ OSError OSCloseHandle(OSHandle handle) {
 	return OSSyscall(OS_SYSCALL_CLOSE_HANDLE, handle, 0, 0, 0);
 }
 
-OSError OSTerminateThread(OSHandle thread) {
-	return OSSyscall(OS_SYSCALL_TERMINATE_THREAD, thread, 0, 0, 0);
+void OSTerminateThread(OSHandle thread) {
+	OSSyscall(OS_SYSCALL_TERMINATE_THREAD, thread, 0, 0, 0);
 }
 
-OSError OSTerminateProcess(OSHandle process) {
-	return OSSyscall(OS_SYSCALL_TERMINATE_PROCESS, process, 0, 0, 0);
+void OSTerminateProcess(OSHandle process) {
+	OSSyscall(OS_SYSCALL_TERMINATE_PROCESS, process, 0, 0, 0);
 }
 
-OSError OSTerminateThisProcess() {
-	return OSSyscall(OS_SYSCALL_TERMINATE_PROCESS, OS_CURRENT_PROCESS, 0, 0, 0);
+void OSTerminateThisProcess() {
+	OSSyscall(OS_SYSCALL_TERMINATE_PROCESS, OS_CURRENT_PROCESS, 0, 0, 0);
 }
 
 OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument) {
@@ -280,4 +280,8 @@ void OSGetProcessState(OSHandle process, OSProcessState *state) {
 
 void OSYieldScheduler() {
 	OSSyscall(OS_SYSCALL_YIELD_SCHEDULER, 0, 0, 0, 0);
+}
+
+void OSSleep(uint64_t milliseconds) {
+	OSSyscall(OS_SYSCALL_SLEEP, milliseconds, 0, 0, 0);
 }

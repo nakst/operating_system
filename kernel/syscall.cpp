@@ -813,6 +813,14 @@ uintptr_t DoSyscall(OSSyscallType index,
 			SYSCALL_RETURN(eventWasSet ? OS_SUCCESS : OS_ERROR_EVENT_NOT_SET, false);
 		} break;
 
+		case OS_SYSCALL_SLEEP: {
+			Timer timer = {};
+			timer.Set(argument0, false);
+			timer.event.Wait(OS_WAIT_NO_TIMEOUT);
+			timer.Remove();
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
 		case OS_SYSCALL_WAIT: {
 			if (argument1 >= OS_MAX_WAIT_COUNT) {
 				SYSCALL_RETURN(OS_FATAL_ERROR_TOO_MANY_WAIT_OBJECTS, true);

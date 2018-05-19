@@ -334,6 +334,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_SET_FOCUSED_WINDOW,
 	OS_SYSCALL_YIELD_SCHEDULER,
 	OS_SYSCALL_GET_SYSTEM_CONSTANTS,
+	OS_SYSCALL_SLEEP,
 } OSSyscallType;
 
 #define OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND (0)
@@ -1067,9 +1068,9 @@ OS_EXTERN_C OSError OSDeleteNode(OSHandle node); // Directories must be empty (e
 OS_EXTERN_C OSError OSMoveNode(OSHandle node, OSHandle newDirectory, char *newName, size_t newNameLength); // Does not handle the following cases (yet): moving between volumes, replacing existing files.
 #define OSRenameNode(_node, _newName, _newNameLength) OSMoveNode(_node, OS_INVALID_HANDLE, _newName, _newNameLength)
 
-OS_EXTERN_C OSError OSTerminateThread(OSHandle thread);
-OS_EXTERN_C OSError OSTerminateProcess(OSHandle thread);
-OS_EXTERN_C OSError OSTerminateThisProcess();
+OS_EXTERN_C void OSTerminateThread(OSHandle thread);
+OS_EXTERN_C void OSTerminateProcess(OSHandle thread);
+OS_EXTERN_C void OSTerminateThisProcess();
 
 OS_EXTERN_C void OSPauseProcess(OSHandle process, bool resume);
 OS_EXTERN_C void OSCrashProcess(OSError error);
@@ -1084,12 +1085,13 @@ OS_EXTERN_C void OSDestroyMutex(OSMutex *mutex);
 
 OS_EXTERN_C void OSYieldScheduler();
 
-OS_EXTERN_C OSError OSSetEvent(OSHandle event);
-OS_EXTERN_C OSError OSResetEvent(OSHandle event);
+OS_EXTERN_C void OSSetEvent(OSHandle event);
+OS_EXTERN_C void OSResetEvent(OSHandle event);
 OS_EXTERN_C OSError OSPollEvent(OSHandle event);
 
 OS_EXTERN_C uintptr_t OSWait(OSHandle *objects, size_t objectCount, uintptr_t timeoutMs);
 #define OSWaitSingle(object) OSWait(&object, 1, OS_WAIT_NO_TIMEOUT)
+OS_EXTERN_C void OSSleep(uint64_t milliseconds);
 
 OS_EXTERN_C OSHandle OSOpenSharedMemory(size_t size, char *name, size_t nameLength, unsigned flags);
 OS_EXTERN_C OSHandle OSShareMemory(OSHandle sharedMemoryRegion, OSHandle targetProcess, bool readOnly);
@@ -1102,16 +1104,16 @@ OS_EXTERN_C OSError OSVirtualFree(void *address);
 OS_EXTERN_C void *OSGetCreationArgument(OSHandle object);
 OS_EXTERN_C void OSGetProcessState(OSHandle process, OSProcessState *state);
 
-OS_EXTERN_C OSError OSGetLinearBuffer(OSHandle surface, OSLinearBuffer *linearBuffer);
-OS_EXTERN_C OSError OSInvalidateRectangle(OSHandle surface, OSRectangle rectangle);
-OS_EXTERN_C OSError OSCopyToScreen(OSHandle source, OSPoint point, uint16_t depth);
-OS_EXTERN_C OSError OSForceScreenUpdate();
-OS_EXTERN_C OSError OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSColor color);
-OS_EXTERN_C OSError OSFillRectangleClipped(OSHandle surface, OSRectangle rectangle, OSColor color, OSRectangle clipRegion);
-OS_EXTERN_C OSError OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
+OS_EXTERN_C void OSGetLinearBuffer(OSHandle surface, OSLinearBuffer *linearBuffer);
+OS_EXTERN_C void OSInvalidateRectangle(OSHandle surface, OSRectangle rectangle);
+OS_EXTERN_C void OSCopyToScreen(OSHandle source, OSPoint point, uint16_t depth);
+OS_EXTERN_C void OSForceScreenUpdate();
+OS_EXTERN_C void OSFillRectangle(OSHandle surface, OSRectangle rectangle, OSColor color);
+OS_EXTERN_C void OSFillRectangleClipped(OSHandle surface, OSRectangle rectangle, OSColor color, OSRectangle clipRegion);
+OS_EXTERN_C void OSCopySurface(OSHandle destination, OSHandle source, OSPoint destinationPoint);
 OS_EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha);
 OS_EXTERN_C OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha, OSRectangle clipRegion);
-OS_EXTERN_C OSError OSClearModifiedRegion(OSHandle surface);
+OS_EXTERN_C void OSClearModifiedRegion(OSHandle surface);
 OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion, int blur);
 OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize, int scrollX);
 OS_EXTERN_C void OSDrawProgressBar(OSHandle surface, OSRectangle bounds, float progress, OSRectangle clip, bool blue);
