@@ -940,6 +940,7 @@ typedef struct OSSnapshotProcessesItem {
 #define OS_SNAPSHOT_MAX_PROCESS_NAME_LENGTH (80)
 	char name[OS_SNAPSHOT_MAX_PROCESS_NAME_LENGTH];
 	size_t nameLength;
+	uint64_t internal;
 } OSSnapshotProcessesItem;
 
 #define OS_SYSTEM_SNAPSHOT_PROCESSES (1)

@@ -506,7 +506,9 @@ void Scheduler::TerminateThread(Thread *thread, bool lockAlreadyAcquired) {
 			} else {
 				// Unblock the thread.
 				// See comment above.
-				UnblockThread(thread);
+				if (thread->state == THREAD_WAITING_MUTEX || thread->state == THREAD_WAITING_EVENT) {
+					UnblockThread(thread);
+				}
 			}
 
 			if (!lockAlreadyAcquired) scheduler.lock.Release();

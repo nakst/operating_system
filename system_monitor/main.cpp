@@ -1,5 +1,5 @@
 // TODO Implement options.
-// TODO Better task listing state retention across refreshes.
+// TODO Sorting.
 
 #define OS_NO_CSTDLIB
 #include "../api/os.h"
@@ -33,6 +33,7 @@ struct ProcessInformation {
 	size_t nameLength;
 	int64_t pid, cpu, memory, cpuTimeSlices;
 	uint16_t state;
+	bool seenInNewSnapshot;
 };
 
 struct Instance {
@@ -206,7 +207,6 @@ void RefreshProcessesThread(void *argument) {
 
 	while (true) {
 		OSAcquireMutex(&osMessageMutex);
-		OSListViewReset(instance.taskListing);
 
 		size_t bufferSize;
 		OSHandle snapshotHandle = OSTakeSystemSnapshot(OS_SYSTEM_SNAPSHOT_PROCESSES, &bufferSize);
@@ -214,50 +214,87 @@ void RefreshProcessesThread(void *argument) {
 		OSReadConstantBuffer(snapshotHandle, snapshot);
 		OSCloseHandle(snapshotHandle);
 
-		ProcessInformation *processes = (ProcessInformation *) OSHeapAllocate(sizeof(ProcessInformation) * snapshot->count, true);
-		uintptr_t totalTimeSlices = 0;
+		ProcessInformation *current = instance.processes;
+		size_t currentCount = instance.processCount;
+		size_t newCount = snapshot->count;
 
-		OSEnableCommand(instance.window, commandEndProcess, false);
+		for (uintptr_t j = 0; j < currentCount; j++) {
+			current[j].seenInNewSnapshot = false;
+		}
 
 		for (uintptr_t i = 0; i < snapshot->count; i++) {
-			OSSnapshotProcessesItem *item = snapshot->processes + i;
-			ProcessInformation *process = processes + i;
-
-			process->nameLength = item->nameLength;
-			process->pid = item->pid;
-			process->cpu = 0;
-			process->memory = item->memoryUsage;
-			process->cpuTimeSlices = item->cpuTimeSlices;
-			OSCopyMemory(process->name, item->name, item->nameLength);
-
-			for (uintptr_t i = 0; i < instance.processCount; i++) {
-				if (instance.processes[i].pid == process->pid) {
-					process->state = instance.processes[i].state;
-					process->cpu = process->cpuTimeSlices - instance.processes[i].cpuTimeSlices;
-
-					if (process->state & OS_LIST_VIEW_ITEM_SELECTED) {
-						OSEnableCommand(instance.window, commandEndProcess, true);
-					}
-
+			for (uintptr_t j = 0; j < currentCount; j++) {
+				if (snapshot->processes[i].pid == current[j].pid) {
+					snapshot->processes[i].internal = 1; // The process was also in the previous snapshot.
+					current[j].memory = snapshot->processes[i].memoryUsage;
+					current[j].cpu = snapshot->processes[i].cpuTimeSlices - current[j].cpuTimeSlices;
+					current[j].cpuTimeSlices = snapshot->processes[i].cpuTimeSlices;
+					current[j].seenInNewSnapshot = true;
+					newCount--;
 					break;
 				}
 			}
-
-			totalTimeSlices += process->cpu;
 		}
 
-		if (totalTimeSlices) {
-			for (uintptr_t i = 0; i < snapshot->count; i++) {
-				ProcessInformation *process = processes + i;
-				process->cpu = process->cpu * 100 / totalTimeSlices;
+		for (uintptr_t j = 0; j < currentCount; j++) {
+			if (!current[j].seenInNewSnapshot) {
+				OSMoveMemory(current + j + 1, current + currentCount, -sizeof(ProcessInformation), false);
+				OSListViewRemove(instance.taskListing, j, 1, 0);
+				j--;
+				currentCount--;
+				instance.processCount--;
 			}
 		}
 
-		instance.processCount = snapshot->count;
-		OSHeapFree(instance.processes);
+		if (newCount) {
+			instance.processes = (ProcessInformation *) OSHeapAllocate((currentCount + newCount) * sizeof(ProcessInformation), false);
+			OSCopyMemory(instance.processes, current, currentCount * sizeof(ProcessInformation));
+			OSZeroMemory(instance.processes + currentCount, newCount * sizeof(ProcessInformation));
+			uintptr_t j = currentCount;
+			OSHeapFree(current);
+			current = instance.processes;
+			instance.processCount += newCount;
+
+			for (uintptr_t i = 0; i < snapshot->count; i++) {
+				if (!snapshot->processes[i].internal) {
+					current[j].memory = snapshot->processes[i].memoryUsage;
+					current[j].cpu = 0;
+					current[j].cpuTimeSlices = snapshot->processes[i].cpuTimeSlices;
+					current[j].nameLength = snapshot->processes[i].nameLength;
+					current[j].pid = snapshot->processes[i].pid;
+					OSCopyMemory(current[j].name, snapshot->processes[i].name, snapshot->processes[i].nameLength);
+					j++;
+				}
+			}
+
+			OSListViewInsert(instance.taskListing, currentCount, newCount);
+			currentCount += newCount;
+		}
+
+		uintptr_t totalTimeSlices = 0;
+		bool foundSelection = false;
+
+		for (uintptr_t j = 0; j < currentCount; j++) {
+			totalTimeSlices += current[j].cpu;
+
+			if (current[j].state & OS_LIST_VIEW_ITEM_SELECTED) {
+				foundSelection = true;
+			}
+		}
+
+		if (totalTimeSlices) {
+			for (uintptr_t j = 0; j < currentCount; j++) {
+				current[j].cpu = current[j].cpu * 100 / totalTimeSlices;
+			}
+		}
+
+		OSEnableCommand(instance.window, commandEndProcess, foundSelection);
+		OSSetText(instance.statusLabel, guiStringBuffer, OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+					"%d processes", currentCount), OS_RESIZE_MODE_GROW_ONLY);
+
+		OSRepaintControl(instance.taskListing);
+
 		OSHeapFree(snapshot);
-		instance.processes = processes;
-		OSListViewInsert(instance.taskListing, 0, instance.processCount);
 		OSReleaseMutex(&osMessageMutex);
 		OSSleep(2000);
 	}
