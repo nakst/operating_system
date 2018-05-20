@@ -1,4 +1,4 @@
-// TODO Implement commands.
+// TODO Implement options.
 // TODO Better task listing state retention across refreshes.
 
 #define OS_NO_CSTDLIB

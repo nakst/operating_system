@@ -34,6 +34,7 @@ defaultDisabled = true;
 callback = CommandNavigate;
 callbackArgument = COMMAND_NAVIGATE_FORWARDS;
 iconID = OS_ICON_FORWARD;
+shortcut = "Alt+Right";
 
 [command commandNavigateParent]
 label = "Parent";
@@ -41,12 +42,14 @@ defaultDisabled = false;
 callback = CommandNavigate;
 callbackArgument = COMMAND_NAVIGATE_PARENT;
 iconID = OS_ICON_PARENT;
+shortcut = "Alt+Up";
 
 [command commandNewFolder]
 label = "New folder";
 defaultDisabled = false;
 callback = CommandNew;
 callbackArgument = COMMAND_NEW_FOLDER;
+shortcut = "Ctrl+Shift+N";
 
 [command commandBookmarkFolder]
 label = "Bookmark folder";
@@ -54,6 +57,7 @@ defaultDisabled = false;
 callback = CallbackBookmarkFolder;
 checkable = true;
 iconID = OS_ICON_BOOKMARK;
+shortcut = "Ctrl+D";
 
 [menu menuFolderListingContext]
 name = "Folder listing context";

@@ -1243,7 +1243,7 @@ OS_EXTERN_C void OSSetSliderPosition(OSObject slider, int position, bool sendVal
 OS_EXTERN_C int OSGetSliderPosition(OSObject slider);
 
 OS_EXTERN_C void OSListViewInsert(OSObject listView, uintptr_t index, size_t count);
-OS_EXTERN_C void OSListViewRemove(OSObject listView, uintptr_t index, size_t count);
+OS_EXTERN_C void OSListViewRemove(OSObject listView, uintptr_t index, size_t count, int removedHeight);
 OS_EXTERN_C void OSListViewReset(OSObject listView);
 OS_EXTERN_C void OSListViewInvalidate(OSObject listView, uintptr_t index, size_t count);
 OS_EXTERN_C void OSListViewSetColumns(OSObject listView, OSListViewColumn *columns, size_t count);

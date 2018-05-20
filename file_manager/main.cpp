@@ -631,10 +631,7 @@ bool Global::RemoveBookmark(char *path, size_t pathBytes) {
 				LinkedItem<Instance> *instance = instances.firstItem;
 
 				while (instance) {
-					// TODO Removing items from a list view.
-					OSListViewReset(instance->thisItem->bookmarkList);
-					OSListViewInsert(instance->thisItem->bookmarkList, 0, bookmarkCount);
-
+					OSListViewRemove(instance->thisItem->bookmarkList, i, 1, 0);
 					instance = instance->nextItem;
 				}
 			}
@@ -951,6 +948,14 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 void ProgramEntry() {
 	global.AddBookmark(OSLiteral("/OS"));
 	global.AddBookmark(OSLiteral("/Programs"));
+	global.AddBookmark(OSLiteral("/OS/Fonts"));
+	global.AddBookmark(OSLiteral("/OS/Samples Images"));
+	global.AddBookmark(OSLiteral("/OS/Icons"));
+	global.AddBookmark(OSLiteral("/OS/Visual Styles"));
+	global.AddBookmark(OSLiteral("/Programs/File Manager"));
+	global.AddBookmark(OSLiteral("/Programs/System Monitor"));
+	global.AddBookmark(OSLiteral("/Programs/Calculator"));
+	global.AddBookmark(OSLiteral("/Programs/Image Viewer"));
 
 	OSSetCallback(osSystemMessages, OS_MAKE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
