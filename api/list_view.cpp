@@ -4,11 +4,9 @@
 #define LIST_VIEW_DEFAULT_ROW_HEIGHT (21)
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
-// TODO Resizing columns doesn't update totalX.
-// TODO Display vertical scrollbar inside header bounds.
 // TODO Can't resize columns on single select mode?
+// TODO Better scrolling down with keyboard.
 
-// TODO Keyboard controls.
 // TODO Dragging.
 // TODO Tile view.
 // TODO Removing items.
@@ -124,6 +122,10 @@ static OSRectangle ListViewGetHeaderBounds(ListView *list) {
 		headerBounds.right--;
 		headerBounds.top++;
 		headerBounds.bottom--;
+	}
+
+	if (list->showScrollbarY) {
+		headerBounds.right -= SCROLLBAR_SIZE;
 	}
 
 	headerBounds.bottom = headerBounds.top + LIST_VIEW_HEADER_HEIGHT;
@@ -258,7 +260,7 @@ static void ListViewUpdate(ListView *list) {
 	if (list->totalY > contentBounds.bottom - contentBounds.top) {
 		m.layout.left = contentBounds.right;
 		m.layout.right = contentBounds.right + SCROLLBAR_SIZE;
-		m.layout.top = contentBounds.top;
+		m.layout.top = ListViewGetHeaderBounds(list).top;
 		m.layout.bottom = contentBounds.bottom;
 
 		OSSendMessage(list->scrollbarY, &m);
@@ -1067,11 +1069,15 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			ListViewSelectionBoxChanged(list, previousSelectionBox, list->selectionBox, false);
 		} else if (list->draggingSplitter) {
 			OSListViewColumn *column = list->columns + list->highlightSplitter;
+			list->totalX -= column->width;
 			column->width = message->mouseDragged.newPositionX - list->dragAnchor.x;
 
 			if (column->width < column->minimumWidth) {
 				column->width = column->minimumWidth;
 			}
+
+			list->totalX += column->width;
+			ListViewUpdate(list);
 		}
 
 		RepaintControl(list);
@@ -1158,6 +1164,178 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 			|| message->type == OS_MESSAGE_MOUSE_RIGHT_RELEASED
 			|| message->type == OS_MESSAGE_START_DRAG) {
 		ListViewMouseUpdated(list, message);
+	} else if (message->type == OS_MESSAGE_KEY_PRESSED) {
+		bool ctrl = message->keyboard.ctrl,
+		     shift = message->keyboard.shift;
+		int scancode = message->keyboard.scancode;
+
+		// TODO Minimal repainting.
+		RepaintControl(list);
+
+		response = OS_CALLBACK_HANDLED;
+
+		if (scancode == OS_SCANCODE_A && ctrl) {
+			if (shift) {
+				ListViewSetRange(list, 0, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, 0);
+			} else {
+				ListViewSetRange(list, 0, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, OS_LIST_VIEW_ITEM_SELECTED);
+			}
+		} else if (scancode == OS_SCANCODE_SPACE && !shift) {
+			if (list->focusedItem != (uintptr_t) -1) {
+				OSMessage m;
+
+				m.listViewItem.index = list->focusedItem;
+				m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+
+				m.type = OS_NOTIFICATION_GET_ITEM;
+				OSForwardMessage(list, list->notificationCallback, &m);
+
+				m.type = OS_NOTIFICATION_SET_ITEM;
+				m.listViewItem.state ^= OS_LIST_VIEW_ITEM_SELECTED;
+				OSForwardMessage(list, list->notificationCallback, &m);
+			}
+		} else if (scancode == OS_SCANCODE_ENTER && !shift && !ctrl) {
+			OSMessage m;
+			m.type = OS_NOTIFICATION_CHOOSE_ITEM;
+			OSForwardMessage(list, list->notificationCallback, &m);
+		} else if ((scancode == OS_SCANCODE_LEFT_ARROW || scancode == OS_SCANCODE_RIGHT_ARROW) && !shift && !ctrl) {
+			if (list->showScrollbarX) {
+				int x = OSGetScrollbarPosition(list->scrollbarX);
+				OSSetScrollbarPosition(list->scrollbarX, x + (scancode == OS_SCANCODE_LEFT_ARROW ? -64 : 64), true);
+			}
+		} else if (scancode == OS_SCANCODE_HOME || scancode == OS_SCANCODE_END) {
+			ListViewSetRange(list, 0, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, 0);
+
+			if (scancode == OS_SCANCODE_HOME) {
+				list->focusedItem = 0;
+
+				if (list->showScrollbarY) {
+					OSSetScrollbarPosition(list->scrollbarY, 0, true);
+				}
+			} else {
+				list->focusedItem = list->itemCount - 1;
+
+				if (list->showScrollbarY) {
+					OSSetScrollbarPosition(list->scrollbarY, list->totalY, true);
+				}
+			}
+
+			if (shift) {
+				if (scancode == OS_SCANCODE_HOME) {
+					ListViewSetRange(list, 0, list->shiftAnchorItem + 1, OS_LIST_VIEW_ITEM_SELECTED, OS_LIST_VIEW_ITEM_SELECTED);
+				} else {
+					ListViewSetRange(list, list->shiftAnchorItem, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, OS_LIST_VIEW_ITEM_SELECTED);
+				}
+			} else {
+				OSMessage m;
+				m.type = OS_NOTIFICATION_SET_ITEM;
+				m.listViewItem.index = list->focusedItem;
+				m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+				m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+				OSForwardMessage(list, list->notificationCallback, &m);
+
+				list->shiftAnchorItem = list->focusedItem;
+			}
+		} else if (scancode == OS_SCANCODE_UP_ARROW || scancode == OS_SCANCODE_DOWN_ARROW) {
+			bool valid = true, newSelection = false, up = false;
+			uintptr_t oldFocus = list->focusedItem;
+
+			if (scancode == OS_SCANCODE_DOWN_ARROW && list->focusedItem == (uintptr_t) -1) {
+				list->focusedItem = 0;
+				newSelection = true;
+			} else if (scancode == OS_SCANCODE_UP_ARROW && list->focusedItem == (uintptr_t) -1) {
+				list->focusedItem = list->itemCount - 1;
+				newSelection = true;
+			} else if (scancode == OS_SCANCODE_UP_ARROW && list->focusedItem > 0) {
+				list->focusedItem--;
+				up = true;
+			} else if (scancode == OS_SCANCODE_DOWN_ARROW && list->focusedItem < list->itemCount - 1) {
+				list->focusedItem++;
+			} else {
+				valid = false;
+			}
+
+			if (valid && !ctrl) {
+				if (shift && !newSelection) {
+					if ((up && oldFocus > list->shiftAnchorItem) || (!up && oldFocus < list->shiftAnchorItem)) {
+						OSMessage m;
+						m.type = OS_NOTIFICATION_SET_ITEM;
+						m.listViewItem.index = oldFocus;
+						m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+						m.listViewItem.state = 0;
+						OSForwardMessage(list, list->notificationCallback, &m);
+					}
+
+					OSMessage m;
+					m.type = OS_NOTIFICATION_SET_ITEM;
+					m.listViewItem.index = list->focusedItem;
+					m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+					m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+					OSForwardMessage(list, list->notificationCallback, &m);
+				} else {
+					list->shiftAnchorItem = list->focusedItem;
+
+					ListViewSetRange(list, 0, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, 0);
+
+					OSMessage m;
+					m.type = OS_NOTIFICATION_SET_ITEM;
+					m.listViewItem.index = list->focusedItem;
+					m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+					m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+					OSForwardMessage(list, list->notificationCallback, &m);
+				}
+			}
+
+			if (list->showScrollbarY) {
+				int y = OSGetScrollbarPosition(list->scrollbarY);
+				bool changed = true;
+
+				if (list->focusedItem == list->firstVisibleItem) {
+					y -= list->offsetIntoFirstVisibleItem;
+					y -= list->margin.top;
+				} else if (list->focusedItem < list->firstVisibleItem) {
+					y -= list->offsetIntoFirstVisibleItem;
+
+					if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
+						y -= list->constantHeight;
+					} else {
+						OSMessage m;
+						m.type = OS_NOTIFICATION_GET_ITEM;
+						m.listViewItem.index = list->focusedItem;
+						m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+
+						if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
+							OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
+						}
+
+						y -= (m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT);
+					}
+
+					y -= list->margin.top;
+				} else if (list->focusedItem < list->firstVisibleItem + list->visibleItemCount) {
+					int position = 0;
+
+					for (uintptr_t i = 0; i <= list->focusedItem - list->firstVisibleItem; i++) {
+						position += list->visibleItems[i].height;
+					}
+
+					int contentHeight = list->contentBounds.bottom - list->contentBounds.top;
+					int hidden = position - contentHeight;
+
+					if (hidden > 0) {
+						y += hidden + list->margin.bottom;
+					}
+				} else {
+					changed = false;
+				}
+
+				if (changed) {
+					OSSetScrollbarPosition(list->scrollbarY, y, true);
+				}
+			}
+		} else {
+			response = OS_CALLBACK_NOT_HANDLED;
+		}
 	} else if (message->type == OS_MESSAGE_MOUSE_MOVED) {
 		if (list->showScrollbarX) OSSendMessage(list->scrollbarX, message);
 		if (list->showScrollbarY) OSSendMessage(list->scrollbarY, message);

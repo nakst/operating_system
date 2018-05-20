@@ -44,7 +44,6 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 
 // TODO Keyboard controls.
 // 	- Access keys.
-// 	- List view navigation.
 // 	- Change "default command" to be a special case of dialog box and menu keyboard controls.
 // TODO Scroll-selections in list views.
 // TODO Textboxes.

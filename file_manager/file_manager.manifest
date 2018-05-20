@@ -26,6 +26,7 @@ defaultDisabled = true;
 callback = CommandNavigate;
 callbackArgument = COMMAND_NAVIGATE_BACKWARDS;
 iconID = OS_ICON_BACK;
+shortcut = "backspace";
 
 [command commandNavigateForwards]
 label = "Forward";

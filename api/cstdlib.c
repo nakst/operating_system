@@ -369,9 +369,9 @@ char *strstr(const char *haystack, const char *needle) {
 			if (haystack[i + j] != needle[j]) {
 				goto tryNext;
 			}
-
-			return (char *) haystack + i;
 		}
+
+		return (char *) haystack + i;
 
 		tryNext:;
 	}
