@@ -216,6 +216,10 @@ void CF(_FormatString)(CF(PutCharacterCallback) callback, void *callbackData, co
 					callback(va_arg(arguments, int), callbackData);
 				} break;
 
+				case '%': {
+					callback('%', callbackData);
+				} break;
+
 				case 's': {
 					size_t length = va_arg(arguments, size_t);
 					char *string = va_arg(arguments, char *);

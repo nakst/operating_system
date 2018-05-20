@@ -155,6 +155,8 @@ struct Process {
 	Event killedEvent;
 	bool allThreadsTerminated;
 	bool terminating, crashed;
+
+	uintptr_t timeSlices;
 };
 
 Process *kernelProcess;
@@ -1075,6 +1077,7 @@ void Scheduler::Yield(InterruptContext *context) {
 	newThread->executing = true;
 	newThread->executingProcessorID = local->processorID;
 	newThread->timeSlices++;
+	newThread->process->timeSlices++;
 
 	// Prepare the next timer interrupt.
 	uint64_t time = 10;

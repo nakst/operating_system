@@ -1242,6 +1242,67 @@ uintptr_t DoSyscall(OSSyscallType index,
 			systemConstants[OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND] = acpi.timestampTicksPerMs / 1000;
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
+
+		case OS_SYSCALL_TAKE_SYSTEM_SNAPSHOT: {
+			SYSCALL_BUFFER(argument1, sizeof(size_t), 1);
+
+			int type = argument0;
+			volatile size_t *bufferSizeOutput = (volatile size_t *) argument1;
+
+			void *buffer = nullptr;
+			size_t bufferSize = 0;
+			Defer(OSHeapFree(buffer, bufferSize));
+
+			switch (type) {
+				case OS_SYSTEM_SNAPSHOT_PROCESSES: {
+					scheduler.lock.Acquire();
+					size_t count = scheduler.allProcesses.count;
+					bufferSize = sizeof(OSSnapshotProcesses) + sizeof(OSSnapshotProcessesItem) * count;
+					scheduler.lock.Release();
+					
+					buffer = OSHeapAllocate(bufferSize, false);
+					ZeroMemory(buffer, bufferSize);
+
+					scheduler.lock.Acquire();
+
+					if (scheduler.allProcesses.count < count) {
+						count = scheduler.allProcesses.count;
+					}
+
+					OSSnapshotProcesses *snapshot = (OSSnapshotProcesses *) buffer;
+					snapshot->count = count;
+
+					LinkedItem<Process> *item = scheduler.allProcesses.firstItem;
+					uintptr_t index = 0;
+
+					while (item && index < count) {
+						Process *process = item->thisItem;
+
+						snapshot->processes[index].pid = process->id;
+						snapshot->processes[index].memoryUsage = process->vmm->pagesAllocated * PAGE_SIZE;
+						snapshot->processes[index].cpuTimeSlices = process->timeSlices;
+
+						char *executableName = process->executablePath + process->executablePathLength;
+						if (*process->executablePath != '/') executableName = process->executablePath;
+						else while (executableName[-1] != '/') executableName--;
+						snapshot->processes[index].nameLength = process->executablePathLength + process->executablePath - executableName;
+						CopyMemory(snapshot->processes[index].name, executableName, snapshot->processes[index].nameLength);
+
+						item = item->nextItem;
+						index++;
+					}
+
+					scheduler.lock.Release();
+				} break;
+
+				default: {
+					SYSCALL_RETURN(OS_FATAL_ERROR_UNKNOWN_SNAPSHOT_TYPE, true);
+				} break;
+			}
+
+			*bufferSizeOutput = bufferSize;
+			SYSCALL_RETURN(MakeConstantBuffer(buffer, bufferSize, currentProcess), false);
+		} break;
 	}
 
 	end:;

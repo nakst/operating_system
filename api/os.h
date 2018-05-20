@@ -227,6 +227,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_INVALID_STRING_LENGTH,
 	OS_FATAL_ERROR_SPINLOCK_NOT_ACQUIRED,
+	OS_FATAL_ERROR_UNKNOWN_SNAPSHOT_TYPE,
 } OSFatalError;
 
 // These must be negative.
@@ -335,6 +336,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_YIELD_SCHEDULER,
 	OS_SYSCALL_GET_SYSTEM_CONSTANTS,
 	OS_SYSCALL_SLEEP,
+	OS_SYSCALL_TAKE_SYSTEM_SNAPSHOT,
 } OSSyscallType;
 
 #define OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND (0)
@@ -930,6 +932,19 @@ typedef struct OSListViewColumn {
 	uint32_t flags;
 } OSListViewColumn;
 
+typedef struct OSSnapshotProcessesItem {
+	int64_t pid, memoryUsage, cpuTimeSlices;
+#define OS_SNAPSHOT_MAX_PROCESS_NAME_LENGTH (80)
+	char name[OS_SNAPSHOT_MAX_PROCESS_NAME_LENGTH];
+	size_t nameLength;
+} OSSnapshotProcessesItem;
+
+#define OS_SYSTEM_SNAPSHOT_PROCESSES (1)
+typedef struct OSSnapshotProcesses {
+	size_t count;
+	OSSnapshotProcessesItem processes[];
+} OSSnapshotProcesses;
+
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)
 #define OS_CALLBACK_REJECTED (-2)
@@ -957,6 +972,8 @@ extern OSObject osSystemMessages;
 
 // Some common layouts...
 #define OS_CELL_FILL	  (OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_PUSH | OS_CELL_V_EXPAND)
+#define OS_CELL_FILL_H	  (OS_CELL_H_PUSH | OS_CELL_H_EXPAND)
+#define OS_CELL_FILL_V	  (OS_CELL_V_PUSH | OS_CELL_V_EXPAND)
 #define OS_CELL_CENTER	  (OS_CELL_H_CENTER | OS_CELL_V_CENTER)
 #define OS_CELL_EXPAND    (OS_CELL_H_EXPAND | OS_CELL_V_EXPAND)
 #define OS_CELL_CORNER	  (OS_CELL_H_LEFT | OS_CELL_V_TOP)
@@ -1052,6 +1069,7 @@ OS_EXTERN_C void OSExecuteProgram(const char *name, size_t nameBytes);
 OS_EXTERN_C void OSReadConstantBuffer(OSHandle constantBuffer, void *output);
 
 OS_EXTERN_C OSError OSCloseHandle(OSHandle handle);
+OS_EXTERN_C OSHandle OSTakeSystemSnapshot(int type, size_t *bufferSize); // Read the data using OSReadConstantBuffer.
 
 OS_EXTERN_C OSError OSOpenNode(char *path, size_t pathLength, uint64_t flags, OSNodeInformation *information);
 OS_EXTERN_C void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); 

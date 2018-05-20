@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
-#define WALLPAPER ("/OS/Sample Images/Flower.jpg")
-#define FIRST_PROGRAM ("File Manager")
+// #define WALLPAPER ("/OS/Sample Images/Flower.jpg")
+#define FIRST_PROGRAM ("System Monitor")
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"

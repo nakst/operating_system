@@ -486,7 +486,7 @@ ConstantBuffer *MakeConstantBuffer(void *data, size_t bytes) {
 	return buffer;
 }
 
-OSHandle MakeConstantBufferForDesktop(void *data, size_t bytes) {
+OSHandle MakeConstantBuffer(void *data, size_t bytes, Process *process) {
 	Handle handle = {};
 	handle.type = KERNEL_OBJECT_CONSTANT_BUFFER;
 	handle.object = MakeConstantBuffer(data, bytes);
@@ -495,7 +495,7 @@ OSHandle MakeConstantBufferForDesktop(void *data, size_t bytes) {
 		return OS_INVALID_HANDLE;
 	}
 
-	OSHandle h = desktopProcess->handleTable.OpenHandle(handle); 
+	OSHandle h = process->handleTable.OpenHandle(handle); 
 
 	if (h == OS_INVALID_HANDLE) {
 		CloseHandleToObject(handle.object, KERNEL_OBJECT_CONSTANT_BUFFER, 0);
@@ -503,6 +503,10 @@ OSHandle MakeConstantBufferForDesktop(void *data, size_t bytes) {
 	}
 
 	return h;
+}
+
+OSHandle MakeConstantBufferForDesktop(void *data, size_t bytes) {
+	return MakeConstantBuffer(data, bytes, desktopProcess);
 }
 
 #endif

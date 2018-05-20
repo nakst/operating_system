@@ -1169,15 +1169,19 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 		     shift = message->keyboard.shift;
 		int scancode = message->keyboard.scancode;
 
+		if (!(list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
+			shift = ctrl = false;
+		}
+
 		// TODO Minimal repainting.
 		RepaintControl(list);
 
 		response = OS_CALLBACK_HANDLED;
 
-		if (scancode == OS_SCANCODE_A && ctrl) {
-			if (shift) {
+		if (scancode == OS_SCANCODE_A && message->keyboard.ctrl) {
+			if (message->keyboard.shift) {
 				ListViewSetRange(list, 0, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, 0);
-			} else {
+			} else if (list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT) {
 				ListViewSetRange(list, 0, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, OS_LIST_VIEW_ITEM_SELECTED);
 			}
 		} else if (scancode == OS_SCANCODE_SPACE && !shift) {

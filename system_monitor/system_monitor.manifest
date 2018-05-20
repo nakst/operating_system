@@ -14,3 +14,31 @@ height = 420;
 minimumWidth = 400;
 minimumHeight = 420;
 title = "System Monitor";
+
+[command commandOptions]
+label = "Options";
+callback = Command;
+callbackArgument = COMMAND_OPTIONS;
+
+[command commandNewTask]
+label = "New task";
+callback = Command;
+callbackArgument = COMMAND_NEW_TASK;
+shortcut = "Ctrl+N";
+
+[command commandNewTaskConfirm]
+label = "Run";
+callback = Command;
+callbackArgument = COMMAND_NEW_TASK_CONFIRM;
+
+[command commandEndProcess]
+label = "End process";
+defaultDisabled = true;
+callback = Command;
+callbackArgument = COMMAND_END_PROCESS;
+
+[command commandEndProcessConfirm]
+label = "Terminate";
+callback = Command;
+callbackArgument = COMMAND_END_PROCESS_CONFIRM;
+dangerous = true;

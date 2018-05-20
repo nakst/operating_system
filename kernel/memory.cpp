@@ -163,6 +163,8 @@ struct VMM {
 	void MergeIdenticalAdjacentRegions(VMMRegion *region, VMMRegion *array, size_t arrayAllocated);
 	void SplitRegion(VMMRegion *region, uintptr_t address, bool keepAbove, VMMRegion *array, size_t &arrayAllocated);
 
+	size_t pagesAllocated;
+
 	// This contains the canonical "split" regions.
 	VMMRegion *regions;
 	size_t regionsAllocated;
@@ -328,6 +330,7 @@ void VMM::Initialise() {
 		AddRegion(0x100000000000, 0x600000000000 >> PAGE_BITS /* 96TiB */, 0, VMM_REGION_FREE, VMM_MAP_LAZY, true, nullptr);
 
 		virtualAddressSpace->cr3 = pmm.AllocatePage(true);
+		pagesAllocated++;
 		// KernelLog(LOG_INFO, "cr3 = %x\n", virtualAddressSpace->cr3);
 		pageTable = (uint64_t *) kernelVMM.Allocate("VMM", PAGE_SIZE, VMM_MAP_ALL, VMM_REGION_PHYSICAL, (uintptr_t) virtualAddressSpace->cr3); 
 		ZeroMemory(pageTable + 0x000, PAGE_SIZE / 2);
@@ -784,6 +787,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 				switch (region->type) {
 					case VMM_REGION_STANDARD: {
 						pmm.FreePage(mappedAddress);
+						pagesAllocated--;
 					} break;
 
 					case VMM_REGION_PHYSICAL: {
@@ -796,6 +800,7 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 						// ...unless we copied it.
 						if (flags & VMM_REGION_FLAG_COPIED) {
 							pmm.FreePage(mappedAddress);
+							pagesAllocated--;
 						}
 					} break;
 
@@ -880,6 +885,11 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 				fault->regionFlags = region->flags;
 				fault->addressSpace = virtualAddressSpace;
 				fault->maxCount = region->baseAddress + region->pageCount * PAGE_SIZE - page;
+
+				size_t count = MM_FILE_CHUNK_BYTES;
+				if (count > fault->maxCount) count = fault->maxCount;
+				pagesAllocated += count / PAGE_SIZE;
+
 				return true;
 			}
 		}
@@ -906,6 +916,7 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 		switch (region->type) {
 			case VMM_REGION_STANDARD: {
 				uintptr_t physicalPage = pmm.AllocatePage(true);
+				pagesAllocated++;
 				virtualAddressSpace->lock.Acquire();
 				virtualAddressSpace->Map(physicalPage, address, region->flags);
 				virtualAddressSpace->lock.Release();
@@ -955,6 +966,7 @@ bool VMM::HandlePageFaultInRegion(uintptr_t page, VMMRegion *region, size_t limi
 					} else {
 						// NOTE Duplicated from above.
 						uintptr_t physicalPage = pmm.AllocatePage(true);
+						pagesAllocated++;
 						virtualAddressSpace->lock.Acquire();
 						virtualAddressSpace->Map(physicalPage, address, region->flags);
 						virtualAddressSpace->lock.Release();

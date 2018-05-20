@@ -285,3 +285,7 @@ void OSYieldScheduler() {
 void OSSleep(uint64_t milliseconds) {
 	OSSyscall(OS_SYSCALL_SLEEP, milliseconds, 0, 0, 0);
 }
+
+OSHandle OSTakeSystemSnapshot(int type, size_t *bufferSize) {
+	return OSSyscall(OS_SYSCALL_TAKE_SYSTEM_SNAPSHOT, type, (uintptr_t) bufferSize, 0, 0);
+}
