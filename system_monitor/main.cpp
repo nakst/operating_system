@@ -38,7 +38,8 @@ struct ProcessInformation {
 struct Instance {
 	OSObject window,
 		 statusLabel,
-		 taskListing;
+		 taskListing,
+		 newTaskTextbox;
 
 	ProcessInformation *processes;
 	size_t processCount;
@@ -48,6 +49,21 @@ struct Instance {
 
 Instance instance;
 bool createdInstance;
+
+void TerminateProcess(uint64_t pid) {
+	OSHandle process = OSOpenProcess(pid);
+
+	if (process == OS_INVALID_HANDLE) {
+		OSShowDialogAlert(OSLiteral("Terminate Process"),
+				OSLiteral("The process could not be terminated."),
+				OSLiteral("You do not have permission to manage this process."),
+				OS_ICON_ERROR, instance.window);
+		return;
+	}
+
+	OSTerminateProcess(process);
+	OSCloseHandle(process);
+}
 
 OSCallbackResponse Command(OSObject object, OSMessage *message) {
 	(void) object;
@@ -61,15 +77,37 @@ OSCallbackResponse Command(OSObject object, OSMessage *message) {
 		} break;
 
 		case COMMAND_NEW_TASK: {
+			OSShowDialogTextPrompt(OSLiteral("New Task"),
+				   OSLiteral("Enter the name of the program you want to start:"),
+				   OS_ICON_RUN, instance.window,
+				   commandNewTaskConfirm, &instance.newTaskTextbox);
 		} break;
 
 		case COMMAND_NEW_TASK_CONFIRM: {
+			OSString string;
+			OSGetText(instance.newTaskTextbox, &string);
+			OSExecuteProgram(string.buffer, string.bytes);
+
+			OSCloseWindow(OSGetWindow(instance.newTaskTextbox));
 		} break;
 
 		case COMMAND_END_PROCESS: {
+			OSShowDialogConfirm(OSLiteral("Terminate Process"),
+				   OSLiteral("Are you sure you want to terminate this process?"),
+				   OSLiteral("Any unsaved data will be lost."),
+				   OS_ICON_WARNING, instance.window,
+				   commandEndProcessConfirm);
 		} break;
 
 		case COMMAND_END_PROCESS_CONFIRM: {
+			OSCloseWindow(message->command.window);
+
+			for (uintptr_t i = 0; i < instance.processCount; i++) {
+				if (instance.processes[i].state & OS_LIST_VIEW_ITEM_SELECTED) {
+					TerminateProcess(instance.processes[i].pid);
+					break;
+				}
+			}
 		} break;
 	}
 
@@ -179,6 +217,8 @@ void RefreshProcessesThread(void *argument) {
 		ProcessInformation *processes = (ProcessInformation *) OSHeapAllocate(sizeof(ProcessInformation) * snapshot->count, true);
 		uintptr_t totalTimeSlices = 0;
 
+		OSEnableCommand(instance.window, commandEndProcess, false);
+
 		for (uintptr_t i = 0; i < snapshot->count; i++) {
 			OSSnapshotProcessesItem *item = snapshot->processes + i;
 			ProcessInformation *process = processes + i;
@@ -194,6 +234,11 @@ void RefreshProcessesThread(void *argument) {
 				if (instance.processes[i].pid == process->pid) {
 					process->state = instance.processes[i].state;
 					process->cpu = process->cpuTimeSlices - instance.processes[i].cpuTimeSlices;
+
+					if (process->state & OS_LIST_VIEW_ITEM_SELECTED) {
+						OSEnableCommand(instance.window, commandEndProcess, true);
+					}
+
 					break;
 				}
 			}
@@ -221,7 +266,7 @@ void RefreshProcessesThread(void *argument) {
 void Instance::Initialise() {
 	createdInstance = true;
 
-	OSStartGUIAllocationBlock(32768);
+	OSStartGUIAllocationBlock(16384);
 
 	window = OSCreateWindow(mainWindow);
 	OSSetInstance(window, this);

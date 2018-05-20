@@ -30,6 +30,7 @@ shortcut = "Ctrl+N";
 label = "Run";
 callback = Command;
 callbackArgument = COMMAND_NEW_TASK_CONFIRM;
+shortcut = "Enter";
 
 [command commandEndProcess]
 label = "End process";

@@ -63,3 +63,10 @@ height = 110;
 title = "Message";
 resizable = false;
 defaultCommand = osDialogStandardOK;
+
+[window osDialogTextPrompt]
+width = 320;
+height = 120;
+title = "Message";
+resizable = false;
+defaultCommand = osDialogStandardOK;

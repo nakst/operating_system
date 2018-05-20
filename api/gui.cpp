@@ -1,5 +1,7 @@
 #include "../bin/OS/standard.manifest.h"
 
+// TODO Loading GUI layouts from manifests.
+
 static void EnterDebugger() {
 	asm volatile ("xchg %bx,%bx");
 }
@@ -336,6 +338,8 @@ static UIImage icons32[] = {
 	{{}, {}},
 	{{}, {}},
 	ICON32(512 + 0, 480),
+	ICON32(512 + 32, 480),
+	ICON32(512 + 64, 480),
 };
 
 static UIImage *scrollbarButtonHorizontalBackgrounds[] = {
@@ -2006,28 +2010,32 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			} break;
 
 			case OS_SCANCODE_ENTER: {
-				OSMessage message;
-				message.type = OS_NOTIFICATION_CONFIRM_EDIT;
-				OSForwardMessage(control, control->notificationCallback, &message);
-				control->sentEditResultNotification = true;
+				if (control->style == OS_TEXTBOX_STYLE_COMMAND) {
+					OSMessage message;
+					message.type = OS_NOTIFICATION_CONFIRM_EDIT;
+					OSForwardMessage(control, control->notificationCallback, &message);
+					control->sentEditResultNotification = true;
 
-				message.type = OS_NOTIFICATION_COMMAND;
-				message.command.window = control->window;
-				message.command.command = control->command;
+					message.type = OS_NOTIFICATION_COMMAND;
+					message.command.window = control->window;
+					message.command.command = control->command;
 
-				OSCallbackResponse response = OSForwardMessage(control, control->notificationCallback, &message);
+					OSCallbackResponse response = OSForwardMessage(control, control->notificationCallback, &message);
 
-				if (response == OS_CALLBACK_REJECTED) {
-					CreateString(control->previousString.buffer, control->previousString.bytes, &control->text, control->previousString.characters);
+					if (response == OS_CALLBACK_REJECTED) {
+						CreateString(control->previousString.buffer, control->previousString.bytes, &control->text, control->previousString.characters);
 
-					OSMessage m;
-					m.type = OS_MESSAGE_TEXT_UPDATED;
-					OSSendMessage(control, &m);
+						OSMessage m;
+						m.type = OS_MESSAGE_TEXT_UPDATED;
+						OSSendMessage(control, &m);
+					}
+
+					OSRemoveFocusedControl(control->window, true);
+
+					withAltOrCtrl = true;
+				} else {
+					result = OS_CALLBACK_NOT_HANDLED;
 				}
-
-				OSRemoveFocusedControl(control->window, true);
-
-				withAltOrCtrl = true;
 			} break;
 
 			default: {
@@ -2489,7 +2497,7 @@ static OSCallbackResponse ProcessLabelMessage(OSObject _object, OSMessage *messa
 
 	if (message->type == OS_MESSAGE_MEASURE && (control->textAlign & OS_DRAW_STRING_WORD_WRAP)) {
 		message->measure.preferredWidth = message->measure.parentWidth;
-		message->measure.preferredHeight = MeasureString(control->text.buffer, control->text.bytes, FONT_SIZE, fontRegular, message->measure.parentWidth);
+		message->measure.preferredHeight = MeasureString(control->text.buffer, control->text.bytes, control->textSize ? control->textSize : FONT_SIZE, fontRegular, message->measure.parentWidth);
 		response = OS_CALLBACK_HANDLED;
 		// OSPrint("Measure label: %d by %d (given width of %d)\n", message->measure.preferredWidth, message->measure.preferredHeight, message->measure.parentWidth);
 	}
@@ -5297,11 +5305,11 @@ void OSCloseWindow(OSObject window) {
 	OSSendMessage(window, &m);
 }
 
-OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
-				   char *message, size_t messageBytes,
-				   char *description, size_t descriptionBytes,
-				   uint16_t iconID, OSObject modalParent, OSCommand *command) {
-	OSWindowSpecification specification = *osDialogStandard;
+static OSObject CreateDialog(char *title, size_t titleBytes,
+				char *message, size_t messageBytes,
+				uint16_t iconID, OSObject modalParent,
+				OSObject *layouts, OSWindowSpecification *_specification) {
+	OSWindowSpecification specification = *_specification;
 	specification.title = title;
 	specification.titleBytes = titleBytes;
 
@@ -5319,23 +5327,61 @@ OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 	OSAddGrid(layout1, 0, 1, layout4, OS_CELL_H_EXPAND);
 	OSAddGrid(layout4, 0, 0, layout5, OS_CELL_H_RIGHT | OS_CELL_H_PUSH);
 
-	OSObject okButton = OSCreateButton(command, OS_BUTTON_STYLE_NORMAL);
-	OSAddControl(layout5, 0, 0, okButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
-
-	OSObject cancelButton = OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL);
-	OSAddControl(layout5, 1, 0, cancelButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertCancel, dialog));
-
 	Control *label = (Control *) OSCreateLabel(message, messageBytes, true);
 	label->textSize = 10;
 	label->textColor = TEXT_COLOR_HEADING;
 	OSAddControl(layout3, 0, 0, label, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
 
-	OSAddControl(layout3, 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
 	OSAddControl(layout2, 0, 0, OSCreateIconDisplay(iconID), OS_CELL_V_TOP);
 
+	layouts[1] = layout1;
+	layouts[2] = layout2;
+	layouts[3] = layout3;
+	layouts[4] = layout4;
+	layouts[5] = layout5;
+
+	return dialog;
+}
+
+OSObject OSShowDialogTextPrompt(char *title, size_t titleBytes,
+		char *message, size_t messageBytes,
+		uint16_t iconID, OSObject modalParent, OSCommand *command, OSObject *textbox) {
+	OSObject layouts[6];
+	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogTextPrompt);
+
+	OSObject okButton = OSCreateButton(command, OS_BUTTON_STYLE_NORMAL);
+	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
+	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
+
+	OSObject cancelButton = OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL);
+	OSAddControl(layouts[5], 1, 0, cancelButton, OS_CELL_H_RIGHT);
+	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertCancel, dialog));
 	OSSetFocusedControl(cancelButton, false);
+
+	*textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);
+	OSAddControl(layouts[3], 0, 1, *textbox, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
+	OSSetFocusedControl(*textbox, false);
+
+	return dialog;
+}
+
+OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
+				   char *message, size_t messageBytes,
+				   char *description, size_t descriptionBytes,
+				   uint16_t iconID, OSObject modalParent, OSCommand *command) {
+	OSObject layouts[6];
+	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogStandard);
+
+	OSObject okButton = OSCreateButton(command, OS_BUTTON_STYLE_NORMAL);
+	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
+	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
+
+	OSObject cancelButton = OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL);
+	OSAddControl(layouts[5], 1, 0, cancelButton, OS_CELL_H_RIGHT);
+	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertCancel, dialog));
+	OSSetFocusedControl(cancelButton, false);
+
+	OSAddControl(layouts[3], 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
 
 	return dialog;
 }
@@ -5344,33 +5390,14 @@ OSObject OSShowDialogAlert(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
 				   uint16_t iconID, OSObject modalParent) {
-	OSWindowSpecification specification = *osDialogStandard;
-	specification.title = title;
-	specification.titleBytes = titleBytes;
-
-	OSObject dialog = CreateWindow(&specification, nullptr, 0, 0, (Window *) modalParent);
-
-	OSObject layout1 = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
-	OSObject layout2 = OSCreateGrid(3, 1, OS_GRID_STYLE_CONTAINER);
-	OSObject layout3 = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER_WITHOUT_BORDER);
-	OSObject layout4 = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER_ALT);
-
-	OSSetRootGrid(dialog, layout1);
-	OSAddGrid(layout1, 0, 0, layout2, OS_CELL_FILL);
-	OSAddGrid(layout2, 2, 0, layout3, OS_CELL_FILL);
-	OSAddGrid(layout1, 0, 1, layout4, OS_CELL_H_EXPAND);
+	OSObject layouts[6];
+	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogStandard);
 
 	OSObject okButton = OSCreateButton(osDialogStandardOK, OS_BUTTON_STYLE_NORMAL);
-	OSAddControl(layout4, 0, 0, okButton, OS_CELL_H_PUSH | OS_CELL_H_RIGHT);
+	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
 	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
 
-	Control *label = (Control *) OSCreateLabel(message, messageBytes, true);
-	label->textSize = 10;
-	label->textColor = TEXT_COLOR_HEADING;
-	OSAddControl(layout3, 0, 0, label, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
-
-	OSAddControl(layout3, 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
-	OSAddControl(layout2, 0, 0, OSCreateIconDisplay(iconID), OS_CELL_V_TOP);
+	OSAddControl(layouts[3], 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
 
 	OSSetFocusedControl(okButton, false);
 

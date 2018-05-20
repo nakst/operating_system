@@ -942,6 +942,7 @@ void KillThread(void *_thread) {
 	thread->killedEvent.Set();
 
 	// TODO Release all the mutexes this thread owns.
+	// TODO Why don't windows get closed sometimes?
 
 	// Close the handle that this thread owns of its owner process.
 	CloseHandleToObject(thread->process, KERNEL_OBJECT_PROCESS);

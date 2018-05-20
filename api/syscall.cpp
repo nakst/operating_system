@@ -289,3 +289,7 @@ void OSSleep(uint64_t milliseconds) {
 OSHandle OSTakeSystemSnapshot(int type, size_t *bufferSize) {
 	return OSSyscall(OS_SYSCALL_TAKE_SYSTEM_SNAPSHOT, type, (uintptr_t) bufferSize, 0, 0);
 }
+
+OSHandle OSOpenProcess(uint64_t pid) {
+	return OSSyscall(OS_SYSCALL_OPEN_PROCESS, pid, 0, 0, 0);
+}

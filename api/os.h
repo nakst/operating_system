@@ -178,6 +178,8 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OS_ICON_ROTATE_ANTI_CLOCKWISE 	(9)
 #define OS_ICON_MAGNIFYING_GLASS	(10)
 #define OS_ICON_SHUTDOWN		(11)
+#define OS_ICON_RUN			(12)
+#define OS_ICON_WARNING			(13)
 
 #define OS_FLAGS_DEFAULT (0)
 
@@ -337,6 +339,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_GET_SYSTEM_CONSTANTS,
 	OS_SYSCALL_SLEEP,
 	OS_SYSCALL_TAKE_SYSTEM_SNAPSHOT,
+	OS_SYSCALL_OPEN_PROCESS,
 } OSSyscallType;
 
 #define OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND (0)
@@ -1068,6 +1071,8 @@ OS_EXTERN_C OSHandle OSCreateEvent(bool autoReset);
 OS_EXTERN_C void OSExecuteProgram(const char *name, size_t nameBytes);
 OS_EXTERN_C void OSReadConstantBuffer(OSHandle constantBuffer, void *output);
 
+OS_EXTERN_C OSHandle OSOpenProcess(uint64_t pid);
+
 OS_EXTERN_C OSError OSCloseHandle(OSHandle handle);
 OS_EXTERN_C OSHandle OSTakeSystemSnapshot(int type, size_t *bufferSize); // Read the data using OSReadConstantBuffer.
 
@@ -1087,7 +1092,7 @@ OS_EXTERN_C OSError OSMoveNode(OSHandle node, OSHandle newDirectory, char *newNa
 #define OSRenameNode(_node, _newName, _newNameLength) OSMoveNode(_node, OS_INVALID_HANDLE, _newName, _newNameLength)
 
 OS_EXTERN_C void OSTerminateThread(OSHandle thread);
-OS_EXTERN_C void OSTerminateProcess(OSHandle thread);
+OS_EXTERN_C void OSTerminateProcess(OSHandle process);
 OS_EXTERN_C void OSTerminateThisProcess();
 
 OS_EXTERN_C void OSPauseProcess(OSHandle process, bool resume);
@@ -1201,6 +1206,10 @@ OS_EXTERN_C OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 				   char *description, size_t descriptionBytes,
 				   uint16_t iconID, OSObject modalParent,
 				   OSCommand *command);
+OS_EXTERN_C OSObject OSShowDialogTextPrompt(char *title, size_t titleBytes,
+				   char *message, size_t messageBytes,
+				   uint16_t iconID, OSObject modalParent,
+				   OSCommand *command, OSObject *textbox);
 
 OS_EXTERN_C void OSCloseWindow(OSObject window);
 OS_EXTERN_C void OSSetFocusedWindow(OSObject window);

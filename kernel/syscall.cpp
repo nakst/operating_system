@@ -1303,6 +1303,36 @@ uintptr_t DoSyscall(OSSyscallType index,
 			*bufferSizeOutput = bufferSize;
 			SYSCALL_RETURN(MakeConstantBuffer(buffer, bufferSize, currentProcess), false);
 		} break;
+
+		case OS_SYSCALL_OPEN_PROCESS: {
+			if (currentProcess->id == argument0) {
+				SYSCALL_RETURN(OS_CURRENT_PROCESS, false);
+			}
+
+			scheduler.lock.Acquire();
+
+			LinkedItem<Process> *item = scheduler.allProcesses.firstItem;
+
+			while (item) {
+				Process *process = item->thisItem;
+
+				if (process->id == argument0) {
+					process->handles++;
+					break;
+				}
+
+				item = item->nextItem;
+			}
+
+			scheduler.lock.Release();
+
+			if (item) {
+				Handle handle = { KERNEL_OBJECT_PROCESS, item->thisItem };
+				SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
+			} else {
+				SYSCALL_RETURN(OS_INVALID_HANDLE, false);
+			}
+		} break;
 	}
 
 	end:;
