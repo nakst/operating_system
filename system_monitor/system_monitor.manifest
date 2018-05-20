@@ -1,0 +1,16 @@
+[program]
+name = "System Monitor";
+shortName = "systemMonitor";
+
+[build]
+output = "System Monitor.esx";
+source = "system_monitor/main.cpp";
+installationFolder = "/Programs/System Monitor/";
+Install;
+
+[window mainWindow]
+width = 400;
+height = 420;
+minimumWidth = 400;
+minimumHeight = 420;
+title = "System Monitor";
