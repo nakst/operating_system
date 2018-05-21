@@ -101,7 +101,7 @@ static bool NextToken(char *&buffer, Token *token, bool expect = false) {
 		token->type = Token::NUMERIC;
 		token->bytes = 0;
 
-		while (isdigit(c)) {
+		while (isdigit(c) || c == ',') {
 			token->bytes += utf8_length_char(buffer);
 			buffer = token->text + token->bytes;
 			c = utf8_value(buffer);

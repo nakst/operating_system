@@ -15,6 +15,14 @@ minimumWidth = 400;
 minimumHeight = 420;
 title = "System Monitor";
 
+[window optionsWindow]
+width = 350;
+height = 250;
+minimumWidth = 350;
+minimumHeight = 250;
+title = "System Monitor Options";
+resizable = false;
+
 [command commandOptions]
 label = "Options";
 callback = Command;
@@ -30,7 +38,6 @@ shortcut = "Ctrl+N";
 label = "Run";
 callback = Command;
 callbackArgument = COMMAND_NEW_TASK_CONFIRM;
-shortcut = "Enter";
 
 [command commandEndProcess]
 label = "End process";
@@ -43,3 +50,29 @@ label = "Terminate";
 callback = Command;
 callbackArgument = COMMAND_END_PROCESS_CONFIRM;
 dangerous = true;
+
+[command commandShowEndProcessConfirmationDialog]
+label = "Ask before ending processes";
+checkable = true;
+defaultCheck = true;
+
+[command commandUpdateSpeedLow]
+label = "Low";
+radio = "updateSpeed";
+defaultCheck = false;
+callback = Command;
+callbackArgument = COMMAND_UPDATE_SPEED_LOW;
+
+[command commandUpdateSpeedNormal]
+label = "Normal";
+radio = "updateSpeed";
+defaultCheck = true;
+callback = Command;
+callbackArgument = COMMAND_UPDATE_SPEED_NORMAL;
+
+[command commandUpdateSpeedHigh]
+label = "High";
+radio = "updateSpeed";
+defaultCheck = false;
+callback = Command;
+callbackArgument = COMMAND_UPDATE_SPEED_HIGH;

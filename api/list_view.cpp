@@ -8,6 +8,7 @@
 // TODO Better scrolling down with keyboard.
 // TODO Dragging.
 // TODO Tile view.
+// TODO Scroll-selections.
 
 uint32_t LIST_VIEW_COLUMN_TEXT_COLOR = 0x4D6278;
 uint32_t LIST_VIEW_PRIMARY_TEXT_COLOR = 0x000000;

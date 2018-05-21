@@ -688,15 +688,15 @@ OSError VMM::Free(void *address, void **object, VMMRegionType *type, bool skipVi
 #ifdef ARCH_X86_64
 	if (this == &kernelVMM) {
 		if ((uintptr_t) address < 0xFFFF900000000000) {
-			KernelPanic("VMM::Free - Address out of unexpected range.\n");
+			KernelPanic("VMM::Free - Address out of expected range.\n");
 		}
 	} else if (this == &memoryManagerVMM) {
 		if ((uintptr_t) address < 0xFFFF8F8000000000 || (uintptr_t) address >= 0xFFFF900000000000) {
-			KernelPanic("VMM::Free - Address out of unexpected range.\n");
+			KernelPanic("VMM::Free - Address out of expected range.\n");
 		}
 	} else {
 		if ((uintptr_t) address >= 0xFFFF800000000000) {
-			KernelPanic("VMM::Free - Address out of unexpected range.\n");
+			KernelPanic("VMM::Free - Address out of expected range.\n");
 		}
 	}
 #endif

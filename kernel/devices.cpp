@@ -368,6 +368,7 @@ void IORequest::Start(bool canResize) {
 	Defer(mutex.Release());
 
 	if (!count) {
+		buffer = nullptr;
 		Complete();
 		return;
 	}

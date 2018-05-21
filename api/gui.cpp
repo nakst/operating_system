@@ -46,14 +46,14 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 
 // TODO Keyboard controls.
 // 	- Access keys.
-// 	- Change "default command" to be a special case of dialog box and menu keyboard controls.
-// TODO Scroll-selections in list views.
+// 	- Keyboard shortcuts in dialogs? Including default commands.
 // TODO Textboxes.
 // 	- Undo/redo.
 // 	- Multi-line.
 // 	- Limit the length to 1024 characters?
-// TODO Multiple-cell positions.
-// TODO Wrapping.
+// TODO Advanced layouts.
+// 	- Multiple-cell positions.
+// 	- Improve wrapping.
 // TODO New controls.
 // 	- Comboboxes.
 // 	- Tabs.
@@ -851,6 +851,40 @@ static inline bool IsPointInRectangle(OSRectangle rectangle, int x, int y) {
 	return true;
 }
 
+void OSPackWindow(OSObject object) {
+	OSMessage message;
+	Window *window = (Window *) object;
+
+	message.type = OS_MESSAGE_MEASURE;
+	message.measure.parentWidth = window->width;
+	message.measure.parentHeight = window->height;
+
+	OSSendMessage(window->root, &message);
+
+	int newWidth = message.measure.preferredWidth + 16;
+	int newHeight = message.measure.preferredHeight + 16;
+
+	OSRectangle bounds;
+	OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
+
+	bounds.right = bounds.left + newWidth;
+	bounds.bottom = bounds.top + newHeight;
+
+	OSSyscall(OS_SYSCALL_MOVE_WINDOW, window->window, (uintptr_t) &bounds, 0, 0);
+
+	window->width = newWidth;
+	window->height = newHeight;
+
+	message.type = OS_MESSAGE_LAYOUT;
+	message.layout.left = 0;
+	message.layout.top = 0;
+	message.layout.right = window->width;
+	message.layout.bottom = window->height;
+	message.layout.force = true;
+	message.layout.clip = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
+	OSSendMessage(window->root, &message);
+}
+
 void OSSetFocusedWindow(OSObject object) {
 	Window *window = (Window *) object;
 	OSSyscall(OS_SYSCALL_SET_FOCUSED_WINDOW, window->window, 0, 0, 0);
@@ -923,8 +957,11 @@ static void StandardCellLayout(GUIObject *object) {
 	int preferredWidth = (object->layout & OS_CELL_H_EXPAND) ? width : (object->preferredWidth + object->horizontalMargin * 2);
 	int preferredHeight = (object->layout & OS_CELL_V_EXPAND) ? height : (object->preferredHeight + object->verticalMargin * 2);
 
-	if (width > preferredWidth) {
-		if (object->layout & OS_CELL_H_EXPAND) {
+	if (width >= preferredWidth) {
+		if (object->layout & OS_CELL_H_INDENT_1) {
+			object->bounds.left += 16;
+		} else if (object->layout & OS_CELL_H_INDENT_2) {
+			object->bounds.left += 32;
 		} else if (object->layout & OS_CELL_H_LEFT) {
 			object->bounds.right = object->bounds.left + preferredWidth;
 		} else if (object->layout & OS_CELL_H_RIGHT) {
@@ -2184,6 +2221,12 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 	
 	if (message->type == OS_MESSAGE_CLICKED) {
 		IssueCommand(control);
+	} else if (message->type == OS_MESSAGE_START_FOCUS) {
+#if 0
+		if (control->radioCheck) {
+			IssueCommand(control);
+		}
+#endif
 	} else if (message->type == OS_MESSAGE_KEY_PRESSED) {
 		if (message->keyboard.scancode == OS_SCANCODE_SPACE) {
 			control->window->pressed = control;
@@ -2272,6 +2315,7 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 			control->iconHasVariants = true;
 			control->iconHasFocusVariant = true;
 			control->additionalCheckedIcons = true;
+			control->preferredHeight = 18;
 		} else {
 			control->backgrounds = command->dangerous ? buttonDangerousBackgrounds : buttonBackgrounds;
 		}
@@ -2930,6 +2974,10 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 			OSZeroMemory(grid->widths, sizeof(int) * grid->columns);
 			OSZeroMemory(grid->heights, sizeof(int) * grid->rows);
 
+			if (grid->verbose) {
+				OSPrint("measuring grid...\n");
+			}
+
 			for (uintptr_t i = 0; i < grid->columns; i++) {
 				for (uintptr_t j = 0; j < grid->rows; j++) {
 					GUIObject **object = grid->objects + (j * grid->columns + i);
@@ -2957,6 +3005,10 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 			else message->measure.preferredWidth = grid->preferredWidth;
 			if (!grid->suggestHeight) grid->preferredHeight = message->measure.preferredHeight = height;
 			else message->measure.preferredHeight = grid->preferredHeight;
+
+			if (grid->verbose) {
+				OSPrint("results: %d by %d\n", message->measure.preferredWidth, message->measure.preferredHeight);
+			}
 		} break;
 
 		case OS_MESSAGE_PAINT: {
@@ -3161,8 +3213,8 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 
 	switch (style) {
 		case OS_GRID_STYLE_GROUP_BOX: {
-			grid->borderSize = OS_MAKE_RECTANGLE_ALL(12);
-			grid->gapSize = 6;
+			grid->borderSize = OS_MAKE_RECTANGLE(8, 8, 6, 6);
+			grid->gapSize = 4;
 			grid->background = &gridBox;
 		} break;
 
@@ -4105,6 +4157,12 @@ void OSDisableCommand(OSObject _window, OSCommand *_command, bool disabled) {
 	}
 }
 
+bool OSGetCommandCheck(OSObject _window, OSCommand *_command) {
+	Window *window = (Window *) _window;
+	CommandWindow *command = window->commands + _command->identifier;
+	return command->checked;
+}
+
 void OSCheckCommand(OSObject _window, OSCommand *_command, bool checked) {
 	Window *window = (Window *) _window;
 
@@ -4785,10 +4843,17 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			}
 			
 			if (message->keyboard.scancode == OS_SCANCODE_F4 && message->keyboard.alt) {
-				message->type = OS_MESSAGE_DESTROY;
-				OSSendMessage(window, message);
+				if (window->flags & OS_CREATE_WINDOW_DIALOG) {
+					IssueCommand(nullptr, osDialogStandardCancel, window);
+				} else {
+					OSMessage m;
+					m.type = OS_MESSAGE_DESTROY;
+					OSSendMessage(window, &m);
+				}
 			} else if (message->keyboard.scancode == OS_SCANCODE_ESCAPE) {
-				if (window->hasMenuParent || (window->flags & OS_CREATE_WINDOW_DIALOG)) {
+				if (window->flags & OS_CREATE_WINDOW_DIALOG) {
+					IssueCommand(nullptr, osDialogStandardCancel, window);
+				} else if (window->hasMenuParent) {
 					OSMessage m;
 					m.type = OS_MESSAGE_DESTROY;
 					OSSendMessage(window, &m);

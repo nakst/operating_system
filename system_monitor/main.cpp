@@ -1,14 +1,18 @@
-// TODO Implement options.
 // TODO Sorting.
 
-#define OS_NO_CSTDLIB
 #include "../api/os.h"
+
+#define MANIFEST_PARSER_LIBRARY
+#include "../util/manifest_parser.cpp"
 
 #define COMMAND_OPTIONS (1)
 #define COMMAND_NEW_TASK (2)
 #define COMMAND_NEW_TASK_CONFIRM (3)
 #define COMMAND_END_PROCESS (4)
 #define COMMAND_END_PROCESS_CONFIRM (5)
+#define COMMAND_UPDATE_SPEED_HIGH (6)
+#define COMMAND_UPDATE_SPEED_NORMAL (7)
+#define COMMAND_UPDATE_SPEED_LOW (8)
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/Programs/System Monitor/manifest.h"
@@ -40,7 +44,11 @@ struct Instance {
 	OSObject window,
 		 statusLabel,
 		 taskListing,
-		 newTaskTextbox;
+		 newTaskTextbox,
+		 optionsWindow;
+
+	volatile int updateSpeed, originalUpdateSpeed;
+	bool showEndProcessConfirmationDialog;
 
 	ProcessInformation *processes;
 	size_t processCount;
@@ -51,7 +59,16 @@ struct Instance {
 Instance instance;
 bool createdInstance;
 
-void TerminateProcess(uint64_t pid) {
+void TerminateProcess() {
+	uint64_t pid = 0;
+
+	for (uintptr_t i = 0; i < instance.processCount; i++) {
+		if (instance.processes[i].state & OS_LIST_VIEW_ITEM_SELECTED) {
+			pid = instance.processes[i].pid;
+			break;
+		}
+	}
+
 	OSHandle process = OSOpenProcess(pid);
 
 	if (process == OS_INVALID_HANDLE) {
@@ -66,6 +83,21 @@ void TerminateProcess(uint64_t pid) {
 	OSCloseHandle(process);
 }
 
+OSCallbackResponse CloseOptionsWindow(OSObject object, OSMessage *message) {
+	(void) object;
+	(void) message;
+
+	if (message->context == (void *) 1) {
+		instance.updateSpeed = instance.originalUpdateSpeed;
+	} else if (message->context == (void *) 2) {
+		instance.showEndProcessConfirmationDialog = OSGetCommandCheck(instance.optionsWindow, commandShowEndProcessConfirmationDialog);
+	}
+
+	OSCloseWindow(instance.optionsWindow);
+	instance.optionsWindow = nullptr;
+	return OS_CALLBACK_HANDLED;
+}
+
 OSCallbackResponse Command(OSObject object, OSMessage *message) {
 	(void) object;
 
@@ -75,6 +107,66 @@ OSCallbackResponse Command(OSObject object, OSMessage *message) {
 
 	switch ((uintptr_t) message->context) {
 		case COMMAND_OPTIONS: {
+			if (!instance.optionsWindow) {
+				OSStartGUIAllocationBlock(16384);
+
+				instance.optionsWindow = OSCreateWindow(optionsWindow);
+				instance.originalUpdateSpeed = instance.updateSpeed;
+
+				OSObject rootLayout = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
+				OSSetRootGrid(instance.optionsWindow, rootLayout);
+
+				OSObject layout5 = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER);
+				OSAddControl(rootLayout, 0, 0, layout5, OS_CELL_FILL);
+
+				OSObject layout1 = OSCreateGrid(1, 3, OS_GRID_STYLE_GROUP_BOX);
+				OSAddControl(layout5, 0, 0, layout1, OS_CELL_H_FILL);
+				OSAddControl(layout1, 0, 0, OSCreateLabel(OSLiteral("Confirmations:"), false), OS_CELL_H_FILL);
+				OSAddControl(layout1, 0, 1, OSCreateButton(commandShowEndProcessConfirmationDialog, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_FILL | OS_CELL_H_INDENT_1);
+
+				OSObject layout2 = OSCreateGrid(1, 5, OS_GRID_STYLE_GROUP_BOX);
+				OSAddControl(layout5, 0, 1, layout2, OS_CELL_H_FILL);
+				OSAddControl(layout2, 0, 0, OSCreateLabel(OSLiteral("Update speed:"), false), OS_CELL_H_FILL);
+				OSAddControl(layout2, 0, 1, OSCreateButton(commandUpdateSpeedLow, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_FILL | OS_CELL_H_INDENT_1);
+				OSAddControl(layout2, 0, 2, OSCreateButton(commandUpdateSpeedNormal, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_FILL | OS_CELL_H_INDENT_1);
+				OSAddControl(layout2, 0, 3, OSCreateButton(commandUpdateSpeedHigh, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_FILL | OS_CELL_H_INDENT_1);
+
+				OSObject layout3 = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER_ALT);
+				OSObject layout4 = OSCreateGrid(2, 1, OS_GRID_STYLE_CONTAINER_WITHOUT_BORDER);
+				OSAddControl(rootLayout, 0, 1, layout3, OS_CELL_H_FILL);
+				OSAddControl(layout3, 0, 0, layout4, OS_CELL_H_RIGHT | OS_CELL_H_PUSH);
+				OSAddControl(layout4, 0, 0, OSCreateButton(osDialogStandardOK, OS_BUTTON_STYLE_NORMAL), OS_FLAGS_DEFAULT);
+				OSAddControl(layout4, 1, 0, OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL), OS_FLAGS_DEFAULT);
+
+				OSPackWindow(instance.optionsWindow);
+
+				switch (instance.updateSpeed) {
+					case 500:  OSCheckCommand(instance.optionsWindow, commandUpdateSpeedHigh,   true); break;
+					case 2000: OSCheckCommand(instance.optionsWindow, commandUpdateSpeedNormal, true); break;
+					case 5000: OSCheckCommand(instance.optionsWindow, commandUpdateSpeedLow,    true); break;
+				}
+
+				OSCheckCommand(instance.optionsWindow, commandShowEndProcessConfirmationDialog, instance.showEndProcessConfirmationDialog);
+
+				OSSetCommandNotificationCallback(instance.optionsWindow, osDialogStandardCancel, OS_MAKE_CALLBACK(CloseOptionsWindow, (void *) 1));
+				OSSetCommandNotificationCallback(instance.optionsWindow, osDialogStandardOK, OS_MAKE_CALLBACK(CloseOptionsWindow, (void *) 2));
+
+				OSEndGUIAllocationBlock();
+			} else {
+				OSSetFocusedWindow(instance.optionsWindow);
+			}
+		} break;
+
+		case COMMAND_UPDATE_SPEED_HIGH: {
+			instance.updateSpeed = 500;
+		} break;
+
+		case COMMAND_UPDATE_SPEED_NORMAL: {
+			instance.updateSpeed = 2000;
+		} break;
+
+		case COMMAND_UPDATE_SPEED_LOW: {
+			instance.updateSpeed = 5000;
 		} break;
 
 		case COMMAND_NEW_TASK: {
@@ -93,22 +185,20 @@ OSCallbackResponse Command(OSObject object, OSMessage *message) {
 		} break;
 
 		case COMMAND_END_PROCESS: {
-			OSShowDialogConfirm(OSLiteral("Terminate Process"),
-				   OSLiteral("Are you sure you want to terminate this process?"),
-				   OSLiteral("Any unsaved data will be lost."),
-				   OS_ICON_WARNING, instance.window,
-				   commandEndProcessConfirm);
+			if (instance.showEndProcessConfirmationDialog) {
+				OSShowDialogConfirm(OSLiteral("Terminate Process"),
+						OSLiteral("Are you sure you want to terminate this process?"),
+						OSLiteral("Any unsaved data will be lost."),
+						OS_ICON_WARNING, instance.window,
+						commandEndProcessConfirm);
+			} else {
+				TerminateProcess();
+			}
 		} break;
 
 		case COMMAND_END_PROCESS_CONFIRM: {
 			OSCloseWindow(message->command.window);
-
-			for (uintptr_t i = 0; i < instance.processCount; i++) {
-				if (instance.processes[i].state & OS_LIST_VIEW_ITEM_SELECTED) {
-					TerminateProcess(instance.processes[i].pid);
-					break;
-				}
-			}
+			TerminateProcess();
 		} break;
 	}
 
@@ -198,6 +288,27 @@ OSCallbackResponse ProcessTaskListingNotification(OSObject object, OSMessage *me
 OSCallbackResponse DestroyInstance(OSObject object, OSMessage *message) {
 	(void) object;
 	(void) message;
+
+	// TODO Don't rely on hardcoded paths.
+	OSNodeInformation node;
+	OSError error = OSOpenNode(OSLiteral("/Programs/System Monitor/Configuration.txt"), OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS, &node);
+	size_t length;
+
+	if (error == OS_SUCCESS) {
+		length = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+				"[config]\nupdateSpeed = %d;\nconfirmEndProcess = %z;\n",
+				instance.updateSpeed, instance.showEndProcessConfirmationDialog ? "true" : "false");
+		error = OSResizeFile(node.handle, length); 
+	}
+
+	if (error == OS_SUCCESS) {
+		OSWriteFileSync(node.handle, 0, length, guiStringBuffer); 
+	}
+
+	if (error != OS_SUCCESS) {
+		OSPrint("Warning: Could not save System Monitor configuration.");
+	}
+
 	OSTerminateProcess(OS_CURRENT_PROCESS);
 	return OS_CALLBACK_HANDLED;
 }
@@ -296,7 +407,21 @@ void RefreshProcessesThread(void *argument) {
 
 		OSHeapFree(snapshot);
 		OSReleaseMutex(&osMessageMutex);
-		OSSleep(2000);
+
+		OSSleep(instance.updateSpeed);
+	}
+}
+
+void ParseConfiguration(Token attribute, Token section, Token name, Token value, int event) {
+	(void) attribute;
+	(void) section;
+
+	if (event == EVENT_ATTRIBUTE) { 
+		if (CompareTokens(name, "updateSpeed")) {
+			instance.updateSpeed = OSParseInteger(value.text, value.bytes);
+		} else if (CompareTokens(name, "confirmEndProcess")) {
+			instance.showEndProcessConfirmationDialog = tolower(value.text[0]) == 't';
+		}
 	}
 }
 
@@ -304,6 +429,20 @@ void Instance::Initialise() {
 	createdInstance = true;
 
 	OSStartGUIAllocationBlock(16384);
+
+	instance.updateSpeed = 2000;
+	instance.showEndProcessConfirmationDialog = true;
+
+	{
+		// TODO Don't rely on hardcoded paths.
+		size_t fileSize;
+		char *file = (char *) OSReadEntireFile(OSLiteral("/Programs/System Monitor/Configuration.txt"), &fileSize); 
+
+		if (file) {
+			ParseManifest(file, ParseConfiguration);
+			OSHeapFree(file);
+		}
+	}
 
 	window = OSCreateWindow(mainWindow);
 	OSSetInstance(window, this);
@@ -314,7 +453,7 @@ void Instance::Initialise() {
 	OSSetRootGrid(window, rootLayout);
 
 	OSObject toolbar = OSCreateGrid(3, 1, OS_GRID_STYLE_TOOLBAR);
-	OSAddGrid(rootLayout, 0, 0, toolbar, OS_CELL_FILL_H);
+	OSAddGrid(rootLayout, 0, 0, toolbar, OS_CELL_H_FILL);
 	OSAddControl(toolbar, 0, 0, OSCreateButton(commandNewTask, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 	OSAddControl(toolbar, 1, 0, OSCreateButton(commandEndProcess, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
 	OSAddControl(toolbar, 2, 0, OSCreateButton(commandOptions, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
@@ -328,7 +467,7 @@ void Instance::Initialise() {
 	OSSetObjectNotificationCallback(taskListing, OS_MAKE_CALLBACK(ProcessTaskListingNotification, nullptr));
 
 	OSObject statusBar = OSCreateGrid(2, 1, OS_GRID_STYLE_STATUS_BAR);
-	OSAddGrid(rootLayout, 0, 2, statusBar, OS_CELL_FILL_H);
+	OSAddGrid(rootLayout, 0, 2, statusBar, OS_CELL_H_FILL);
 	statusLabel = OSCreateLabel(OSLiteral(""), false);
 	OSAddControl(statusBar, 1, 0, statusLabel, OS_FLAGS_DEFAULT);
 

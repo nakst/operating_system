@@ -968,6 +968,8 @@ extern OSObject osSystemMessages;
 #define OS_CELL_H_LEFT          (0x0004)
 #define OS_CELL_H_CENTER        (0x0008)
 #define OS_CELL_H_RIGHT         (0x0010)
+#define OS_CELL_H_INDENT_1 	(0x0020)
+#define OS_CELL_H_INDENT_2 	(0x0040)
 #define OS_CELL_V_PUSH          (0x0100)
 #define OS_CELL_V_EXPAND        (0x0200)
 #define OS_CELL_V_TOP           (0x0400)
@@ -976,8 +978,8 @@ extern OSObject osSystemMessages;
 
 // Some common layouts...
 #define OS_CELL_FILL	  (OS_CELL_H_PUSH | OS_CELL_H_EXPAND | OS_CELL_V_PUSH | OS_CELL_V_EXPAND)
-#define OS_CELL_FILL_H	  (OS_CELL_H_PUSH | OS_CELL_H_EXPAND)
-#define OS_CELL_FILL_V	  (OS_CELL_V_PUSH | OS_CELL_V_EXPAND)
+#define OS_CELL_H_FILL	  (OS_CELL_H_PUSH | OS_CELL_H_EXPAND)
+#define OS_CELL_V_FILL	  (OS_CELL_V_PUSH | OS_CELL_V_EXPAND)
 #define OS_CELL_CENTER	  (OS_CELL_H_CENTER | OS_CELL_V_CENTER)
 #define OS_CELL_EXPAND    (OS_CELL_H_EXPAND | OS_CELL_V_EXPAND)
 #define OS_CELL_CORNER	  (OS_CELL_H_LEFT | OS_CELL_V_TOP)
@@ -1175,6 +1177,7 @@ OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 #define OSEnableControl(_control, _enabled) OSDisableControl((_control), !(_enabled))
 OS_EXTERN_C void OSDisableCommand(OSObject window, OSCommand *command, bool disabled);
 OS_EXTERN_C void OSCheckCommand(OSObject window, OSCommand *command, bool checked);
+OS_EXTERN_C bool OSGetCommandCheck(OSObject window, OSCommand *command);
 #define OSEnableCommand(_window, _command, _enabled) OSDisableCommand((_window), (_command), !(_enabled))
 OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback);
 OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSCallback callback);
@@ -1214,6 +1217,7 @@ OS_EXTERN_C OSObject OSShowDialogTextPrompt(char *title, size_t titleBytes,
 
 OS_EXTERN_C void OSCloseWindow(OSObject window);
 OS_EXTERN_C void OSSetFocusedWindow(OSObject window);
+OS_EXTERN_C void OSPackWindow(OSObject window);
 
 OS_EXTERN_C void OSGetMousePosition(OSObject relativeWindow, OSPoint *position);
 OS_EXTERN_C OSRectangle OSGetControlBounds(OSObject control);
@@ -1271,6 +1275,7 @@ OS_EXTERN_C void OSHelloWorld();
 OS_EXTERN_C uint8_t OSGetRandomByte();
 OS_EXTERN_C void OSSort(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, const void *, void *), void *argument);
 OS_EXTERN_C int OSCompareStrings(char *s1, char *s2, size_t length1, size_t length2);
+OS_EXTERN_C int64_t OSParseInteger(char *text, size_t bytes);
 
 OS_EXTERN_C int utf8_length_char(char *character);
 OS_EXTERN_C int utf8_value(char *character);

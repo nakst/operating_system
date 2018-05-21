@@ -647,3 +647,27 @@ void OSDestroyMutex(OSMutex *mutex) {
 		OSCloseHandle(mutex->event);
 	}
 }
+
+int64_t OSParseInteger(char *text, size_t bytes) {
+	char *end = text + bytes;
+
+	bool negative = false;
+	int64_t result = 0;
+
+	while (text < end) {
+		char c = *text;
+
+		if (c == '-') {
+			negative = true;
+		}
+
+		if (c >= '0' && c <= '9') {
+			result *= 10;
+			result += c - '0';
+		}
+
+		text++;
+	}
+
+	return negative ? -result : result;
+}
