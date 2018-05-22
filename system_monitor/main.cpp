@@ -120,16 +120,16 @@ OSCallbackResponse Command(OSObject object, OSMessage *message) {
 				OSAddControl(rootLayout, 0, 0, layout5, OS_CELL_FILL);
 
 				OSObject layout1 = OSCreateGrid(1, 3, OS_GRID_STYLE_GROUP_BOX);
-				OSAddControl(layout5, 0, 0, layout1, OS_CELL_H_FILL);
-				OSAddControl(layout1, 0, 0, OSCreateLabel(OSLiteral("Confirmations:"), false), OS_CELL_H_FILL);
-				OSAddControl(layout1, 0, 1, OSCreateButton(commandShowEndProcessConfirmationDialog, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_FILL | OS_CELL_H_INDENT_1);
+				OSAddControl(layout5, 0, 0, layout1, OS_FLAGS_DEFAULT);
+				OSAddControl(layout1, 0, 0, OSCreateLabel(OSLiteral("Confirmations:"), false), OS_FLAGS_DEFAULT);
+				OSAddControl(layout1, 0, 1, OSCreateButton(commandShowEndProcessConfirmationDialog, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_INDENT_1);
 
 				OSObject layout2 = OSCreateGrid(1, 5, OS_GRID_STYLE_GROUP_BOX);
 				OSAddControl(layout5, 0, 1, layout2, OS_CELL_H_FILL);
-				OSAddControl(layout2, 0, 0, OSCreateLabel(OSLiteral("Update speed:"), false), OS_CELL_H_FILL);
-				OSAddControl(layout2, 0, 1, OSCreateButton(commandUpdateSpeedLow, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_FILL | OS_CELL_H_INDENT_1);
-				OSAddControl(layout2, 0, 2, OSCreateButton(commandUpdateSpeedNormal, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_FILL | OS_CELL_H_INDENT_1);
-				OSAddControl(layout2, 0, 3, OSCreateButton(commandUpdateSpeedHigh, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_FILL | OS_CELL_H_INDENT_1);
+				OSAddControl(layout2, 0, 0, OSCreateLabel(OSLiteral("Update speed:"), false), OS_FLAGS_DEFAULT);
+				OSAddControl(layout2, 0, 1, OSCreateButton(commandUpdateSpeedLow, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_INDENT_1);
+				OSAddControl(layout2, 0, 2, OSCreateButton(commandUpdateSpeedNormal, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_INDENT_1);
+				OSAddControl(layout2, 0, 3, OSCreateButton(commandUpdateSpeedHigh, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_INDENT_1);
 
 				OSObject okButton;
 				OSObject layout3 = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER_ALT);
@@ -459,9 +459,9 @@ void Instance::Initialise() {
 
 	OSObject toolbar = OSCreateGrid(3, 1, OS_GRID_STYLE_TOOLBAR);
 	OSAddGrid(rootLayout, 0, 0, toolbar, OS_CELL_H_FILL);
-	OSAddControl(toolbar, 0, 0, OSCreateButton(commandNewTask, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
-	OSAddControl(toolbar, 1, 0, OSCreateButton(commandEndProcess, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
-	OSAddControl(toolbar, 2, 0, OSCreateButton(commandOptions, OS_BUTTON_STYLE_TOOLBAR), OS_CELL_V_CENTER | OS_CELL_V_PUSH);
+	OSAddControl(toolbar, 0, 0, OSCreateButton(commandNewTask, OS_BUTTON_STYLE_TOOLBAR), OS_FLAGS_DEFAULT);
+	OSAddControl(toolbar, 1, 0, OSCreateButton(commandEndProcess, OS_BUTTON_STYLE_TOOLBAR), OS_FLAGS_DEFAULT);
+	OSAddControl(toolbar, 2, 0, OSCreateButton(commandOptions, OS_BUTTON_STYLE_TOOLBAR), OS_FLAGS_DEFAULT);
 
 	OSObject content = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
 	OSAddGrid(rootLayout, 0, 1, content, OS_CELL_FILL);

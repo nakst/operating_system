@@ -53,6 +53,7 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // TODO Advanced layouts.
 // 	- Multiple-cell positions.
 // 	- Improve wrapping.
+// 	- Right-to-left.
 // TODO New controls.
 // 	- Comboboxes.
 // 	- Tabs.
@@ -607,6 +608,7 @@ struct Grid : GUIObject {
 	uint32_t backgroundColor;
 	int xOffset, yOffset;
 	bool treatPreferredDimensionsAsMinima; // Used with scroll panes for PUSH objects.
+	unsigned defaultLayout;
 };
 
 struct Slider : Grid {
@@ -1385,18 +1387,16 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				break;
 			}
 
+			if (!control->disabled || control->keepCustomCursorWhenDisabled) {
+				control->window->cursor = (OSCursorStyle) control->cursor;
+			}
+
+			control->window->hover = control;
+
 			if (control->window->hover != control) {
-				if (!control->disabled || control->keepCustomCursorWhenDisabled) {
-					control->window->cursor = (OSCursorStyle) control->cursor;
-				}
-
-				control->window->hover = control;
-
-				{
-					OSMessage message;
-					message.type = OS_MESSAGE_START_HOVER;
-					OSSendMessage(control, &message);
-				}
+				OSMessage message;
+				message.type = OS_MESSAGE_START_HOVER;
+				OSSendMessage(control, &message);
 			}
 		} break;
 
@@ -2755,6 +2755,10 @@ void OSAddControl(OSObject _grid, unsigned column, unsigned row, OSObject _contr
 
 	Grid *grid = (Grid *) _grid;
 
+	if ((layout & ~(OS_CELL_H_INDENT_1 | OS_CELL_H_INDENT_2)) == OS_FLAGS_DEFAULT) {
+		layout = grid->defaultLayout;
+	}
+
 	grid->relayout = true;
 	SetParentDescendentInvalidationFlags(grid, DESCENDENT_RELAYOUT);
 
@@ -3212,6 +3216,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 			grid->borderSize = OS_MAKE_RECTANGLE(8, 8, 6, 6);
 			grid->gapSize = 4;
 			grid->background = &gridBox;
+			grid->defaultLayout = OS_CELL_H_FILL;
 		} break;
 
 		case OS_GRID_STYLE_MENU: {
@@ -3266,6 +3271,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 			grid->preferredHeight = 31;
 			grid->suggestHeight = true;
 			grid->background = &toolbarBackground;
+			grid->defaultLayout = OS_CELL_V_CENTER | OS_CELL_V_PUSH;
 		} break;
 
 		case OS_GRID_STYLE_TOOLBAR_ALT: {
@@ -3274,6 +3280,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 			grid->preferredHeight = 31;
 			grid->suggestHeight = true;
 			grid->background = &toolbarBackgroundAlt;
+			grid->defaultLayout = OS_CELL_V_CENTER | OS_CELL_V_PUSH;
 		} break;
 	}
 
@@ -5006,6 +5013,16 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					OSSetFocusedControl(control, false);
 				}
 			}
+
+			OSMessage m = *message;
+			m.type = OS_MESSAGE_MOUSE_MOVED;
+			m.mouseMoved.oldPositionX = message->mousePressed.positionX;
+			m.mouseMoved.oldPositionY = message->mousePressed.positionY;
+			m.mouseMoved.newPositionX = message->mousePressed.positionX;
+			m.mouseMoved.newPositionY = message->mousePressed.positionY;
+			m.mouseMoved.newPositionXScreen = message->mousePressed.positionXScreen;
+			m.mouseMoved.newPositionYScreen = message->mousePressed.positionYScreen;
+			OSSendMessage(window->root, &m);
 		} break;
 
 		case OS_MESSAGE_MOUSE_MIDDLE_RELEASED:
