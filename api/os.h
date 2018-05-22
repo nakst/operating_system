@@ -915,7 +915,6 @@ typedef struct OSWindowSpecification {
 	size_t titleBytes;
 
 	OSMenuSpecification *menubar;
-	OSCommand *defaultCommand;
 } OSWindowSpecification;
 
 typedef struct OSListViewColumn {

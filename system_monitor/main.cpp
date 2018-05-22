@@ -131,11 +131,12 @@ OSCallbackResponse Command(OSObject object, OSMessage *message) {
 				OSAddControl(layout2, 0, 2, OSCreateButton(commandUpdateSpeedNormal, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_FILL | OS_CELL_H_INDENT_1);
 				OSAddControl(layout2, 0, 3, OSCreateButton(commandUpdateSpeedHigh, OS_BUTTON_STYLE_NORMAL), OS_CELL_H_FILL | OS_CELL_H_INDENT_1);
 
+				OSObject okButton;
 				OSObject layout3 = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER_ALT);
 				OSObject layout4 = OSCreateGrid(2, 1, OS_GRID_STYLE_CONTAINER_WITHOUT_BORDER);
 				OSAddControl(rootLayout, 0, 1, layout3, OS_CELL_H_FILL);
 				OSAddControl(layout3, 0, 0, layout4, OS_CELL_H_RIGHT | OS_CELL_H_PUSH);
-				OSAddControl(layout4, 0, 0, OSCreateButton(osDialogStandardOK, OS_BUTTON_STYLE_NORMAL), OS_FLAGS_DEFAULT);
+				OSAddControl(layout4, 0, 0, okButton = OSCreateButton(osDialogStandardOK, OS_BUTTON_STYLE_NORMAL), OS_FLAGS_DEFAULT);
 				OSAddControl(layout4, 1, 0, OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL), OS_FLAGS_DEFAULT);
 
 				OSPackWindow(instance.optionsWindow);
@@ -147,6 +148,7 @@ OSCallbackResponse Command(OSObject object, OSMessage *message) {
 				}
 
 				OSCheckCommand(instance.optionsWindow, commandShowEndProcessConfirmationDialog, instance.showEndProcessConfirmationDialog);
+				OSSetFocusedControl(okButton, false);
 
 				OSSetCommandNotificationCallback(instance.optionsWindow, osDialogStandardCancel, OS_MAKE_CALLBACK(CloseOptionsWindow, (void *) 1));
 				OSSetCommandNotificationCallback(instance.optionsWindow, osDialogStandardOK, OS_MAKE_CALLBACK(CloseOptionsWindow, (void *) 2));
@@ -179,9 +181,12 @@ OSCallbackResponse Command(OSObject object, OSMessage *message) {
 		case COMMAND_NEW_TASK_CONFIRM: {
 			OSString string;
 			OSGetText(instance.newTaskTextbox, &string);
-			OSExecuteProgram(string.buffer, string.bytes);
 
-			OSCloseWindow(OSGetWindow(instance.newTaskTextbox));
+			if (string.bytes) {
+				OSExecuteProgram(string.buffer, string.bytes);
+
+				OSCloseWindow(OSGetWindow(instance.newTaskTextbox));
+			}
 		} break;
 
 		case COMMAND_END_PROCESS: {

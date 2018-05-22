@@ -1,7 +1,5 @@
 #include "../bin/OS/standard.manifest.h"
 
-// TODO Loading GUI layouts from manifests.
-
 static void EnterDebugger() {
 	asm volatile ("xchg %bx,%bx");
 }
@@ -44,9 +42,10 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
+// TODO Loading GUI layouts from manifests.
+// 	- GUI editor.
 // TODO Keyboard controls.
 // 	- Access keys.
-// 	- Keyboard shortcuts in dialogs? Including default commands.
 // TODO Textboxes.
 // 	- Undo/redo.
 // 	- Multi-line.
@@ -417,11 +416,11 @@ static UIImage *buttonBackgrounds[] = {
 };
 
 static UIImage *buttonDefaultBackgrounds[] = {
-	&buttonDefault,
+	&buttonNormal,
 	&buttonDisabled,
 	&buttonHover,
 	&buttonPressed,
-	&buttonFocused,
+	&buttonDefault,
 };
 
 static UIImage *buttonDangerousBackgrounds[] = {
@@ -661,7 +660,8 @@ struct Window : GUIObject {
 		       *hover,        // Mouse is hovering over the control.
 		       *focus, 	      // Control has strong focus.
 		       *lastFocus,    // Control has weak focus.
-		       *defaultFocus; // Control receives focus if no other control has focus.
+		       *defaultFocus, // Control receives focus if no other control has focus.
+		       *buttonFocus;  // The last button to receive focus; use with ENTER.
 
 	struct Grid *hoverGrid;
 
@@ -674,7 +674,6 @@ struct Window : GUIObject {
 	int timerHz, caretBlinkStep, caretBlinkPause;
 
 	CommandWindow *commands;
-	OSCommand *defaultCommand;
 	void *instance;
 	bool hasMenuParent;
 
@@ -1158,8 +1157,6 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 					OSPrint("Painting control %x\n", control);
 				}
 
-				bool isDefaultCommand = !control->pressedByKeyboard && control->window->defaultCommand == control->command && control->command;
-
 				bool menuSource;
 				bool normal, hover, pressed, disabled, focused;
 				uint32_t textShadowColor, textColor;
@@ -1196,8 +1193,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				pressed = ((control->window->pressed == control && (control->window->hover == control || control->pressedByKeyboard)) 
 						|| (control->window->focus == control && !control->hasFocusedBackground) || menuSource) && !disabled;
 				hover = (control->window->hover == control || control->window->pressed == control) && !pressed && !disabled;
-				focused = ((control->window->focus == control || (navigateMenuItem == control && navigateMenuMode)) 
-						&& control->hasFocusedBackground) && !pressed && !hover && (!disabled || (navigateMenuItem == control && navigateMenuMode)) && !isDefaultCommand;
+				focused = ((control->window->focus == control || control->window->buttonFocus == control || (navigateMenuItem == control && navigateMenuMode)) 
+						&& control->hasFocusedBackground) && !pressed && !hover && (!disabled || (navigateMenuItem == control && navigateMenuMode));
 				normal = !hover && !pressed && !disabled && !focused;
 
 				if (focused) disabled = false;
@@ -1357,6 +1354,7 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 			if (control->window->pressed == control) control->window->pressed = nullptr;
 			if (control->window->defaultFocus == control) control->window->defaultFocus = nullptr;
 			if (control->window->focus == control) OSRemoveFocusedControl(control->window, true);
+			if (control->window->buttonFocus == control) control->window->buttonFocus = nullptr;
 
 			GUIFree(control->text.buffer);
 			GUIFree(control);
@@ -2222,6 +2220,12 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 	if (message->type == OS_MESSAGE_CLICKED) {
 		IssueCommand(control);
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
+		if (!control->checkable && (control->window->flags & OS_CREATE_WINDOW_DIALOG)) {
+			if (control->window->buttonFocus) OSRepaintControl(control->window->buttonFocus);
+			control->window->buttonFocus = control;
+			control->backgrounds = buttonDefaultBackgrounds;
+		}
+
 #if 0
 		if (control->radioCheck) {
 			IssueCommand(control);
@@ -2246,14 +2250,6 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
 		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
-	}
-
-	if (message->type == OS_MESSAGE_PARENT_UPDATED) {
-		if (control->window && control->window->defaultCommand == control->command && control->command) {
-			if (control->backgrounds == buttonBackgrounds) {
-				control->backgrounds = buttonDefaultBackgrounds;
-			}
-		}
 	}
 
 	return result;
@@ -4895,8 +4891,8 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 						OSSendMessage(window->root, message);
 					} else if (message->keyboard.scancode == OS_SCANCODE_ENTER
 							&& !message->keyboard.ctrl && !message->keyboard.alt && !message->keyboard.shift
-							&& window->defaultCommand) {
-						IssueCommand(nullptr, window->defaultCommand, window);
+							&& window->buttonFocus) {
+						IssueCommand(window->buttonFocus);
 					}
 
 					// TODO Access keys.
@@ -5269,7 +5265,6 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	window->cursor = OS_CURSOR_NORMAL;
 	window->minimumWidth = minimumWidth;
 	window->minimumHeight = minimumHeight;
-	window->defaultCommand = specification->defaultCommand;
 
 	if (!menuParent) {
 		window->commands = (CommandWindow *) GUIAllocate(sizeof(CommandWindow) * _commandCount, true);
@@ -5417,11 +5412,11 @@ OSObject OSShowDialogTextPrompt(char *title, size_t titleBytes,
 	OSObject okButton = OSCreateButton(command, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
 	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
+	OSSetFocusedControl(okButton, false);
 
 	OSObject cancelButton = OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 1, 0, cancelButton, OS_CELL_H_RIGHT);
 	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertCancel, dialog));
-	OSSetFocusedControl(cancelButton, false);
 
 	*textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);
 	OSAddControl(layouts[3], 0, 1, *textbox, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
@@ -5439,12 +5434,12 @@ OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 
 	OSObject okButton = OSCreateButton(command, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
+	if (!command->dangerous) OSSetFocusedControl(okButton, false);
 
 	OSObject cancelButton = OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 1, 0, cancelButton, OS_CELL_H_RIGHT);
 	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertCancel, dialog));
-	OSSetFocusedControl(cancelButton, false);
+	if (command->dangerous) OSSetFocusedControl(cancelButton, false);
 
 	OSAddControl(layouts[3], 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
 
@@ -5461,10 +5456,10 @@ OSObject OSShowDialogAlert(char *title, size_t titleBytes,
 	OSObject okButton = OSCreateButton(osDialogStandardOK, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
 	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
+	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
+	OSSetFocusedControl(okButton, false);
 
 	OSAddControl(layouts[3], 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
-
-	OSSetFocusedControl(okButton, false);
 
 	return dialog;
 }
