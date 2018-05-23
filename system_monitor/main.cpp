@@ -1,5 +1,3 @@
-// TODO Sorting.
-
 #include "../api/os.h"
 
 #define MANIFEST_PARSER_LIBRARY
@@ -46,6 +44,9 @@ struct Instance {
 		 taskListing,
 		 newTaskTextbox,
 		 optionsWindow;
+
+	uintptr_t sortColumn;
+	bool sortDescending;
 
 	volatile int updateSpeed, originalUpdateSpeed;
 	bool showEndProcessConfirmationDialog;
@@ -210,6 +211,40 @@ OSCallbackResponse Command(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
+int SortTaskListingCompare(const void *_a, const void *_b, void *argument) {
+	(void) argument;
+
+	ProcessInformation *a = (ProcessInformation *) _a;
+	ProcessInformation *b = (ProcessInformation *) _b;
+
+	int result = 0;
+
+	switch (instance.sortColumn) {
+		case COLUMN_NAME: {
+			result = OSCompareStrings(a->name, b->name, a->nameLength, b->nameLength);
+		} break;
+
+		case COLUMN_PID: {
+			result = a->pid - b->pid;
+		} break;
+
+		case COLUMN_CPU: {
+			result = a->cpu - b->cpu;
+		} break;
+
+		case COLUMN_MEMORY: {
+			result = a->memory - b->memory;
+		} break;
+	}
+
+	return result * (instance.sortDescending ? -1 : 1);
+}
+
+void SortTaskListing() {
+	OSSort(instance.processes, instance.processCount, sizeof(ProcessInformation), SortTaskListingCompare, nullptr);
+	OSListViewInvalidate(instance.taskListing, 0, instance.processCount);
+}
+
 OSCallbackResponse ProcessTaskListingNotification(OSObject object, OSMessage *message) {
 	(void) object;
 	
@@ -280,6 +315,15 @@ OSCallbackResponse ProcessTaskListingNotification(OSObject object, OSMessage *me
 			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
 				OSEnableCommand(instance.window, commandEndProcess, process->state & OS_LIST_VIEW_ITEM_SELECTED);
 			}
+
+			return OS_CALLBACK_HANDLED;
+		} break;
+
+		case OS_NOTIFICATION_SORT_COLUMN: {
+			instance.sortColumn = message->listViewColumn.index;
+			instance.sortDescending = message->listViewColumn.descending;
+
+			SortTaskListing();
 
 			return OS_CALLBACK_HANDLED;
 		} break;
@@ -366,10 +410,11 @@ void RefreshProcessesThread(void *argument) {
 			instance.processes = (ProcessInformation *) OSHeapAllocate((currentCount + newCount) * sizeof(ProcessInformation), false);
 			OSCopyMemory(instance.processes, current, currentCount * sizeof(ProcessInformation));
 			OSZeroMemory(instance.processes + currentCount, newCount * sizeof(ProcessInformation));
-			uintptr_t j = currentCount;
 			OSHeapFree(current);
 			current = instance.processes;
 			instance.processCount += newCount;
+
+			uintptr_t j = currentCount;
 
 			for (uintptr_t i = 0; i < snapshot->count; i++) {
 				if (!snapshot->processes[i].internal) {
@@ -407,6 +452,8 @@ void RefreshProcessesThread(void *argument) {
 		OSEnableCommand(instance.window, commandEndProcess, foundSelection);
 		OSSetText(instance.statusLabel, guiStringBuffer, OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 					"%d processes", currentCount), OS_RESIZE_MODE_GROW_ONLY);
+
+		SortTaskListing();
 
 		OSRepaintControl(instance.taskListing);
 

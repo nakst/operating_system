@@ -1273,6 +1273,7 @@ OS_EXTERN_C size_t OSFormatString(char *buffer, size_t bufferLength, const char 
 OS_EXTERN_C void OSHelloWorld();
 OS_EXTERN_C uint8_t OSGetRandomByte();
 OS_EXTERN_C void OSSort(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, const void *, void *), void *argument);
+OS_EXTERN_C void OSSortWithSwapCallback(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, const void *, void *), void *argument, void (*swap)(const void *, const void *, void *));
 OS_EXTERN_C int OSCompareStrings(char *s1, char *s2, size_t length1, size_t length2);
 OS_EXTERN_C int64_t OSParseInteger(char *text, size_t bytes);
 

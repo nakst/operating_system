@@ -141,6 +141,7 @@ static UIImage buttonDangerousHover	= {{5 * 9 + 0, 5 * 9 + 8, 88, 109}, {5 * 9 +
 static UIImage buttonDangerousPressed	= {{6 * 9 + 0, 6 * 9 + 8, 88, 109}, {6 * 9 + 3, 6 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 static UIImage buttonDangerousFocused	= {{7 * 9 + 0, 7 * 9 + 8, 88, 109}, {7 * 9 + 3, 7 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 static UIImage buttonDefault		= {{8 * 9 + 0, 8 * 9 + 8, 88, 109}, {8 * 9 + 3, 8 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
+static UIImage buttonDangerousDefault	= {{9 * 9 + 0, 9 * 9 + 8, 88, 109}, {9 * 9 + 3, 9 * 9 + 5, 91, 106}, OS_DRAW_MODE_STRECH };
 
 static UIImage checkboxHover		= {{48, 61, 242, 255}, {48, 49, 242, 243}};
 static UIImage radioboxHover		= {{48, 61, 242 - 13, 255 - 13}, {48, 49, 242 - 13, 243 - 13}};
@@ -430,6 +431,14 @@ static UIImage *buttonDangerousBackgrounds[] = {
 	&buttonDangerousHover,
 	&buttonDangerousPressed,
 	&buttonDangerousFocused,
+};
+
+static UIImage *buttonDangerousDefaultBackgrounds[] = {
+	&buttonNormal,
+	&buttonDisabled,
+	&buttonHover,
+	&buttonPressed,
+	&buttonDangerousDefault,
 };
 
 static UIImage *windowBorder11[] = {&activeWindowBorder11, &inactiveWindowBorder11, &activeWindowBorder11, &activeWindowBorder11, &activeWindowBorder11};
@@ -2223,7 +2232,7 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 		if (!control->checkable && (control->window->flags & OS_CREATE_WINDOW_DIALOG)) {
 			if (control->window->buttonFocus) OSRepaintControl(control->window->buttonFocus);
 			control->window->buttonFocus = control;
-			control->backgrounds = buttonDefaultBackgrounds;
+			control->backgrounds = (control->command && control->command->dangerous) ? buttonDangerousDefaultBackgrounds : buttonDefaultBackgrounds;
 		}
 
 #if 0

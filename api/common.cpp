@@ -403,6 +403,22 @@ uint8_t CF(GetRandomByte)() {
 	return (uint8_t) (osRandomByteSeed >> 16);
 }
 
+void OSSortWithSwapCallback(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, const void *, void *), void *argument, void (*swap)(const void *, const void *, void *)) {
+	if (nmemb <= 1) return;
+	uint8_t *base = (uint8_t *) _base;
+	intptr_t i = -1, j = nmemb;
+
+	while (true) {
+		while (compar(base + ++i * size, base, argument) < 0);
+		while (compar(base + --j * size, base, argument) > 0);
+		if (i >= j) break;
+		swap(base + i * size, base + j * size, argument);
+	}
+
+	OSSortWithSwapCallback(base, ++j, size, compar, argument, swap);
+	OSSortWithSwapCallback(base + j * size, nmemb - j, size, compar, argument, swap);
+}
+
 void OSSort(void *_base, size_t nmemb, size_t size, int (*compar)(const void *, const void *, void *), void *argument) {
 	if (nmemb <= 1) return;
 
