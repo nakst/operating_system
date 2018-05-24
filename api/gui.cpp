@@ -436,8 +436,8 @@ static UIImage *buttonDangerousBackgrounds[] = {
 static UIImage *buttonDangerousDefaultBackgrounds[] = {
 	&buttonNormal,
 	&buttonDisabled,
-	&buttonHover,
-	&buttonPressed,
+	&buttonDangerousHover,
+	&buttonDangerousPressed,
 	&buttonDangerousDefault,
 };
 
@@ -1400,9 +1400,9 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 				control->window->cursor = (OSCursorStyle) control->cursor;
 			}
 
-			control->window->hover = control;
-
 			if (control->window->hover != control) {
+				control->window->hover = control;
+
 				OSMessage message;
 				message.type = OS_MESSAGE_START_HOVER;
 				OSSendMessage(control, &message);
