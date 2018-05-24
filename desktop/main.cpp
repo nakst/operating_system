@@ -81,6 +81,18 @@ OSCallbackResponse ShutdownDialogCallback(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_NOT_HANDLED;
 }
 
+OSCallbackResponse CommandRightToLeftLayout(OSObject object, OSMessage *message) {
+	(void) object;
+
+	if (message->type != OS_NOTIFICATION_COMMAND) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	OSSyscall(OS_SYSCALL_SET_SYSTEM_CONSTANT, OS_SYSTEM_CONSTANT_RIGHT_TO_LEFT_LAYOUT, message->command.checked, 0, 0);
+
+	return OS_CALLBACK_HANDLED;
+}
+
 OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	(void) _object;
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
@@ -414,6 +426,13 @@ extern "C" void ProgramEntry() {
 					OS_ICON_ERROR, OS_INVALID_OBJECT);
 			OSProcessMessages();
 		}
+	}
+
+	{
+		OSObject window = OSCreateWindow(windowControlPanel);
+		OSObject rootLayout = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
+		OSSetRootGrid(window, rootLayout);
+		OSAddControl(rootLayout, 0, 0, OSCreateButton(commandRightToLeftLayout, OS_BUTTON_STYLE_NORMAL), OS_FLAGS_DEFAULT);
 	}
 
 	OSExecuteProgram(OSLiteral(FIRST_PROGRAM));

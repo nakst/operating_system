@@ -618,6 +618,7 @@ struct Grid : GUIObject {
 	int xOffset, yOffset;
 	bool treatPreferredDimensionsAsMinima; // Used with scroll panes for PUSH objects.
 	unsigned defaultLayout;
+	bool noRightToLeftLayout;
 };
 
 struct Slider : Grid {
@@ -689,6 +690,8 @@ struct Window : GUIObject {
 	bool hasMenuParent;
 
 	bool willUpdateAfterMessageProcessing;
+
+	LinkedItem<Window> windowItem;
 };
 
 struct OpenMenu {
@@ -711,6 +714,8 @@ struct GUIAllocationBlock {
 };
 
 static GUIAllocationBlock *guiAllocationBlock;
+
+static LinkedList<Window> allWindows;
 
 #include "list_view.cpp"
 #define IMPLEMENTATION
@@ -2937,10 +2942,20 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 				OSMessage message2;
 
-				int posX = grid->bounds.left + grid->borderSize.left - grid->xOffset;
+				bool rightToLeft = !grid->noRightToLeftLayout 
+					&& osSystemConstants[OS_SYSTEM_CONSTANT_RIGHT_TO_LEFT_LAYOUT];
+
+				int posX;
+
+				if (rightToLeft) {
+					posX = grid->bounds.right - grid->borderSize.right + grid->xOffset;
+				} else {
+					posX = grid->bounds.left + grid->borderSize.left - grid->xOffset;
+				}
 
 				for (uintptr_t i = 0; i < grid->columns; i++) {
 					int posY = grid->bounds.top + grid->borderSize.top - grid->yOffset;
+					if (rightToLeft) posX -= grid->widths[i];
 
 					for (uintptr_t j = 0; j < grid->rows; j++) {
 						GUIObject **object = grid->objects + (j * grid->columns + i);
@@ -2958,7 +2973,8 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 						posY += grid->heights[j] + grid->gapSize;
 					}
 
-					posX += grid->widths[i] + grid->gapSize;
+					if (!rightToLeft) posX += grid->widths[i] + grid->gapSize;
+					if (rightToLeft) posX -= grid->gapSize;
 				}
 
 				grid->repaint = true;
@@ -4726,6 +4742,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				GUIFree(window->commands);
 			}
 
+			window->windowItem.RemoveFromList();
 			GUIFree(window);
 			return response;
 		} break;
@@ -5266,6 +5283,8 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 
 	Window *window = (Window *) GUIAllocate(sizeof(Window), true);
 	window->type = API_OBJECT_WINDOW;
+	window->windowItem.thisItem = window;
+	allWindows.InsertEnd(&window->windowItem);
 
 	if (menuParent) {
 		window->instance = menuParent->instance;
@@ -5309,6 +5328,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	OSSetCallback(window, OS_MAKE_CALLBACK(ProcessWindowMessage, nullptr));
 
 	window->root = (Grid *) OSCreateGrid(3, 4, OS_GRID_STYLE_LAYOUT);
+	window->root->noRightToLeftLayout = true;
 	window->root->parent = window;
 
 	{
@@ -5686,6 +5706,26 @@ void OSInitialiseGUI() {
 
 	OSUnmapObject(skin);
 	OSCloseHandle(buffer.handle);
+}
+
+void RefreshAllWindows() {
+	LinkedItem<Window> *item = allWindows.firstItem;
+
+	while (item) {
+		Window *window = item->thisItem;
+
+		OSMessage layout;
+		layout.type = OS_MESSAGE_LAYOUT;
+		layout.layout.left = 0;
+		layout.layout.top = 0;
+		layout.layout.right = window->width;
+		layout.layout.bottom = window->height;
+		layout.layout.force = true;
+		layout.layout.clip = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
+		OSSendMessage(window->root, &layout);
+
+		item = item->nextItem;
+	}
 }
 
 #include "list_view.cpp"

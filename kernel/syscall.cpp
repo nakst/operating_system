@@ -11,6 +11,8 @@ uintptr_t DoSyscall(OSSyscallType index,
 
 #ifdef IMPLEMENTATION
 
+uint64_t globalSystemConstants[256];
+
 bool MessageQueue::SendMessage(OSMessage &_message) {
 	mutex.Acquire();
 	Defer(mutex.Release());
@@ -1239,7 +1241,22 @@ uintptr_t DoSyscall(OSSyscallType index,
 		case OS_SYSCALL_GET_SYSTEM_CONSTANTS: {
 			SYSCALL_BUFFER(argument0, sizeof(uint64_t) * 256, 1);
 			uint64_t *systemConstants = (uint64_t *) argument0;
+			CopyMemory(systemConstants, globalSystemConstants, sizeof(uint64_t) * 256);
 			systemConstants[OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND] = acpi.timestampTicksPerMs / 1000;
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
+		case OS_SYSCALL_SET_SYSTEM_CONSTANT: {
+			if (argument0 < 256) {
+				globalSystemConstants[argument0] = argument1;
+				
+				OSMessage m;
+				m.type = OS_MESSAGE_SYSTEM_CONSTANT_UPDATED;
+				m.systemConstantUpdated.index = argument0;
+				m.systemConstantUpdated.newValue = argument1;
+				BroadcastMessage(m);
+			}
+
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 

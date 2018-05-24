@@ -113,6 +113,7 @@ void OSProcessMessages() {
 
 			if (message.type == OS_MESSAGE_SYSTEM_CONSTANT_UPDATED) {
 				osSystemConstants[message.systemConstantUpdated.index] = message.systemConstantUpdated.newValue;
+				RefreshAllWindows();
 				goto done;
 			}
 

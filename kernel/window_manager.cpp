@@ -957,4 +957,15 @@ void Window::NeedWMTimer(int hz) {
 	windowManager.mutex.Release();
 }
 
+void BroadcastMessage(OSMessage &message) {
+	windowManager.mutex.Acquire();
+
+	for (uintptr_t i = 0; i < windowManager.windowsCount; i++) {
+		Window *window = windowManager.windows[i];
+		window->owner->messageQueue.SendMessage(message);
+	}
+
+	windowManager.mutex.Release();
+}
+
 #endif

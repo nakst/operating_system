@@ -10,3 +10,13 @@ installationFolder = "/OS/";
 label = "Shutdown";
 callback = CommandShutdown;
 dangerous = true;
+
+[command commandRightToLeftLayout]
+label = "Enable right-to-left layout";
+callback = CommandRightToLeftLayout;
+checkable = true;
+
+[window windowControlPanel]
+width = 300;
+height = 300;
+title = "Control Panel";
