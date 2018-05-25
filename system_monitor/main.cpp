@@ -38,7 +38,7 @@ struct ProcessInformation {
 	bool seenInNewSnapshot;
 };
 
-struct Instance {
+struct Instance : OSInstance {
 	OSObject window,
 		 statusLabel,
 		 taskListing,
@@ -84,13 +84,10 @@ void TerminateProcess() {
 	OSCloseHandle(process);
 }
 
-OSCallbackResponse CloseOptionsWindow(OSObject object, OSMessage *message) {
-	(void) object;
-	(void) message;
-
-	if (message->context == (void *) 1) {
+OSCallbackResponse CloseOptionsWindow(OSNotification *notification) {
+	if (notification->context == (void *) 1) {
 		instance.updateSpeed = instance.originalUpdateSpeed;
-	} else if (message->context == (void *) 2) {
+	} else if (notification->context == (void *) 2) {
 		instance.showEndProcessConfirmationDialog = OSGetCommandCheck(instance.optionsWindow, commandShowEndProcessConfirmationDialog);
 	}
 
@@ -99,19 +96,17 @@ OSCallbackResponse CloseOptionsWindow(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse Command(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type != OS_NOTIFICATION_COMMAND) {
+OSCallbackResponse Command(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	switch ((uintptr_t) message->context) {
+	switch ((uintptr_t) notification->context) {
 		case COMMAND_OPTIONS: {
 			if (!instance.optionsWindow) {
 				OSStartGUIAllocationBlock(16384);
 
-				instance.optionsWindow = OSCreateWindow(optionsWindow);
+				instance.optionsWindow = OSCreateWindow(optionsWindow, &instance);
 				instance.originalUpdateSpeed = instance.updateSpeed;
 
 				OSObject rootLayout = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
@@ -151,8 +146,8 @@ OSCallbackResponse Command(OSObject object, OSMessage *message) {
 				OSCheckCommand(instance.optionsWindow, commandShowEndProcessConfirmationDialog, instance.showEndProcessConfirmationDialog);
 				OSSetFocusedControl(okButton, false);
 
-				OSSetCommandNotificationCallback(instance.optionsWindow, osDialogStandardCancel, OS_MAKE_CALLBACK(CloseOptionsWindow, (void *) 1));
-				OSSetCommandNotificationCallback(instance.optionsWindow, osDialogStandardOK, OS_MAKE_CALLBACK(CloseOptionsWindow, (void *) 2));
+				OSSetCommandNotificationCallback(instance.optionsWindow, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CloseOptionsWindow, (void *) 1));
+				OSSetCommandNotificationCallback(instance.optionsWindow, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CloseOptionsWindow, (void *) 2));
 
 				OSEndGUIAllocationBlock();
 			} else {
@@ -203,7 +198,7 @@ OSCallbackResponse Command(OSObject object, OSMessage *message) {
 		} break;
 
 		case COMMAND_END_PROCESS_CONFIRM: {
-			OSCloseWindow(message->command.window);
+			OSCloseWindow(notification->command.window);
 			TerminateProcess();
 		} break;
 	}
@@ -245,32 +240,30 @@ void SortTaskListing() {
 	OSListViewInvalidate(instance.taskListing, 0, instance.processCount);
 }
 
-OSCallbackResponse ProcessTaskListingNotification(OSObject object, OSMessage *message) {
-	(void) object;
-	
-	switch (message->type) {
+OSCallbackResponse ProcessTaskListingNotification(OSNotification *notification) {
+	switch (notification->type) {
 		case OS_NOTIFICATION_GET_ITEM: {
-			uintptr_t index = message->listViewItem.index;
+			uintptr_t index = notification->listViewItem.index;
 			ProcessInformation *process = instance.processes + index;
 
 			if (index >= instance.processCount) {
 				OSCrashProcess(OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS);
 			}
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
-				switch (message->listViewItem.column) {
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
+				switch (notification->listViewItem.column) {
 					case COLUMN_NAME: {
-						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+						notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 								"%s", process->nameLength, process->name);
 					} break;
 
 					case COLUMN_PID: {
-						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+						notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 								"%d", process->pid);
 					} break;
 
 					case COLUMN_CPU: {
-						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+						notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 								"%d%%", process->cpu);
 					} break;
 
@@ -278,41 +271,41 @@ OSCallbackResponse ProcessTaskListingNotification(OSObject object, OSMessage *me
 						int64_t memory = process->memory;
 
 						if (memory < 1000000) {
-							message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+							notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 									"%d.%d KB", memory / 1000, (memory / 100) % 10);
 						} else if (memory < 1000000000) {
-							message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+							notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 									"%d.%d MB", memory / 1000000, (memory / 100000) % 10);
 						} else {
-							message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+							notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 									"%d.%d GB", memory / 1000000000, (memory / 100000000) % 10);
 						}
 					} break;
 				}
 
-				message->listViewItem.text = guiStringBuffer;
+				notification->listViewItem.text = guiStringBuffer;
 			}
 
-			message->listViewItem.state = process->state & ((uint16_t) message->listViewItem.mask);
+			notification->listViewItem.state = process->state & ((uint16_t) notification->listViewItem.mask);
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
-				message->listViewItem.height = OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT;
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
+				notification->listViewItem.height = OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT;
 			}
 
 			return OS_CALLBACK_HANDLED;
 		} break;
 
 		case OS_NOTIFICATION_SET_ITEM: {
-			uintptr_t index = message->listViewItem.index;
+			uintptr_t index = notification->listViewItem.index;
 			ProcessInformation *process = instance.processes + index;
 
 			if (index >= instance.processCount) {
 				OSCrashProcess(OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS);
 			}
 
-			process->state = (process->state & ~((uint16_t) message->listViewItem.mask)) | (message->listViewItem.state & message->listViewItem.mask);
+			process->state = (process->state & ~((uint16_t) notification->listViewItem.mask)) | (notification->listViewItem.state & notification->listViewItem.mask);
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
 				OSEnableCommand(instance.window, commandEndProcess, process->state & OS_LIST_VIEW_ITEM_SELECTED);
 			}
 
@@ -320,8 +313,8 @@ OSCallbackResponse ProcessTaskListingNotification(OSObject object, OSMessage *me
 		} break;
 
 		case OS_NOTIFICATION_SORT_COLUMN: {
-			instance.sortColumn = message->listViewColumn.index;
-			instance.sortDescending = message->listViewColumn.descending;
+			instance.sortColumn = notification->listViewColumn.index;
+			instance.sortDescending = notification->listViewColumn.descending;
 
 			SortTaskListing();
 
@@ -334,9 +327,8 @@ OSCallbackResponse ProcessTaskListingNotification(OSObject object, OSMessage *me
 	}
 }
 
-OSCallbackResponse DestroyInstance(OSObject object, OSMessage *message) {
-	(void) object;
-	(void) message;
+OSCallbackResponse DestroyInstance(OSNotification *notification) {
+	(void) notification;
 
 	// TODO Don't rely on hardcoded paths.
 	OSNodeInformation node;
@@ -496,10 +488,9 @@ void Instance::Initialise() {
 		}
 	}
 
-	window = OSCreateWindow(mainWindow);
-	OSSetInstance(window, this);
+	window = OSCreateWindow(mainWindow, this);
 
-	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_CALLBACK(DestroyInstance, nullptr));
+	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, nullptr));
 
 	OSObject rootLayout = OSCreateGrid(1, 3, OS_GRID_STYLE_LAYOUT);
 	OSSetRootGrid(window, rootLayout);
@@ -516,7 +507,7 @@ void Instance::Initialise() {
 			| OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_SORTABLE, OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT);
 	OSListViewSetColumns(taskListing, taskListingColumns, sizeof(taskListingColumns) / sizeof(taskListingColumns[0]));
 	OSAddControl(content, 0, 0, taskListing, OS_CELL_FILL);
-	OSSetObjectNotificationCallback(taskListing, OS_MAKE_CALLBACK(ProcessTaskListingNotification, nullptr));
+	OSSetObjectNotificationCallback(taskListing, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTaskListingNotification, nullptr));
 
 	OSObject statusBar = OSCreateGrid(2, 1, OS_GRID_STYLE_STATUS_BAR);
 	OSAddGrid(rootLayout, 0, 2, statusBar, OS_CELL_H_FILL);
@@ -549,6 +540,6 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 }
 
 void ProgramEntry() {
-	OSSetCallback(osSystemMessages, OS_MAKE_CALLBACK(ProcessSystemMessage, nullptr));
+	OSSetMessageCallback(osSystemMessages, OS_MAKE_MESSAGE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
 }

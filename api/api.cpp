@@ -22,7 +22,7 @@ enum APIObjectType {
 
 struct APIObject {
 	APIObjectType type;
-	OSCallback callback;
+	OSMessageCallback callback;
 	APIObject *parent;
 };
 
@@ -79,7 +79,7 @@ OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message) {
 	return object->callback.function(target, message);
 }
 
-OSCallbackResponse OSForwardMessage(OSObject target, OSCallback callback, OSMessage *message) {
+OSCallbackResponse OSForwardMessage(OSObject target, OSMessageCallback callback, OSMessage *message) {
 	if (!callback.function) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
@@ -130,11 +130,23 @@ void OSProcessMessages() {
 	}
 }
 
-OSCallback OSSetCallback(OSObject generator, OSCallback callback) {
-	OSCallback old;
+OSMessageCallback OSSetMessageCallback(OSObject generator, OSMessageCallback callback) {
+	OSMessageCallback old;
 	APIObject *object = (APIObject *) generator;
 	old = object->callback;
 	object->callback = callback;
 
 	return old;
+}
+
+OSCallbackResponse OSSendNotification(OSObject generator, OSNotificationCallback callback, OSNotification *notification, OSInstance *instance) {
+	if (!callback.function) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	notification->context = callback.context;
+	notification->generator = generator;
+	notification->instance = instance;
+
+	return callback.function(notification);
 }

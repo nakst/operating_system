@@ -42,6 +42,10 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
+// TODO Separate windows from instances (in progress).
+// 	- Bugs: corrupt heap when closing windows with File Manager and System Monitor.
+// 		system monitor can't enable End Process command?
+
 // TODO Loading GUI layouts from manifests.
 // 	- GUI editor.
 // TODO Keyboard controls.
@@ -468,7 +472,7 @@ static const int totalBorderWidth = 6 + 6;
 static const int totalBorderHeight = 6 + 24 + 6;
 
 struct GUIObject : APIObject {
-	OSCallback notificationCallback;
+	OSNotificationCallback notificationCallback;
 	struct Window *window;
 	OSRectangle bounds, cellBounds, inputBounds;
 	uint16_t descendentInvalidationFlags;
@@ -645,10 +649,10 @@ struct Scrollbar : Grid {
 	int size;
 };
 
-struct CommandWindow {
+struct CommandInstance {
 	// Data each window stores for each command specified in the program's manifest.
 	LinkedList<Control> controls; // Controls bound to this command.
-	OSCallback notificationCallback;
+	OSNotificationCallback notificationCallback;
 	uintptr_t disabled : 1, checked : 1;
 	uintptr_t state;
 };
@@ -685,8 +689,7 @@ struct Window : GUIObject {
 	LinkedList<Control> timerControls;
 	int timerHz, caretBlinkStep, caretBlinkPause;
 
-	CommandWindow *commands;
-	void *instance;
+	OSInstance *instance;
 	bool hasMenuParent;
 
 	bool willUpdateAfterMessageProcessing;
@@ -791,6 +794,11 @@ static void GUIFree(void *address) {
 		OSHeapFree(a);
 	} else {
 		GUIAllocationBlock *block = (GUIAllocationBlock *) *a;
+
+		if (!block) {
+			OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
+		}
+
 		block->allocationCount--;
 
 		if (block->allocationCount == 0) {
@@ -927,7 +935,7 @@ void OSSetControlCommand(OSObject _control, OSCommand *_command) {
 	control->radioCheck = _command->radioCheck;
 
 	if (control->window) {
-		CommandWindow *command = control->window->commands + _command->identifier;
+		CommandInstance *command = (CommandInstance *) control->window->instance->commands + _command->identifier;
 		command->controls.InsertEnd(&control->commandItem);
 		control->isChecked = command->checked;
 		control->disabled = command->disabled;
@@ -1535,7 +1543,7 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSM
 		control->textBounds.top -= 3;
 		control->textBounds.bottom -= 3;
 	} else {
-		response = OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+		response = OSForwardMessage(_object, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr), message);
 	}
 
 	return response;
@@ -1551,7 +1559,7 @@ static OSObject CreateWindowResizeHandle(UIImage **images, unsigned direction) {
 	control->noAnimations = true;
 	control->noDisabledTextColorChange = true;
 	control->keepCustomCursorWhenDisabled = true;
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessWindowResizeHandleMessage, nullptr));
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessWindowResizeHandleMessage, nullptr));
 
 	switch (direction) {
 		case RESIZE_LEFT:
@@ -1713,6 +1721,78 @@ static void RemoveSelectedText(Textbox *control) {
 	control->caret = control->caret2;
 }
 
+static void TextboxEnsureCaretVisible(Textbox *control) {
+	int caretX = MeasureStringWidth(control->text.buffer, control->caret2.byte, control->textSize, fontRegular) - control->scrollX;
+
+	int fullWidth = MeasureStringWidth(control->text.buffer, control->text.bytes, control->textSize, fontRegular);
+	int controlWidth = control->textBounds.right - control->textBounds.left;
+
+	if (caretX < 0) {
+		control->scrollX += caretX;
+	} else if (caretX > controlWidth) {
+		control->scrollX += caretX - controlWidth;
+	} else if (fullWidth - control->scrollX < controlWidth && fullWidth > controlWidth) {
+		control->scrollX = fullWidth - controlWidth;
+	} else if (fullWidth <= controlWidth) {
+		control->scrollX = 0;
+	}
+}
+
+static OSCallbackResponse ProcessTextboxNotification(OSNotification *notification) {
+	Textbox *control = (Textbox *) notification->context;
+
+	if (notification->type == OS_NOTIFICATION_COMMAND) {
+		// TODO Code copy-and-pasted from KEY_TYPED below.
+
+		if (notification->command.command == osCommandSelectAll) {
+			control->caret.byte = 0;
+			control->caret.character = 0;
+
+			control->caret2.byte = control->text.bytes;
+			control->caret2.character = control->text.characters;
+		}
+
+		if (notification->command.command == osCommandCopy || notification->command.command == osCommandCut) {
+			OSString string;
+			int length = control->caret.byte - control->caret2.byte;
+			if (length < 0) length = -length;
+			string.bytes = length;
+			if (control->caret.byte > control->caret2.byte) string.buffer = control->text.buffer + control->caret2.byte;
+			else string.buffer = control->text.buffer + control->caret.byte;
+			CopyText(string);
+		}
+
+		if (notification->command.command == osCommandDelete || notification->command.command == osCommandCut || notification->command.command == osCommandPaste) {
+			RemoveSelectedText(control);
+		}
+
+		if (notification->command.command == osCommandPaste) {
+			int bytes = ClipboardTextBytes();
+			char *old = control->text.buffer;
+			control->text.buffer = (char *) GUIAllocate(control->text.bytes + bytes, false);
+			OSCopyMemory(control->text.buffer, old, control->caret.byte);
+			OSCopyMemory(control->text.buffer + control->caret.byte + bytes, old + control->caret.byte, control->text.bytes - control->caret.byte);
+			GUIFree(old);
+			char *c = control->text.buffer + control->caret.byte;
+			char *d = c;
+			OSSyscall(OS_SYSCALL_PASTE_TEXT, bytes, (uintptr_t) c, 0, 0);
+			size_t characters = 0;
+			while (c < d + bytes) { characters++; c = utf8_advance(c); }  
+			control->text.characters += characters;
+			control->caret.character += characters;
+			control->caret.byte += bytes;
+			control->text.bytes += bytes;
+			control->caret2 = control->caret;
+		}
+
+		RepaintControl(control);
+		TextboxEnsureCaretVisible(control);
+		return OS_CALLBACK_HANDLED;
+	}
+
+	return OS_CALLBACK_NOT_HANDLED;
+}
+
 OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	Textbox *control = (Textbox *) message->context;
 
@@ -1756,19 +1836,19 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	} else if (message->type == OS_MESSAGE_END_FOCUS) {
 		ensureCaretVisible = true;
 
-		OSMessage message;
+		OSNotification n;
 
 		if (!control->sentEditResultNotification) {
-			message.type = OS_NOTIFICATION_CANCEL_EDIT;
-			OSForwardMessage(control, control->notificationCallback, &message);
+			n.type = OS_NOTIFICATION_CANCEL_EDIT;
+			OSSendNotification(control, control->notificationCallback, &n, control->window->instance);
 
 			if (control->style == OS_TEXTBOX_STYLE_COMMAND) {
 				CreateString(control->previousString.buffer, control->previousString.bytes, &control->text, control->previousString.characters);
 			}
 		}
 
-		message.type = OS_NOTIFICATION_END_EDIT;
-		OSForwardMessage(control, control->notificationCallback, &message);
+		n.type = OS_NOTIFICATION_END_EDIT;
+		OSSendNotification(control, control->notificationCallback, &n, control->window->instance);
 		control->cursor = control->style == OS_TEXTBOX_STYLE_COMMAND ? OS_CURSOR_NORMAL : OS_CURSOR_TEXT;
 		control->window->cursor = (OSCursorStyle) control->cursor;
 
@@ -1794,16 +1874,16 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		OSEnableCommand(control->window, osCommandPaste, ClipboardTextBytes());
 		OSEnableCommand(control->window, osCommandSelectAll, true);
 
-		OSSetCommandNotificationCallback(control->window, osCommandPaste, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
-		OSSetCommandNotificationCallback(control->window, osCommandSelectAll, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
-		OSSetCommandNotificationCallback(control->window, osCommandCopy, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
-		OSSetCommandNotificationCallback(control->window, osCommandCut, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
-		OSSetCommandNotificationCallback(control->window, osCommandDelete, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
+		OSSetCommandNotificationCallback(control->window, osCommandPaste, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
+		OSSetCommandNotificationCallback(control->window, osCommandSelectAll, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
+		OSSetCommandNotificationCallback(control->window, osCommandCopy, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
+		OSSetCommandNotificationCallback(control->window, osCommandCut, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
+		OSSetCommandNotificationCallback(control->window, osCommandDelete, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
 
 		{
-			OSMessage message;
-			message.type = OS_NOTIFICATION_START_EDIT;
-			OSForwardMessage(control, control->notificationCallback, &message);
+			OSNotification n;
+			n.type = OS_NOTIFICATION_START_EDIT;
+			OSSendNotification(control, control->notificationCallback, &n, OSGetInstance(control));
 			control->cursor = OS_CURSOR_TEXT;
 			control->window->cursor = (OSCursorStyle) control->cursor;
 
@@ -1821,52 +1901,6 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		OSDisableCommand(control->window, osCommandCopy, true);
 		OSDisableCommand(control->window, osCommandCut, true);
 		OSDisableCommand(control->window, osCommandDelete, true);
-	} else if (message->type == OS_NOTIFICATION_COMMAND) {
-		ensureCaretVisible = true;
-		// TODO Code copy-and-pasted from KEY_TYPED below.
-
-		if (message->command.command == osCommandSelectAll) {
-			control->caret.byte = 0;
-			control->caret.character = 0;
-
-			control->caret2.byte = control->text.bytes;
-			control->caret2.character = control->text.characters;
-		}
-
-		if (message->command.command == osCommandCopy || message->command.command == osCommandCut) {
-			OSString string;
-			int length = control->caret.byte - control->caret2.byte;
-			if (length < 0) length = -length;
-			string.bytes = length;
-			if (control->caret.byte > control->caret2.byte) string.buffer = control->text.buffer + control->caret2.byte;
-			else string.buffer = control->text.buffer + control->caret.byte;
-			CopyText(string);
-		}
-
-		if (message->command.command == osCommandDelete || message->command.command == osCommandCut || message->command.command == osCommandPaste) {
-			RemoveSelectedText(control);
-		}
-
-		if (message->command.command == osCommandPaste) {
-			int bytes = ClipboardTextBytes();
-			char *old = control->text.buffer;
-			control->text.buffer = (char *) GUIAllocate(control->text.bytes + bytes, false);
-			OSCopyMemory(control->text.buffer, old, control->caret.byte);
-			OSCopyMemory(control->text.buffer + control->caret.byte + bytes, old + control->caret.byte, control->text.bytes - control->caret.byte);
-			GUIFree(old);
-			char *c = control->text.buffer + control->caret.byte;
-			char *d = c;
-			OSSyscall(OS_SYSCALL_PASTE_TEXT, bytes, (uintptr_t) c, 0, 0);
-			size_t characters = 0;
-			while (c < d + bytes) { characters++; c = utf8_advance(c); }  
-			control->text.characters += characters;
-			control->caret.character += characters;
-			control->caret.byte += bytes;
-			control->text.bytes += bytes;
-			control->caret2 = control->caret;
-		}
-
-		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
 		FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, message->mousePressed.clickChainCount);
 		lastClickChainCount = message->mousePressed.clickChainCount;
@@ -2060,16 +2094,16 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 			case OS_SCANCODE_ENTER: {
 				if (control->style == OS_TEXTBOX_STYLE_COMMAND) {
-					OSMessage message;
-					message.type = OS_NOTIFICATION_CONFIRM_EDIT;
-					OSForwardMessage(control, control->notificationCallback, &message);
+					OSNotification n;
+					n.type = OS_NOTIFICATION_CONFIRM_EDIT;
+					OSSendNotification(control, control->notificationCallback, &n, OSGetInstance(control));
 					control->sentEditResultNotification = true;
 
-					message.type = OS_NOTIFICATION_COMMAND;
-					message.command.window = control->window;
-					message.command.command = control->command;
+					n.type = OS_NOTIFICATION_COMMAND;
+					n.command.window = control->window;
+					n.command.command = control->command;
 
-					OSCallbackResponse response = OSForwardMessage(control, control->notificationCallback, &message);
+					OSCallbackResponse response = OSSendNotification(control, control->notificationCallback, &n, OSGetInstance(control));
 
 					if (response == OS_CALLBACK_REJECTED) {
 						CreateString(control->previousString.buffer, control->previousString.bytes, &control->text, control->previousString.characters);
@@ -2125,20 +2159,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	}
 
 	if (ensureCaretVisible) {
-		int caretX = MeasureStringWidth(control->text.buffer, control->caret2.byte, control->textSize, fontRegular) - control->scrollX;
-
-		int fullWidth = MeasureStringWidth(control->text.buffer, control->text.bytes, control->textSize, fontRegular);
-		int controlWidth = control->textBounds.right - control->textBounds.left;
-
-		if (caretX < 0) {
-			control->scrollX += caretX;
-		} else if (caretX > controlWidth) {
-			control->scrollX += caretX - controlWidth;
-		} else if (fullWidth - control->scrollX < controlWidth && fullWidth > controlWidth) {
-			control->scrollX = fullWidth - controlWidth;
-		} else if (fullWidth <= controlWidth) {
-			control->scrollX = 0;
-		}
+		TextboxEnsureCaretVisible(control);
 	}
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
@@ -2166,7 +2187,7 @@ OSObject OSCreateTextbox(OSTextboxStyle style) {
 	control->style = style;
 	control->rightClickMenu = osMenuTextboxContext;
 
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessTextboxMessage, control));
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessTextboxMessage, control));
 
 	return control;
 }
@@ -2175,13 +2196,13 @@ static void IssueCommand(Control *control, OSCommand *command = nullptr, Window 
 	if (!window) window = control->window;
 	if (!command) command = control->command;
 
-	if (control ? (control->disabled) : (window->commands[command->identifier].disabled)) {
+	if (control ? (control->disabled) : (((CommandInstance *) window->instance->commands)[command->identifier].disabled)) {
 		return;
 	}
 
 	bool checkable = control ? control->checkable : command->checkable;
 	bool radioCheck = control ? control->radioCheck : command->radioCheck;
-	bool isChecked = control ? control->isChecked : window->commands[command->identifier].checked;
+	bool isChecked = control ? control->isChecked : ((CommandInstance *) window->instance->commands)[command->identifier].checked;
 
 	if (radioCheck) {
 		isChecked = true;
@@ -2201,21 +2222,22 @@ static void IssueCommand(Control *control, OSCommand *command = nullptr, Window 
 		}
 	}
 
-	OSMessage message;
-	message.type = OS_NOTIFICATION_COMMAND;
-	message.command.checked = isChecked;
-	message.command.window = window;
-	message.command.command = command;
+	OSNotification n;
+	n.type = OS_NOTIFICATION_COMMAND;
+	n.command.checked = isChecked;
+	n.command.window = window;
+	n.command.command = command;
 
 	if (control) {
-		OSForwardMessage(control, control->notificationCallback, &message);
+		OSSendNotification(control, control->notificationCallback, &n, OSGetInstance(control));
 	} else {
-		OSForwardMessage(nullptr, window->commands[command->identifier].notificationCallback, &message);
+		OSSendNotification(window, ((CommandInstance *) window->instance->commands)[command->identifier].notificationCallback, &n, window->instance);
 	}
 
 	if (window->flags & OS_CREATE_WINDOW_MENU) {
-		message.type = OS_MESSAGE_DESTROY;
-		OSSendMessage(openMenus[0].window, &message);
+		OSMessage m;
+		m.type = OS_MESSAGE_DESTROY;
+		OSSendMessage(openMenus[0].window, &m);
 	}
 }
 
@@ -2263,7 +2285,7 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 	} 
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
-		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+		result = OSForwardMessage(object, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr), message);
 	}
 
 	return result;
@@ -2281,7 +2303,7 @@ OSObject OSCreateBlankControl(int width, int height, OSCursorStyle cursor, unsig
 	control->noAnimations = true;
 	control->customTextRendering = true;
 	control->cursor = cursor;
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr));
 	return control;
 }
 
@@ -2335,7 +2357,7 @@ OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 		}
 	}
 
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr));
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessButtonMessage, nullptr));
 
 	if (style != OS_BUTTON_STYLE_TOOLBAR_ICON_ONLY) {
 		OSSetText(control, command->label, command->labelBytes, OS_RESIZE_MODE_GROW_ONLY);
@@ -2433,7 +2455,7 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 	}
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
-		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr), message);
+		result = OSForwardMessage(object, OS_MAKE_MESSAGE_CALLBACK(ProcessButtonMessage, nullptr), message);
 	}
 
 	return result;
@@ -2472,7 +2494,7 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 		control->preferredWidth += 32;
 	}
 
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessMenuItemMessage, nullptr));
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessMenuItemMessage, nullptr));
 
 	return control;
 }
@@ -2489,7 +2511,7 @@ OSCallbackResponse ProcessMenuSeparatorMessage(OSObject object, OSMessage *messa
 	}
 
 	if (response == OS_CALLBACK_NOT_HANDLED) {
-		response = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+		response = OSForwardMessage(object, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr), message);
 	}
 
 	return response;
@@ -2501,7 +2523,7 @@ OSObject CreateMenuSeparator() {
 	control->drawParentBackground = true;
 	control->preferredWidth = 1;
 	control->preferredHeight = 3;
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessMenuSeparatorMessage, nullptr));
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessMenuSeparatorMessage, nullptr));
 	return control;
 }
 
@@ -2514,7 +2536,7 @@ OSObject OSCreateLine(bool orientation) {
 	control->preferredWidth = 1;
 	control->preferredHeight = 1;
 
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr));
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr));
 
 	return control;
 }
@@ -2529,7 +2551,7 @@ static OSCallbackResponse ProcessIconDisplayMessage(OSObject _object, OSMessage 
 				OS_DRAW_MODE_REPEAT_FIRST, 0xFF, message->paint.clip);
 		return OS_CALLBACK_HANDLED;
 	} else {
-		return OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+		return OSForwardMessage(_object, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr), message);
 	}
 }
 
@@ -2540,7 +2562,7 @@ OSObject OSCreateIconDisplay(uint16_t iconID) {
 	control->preferredWidth = 32;
 	control->preferredHeight = 32;
 
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessIconDisplayMessage, (void *) (uintptr_t) iconID));
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessIconDisplayMessage, (void *) (uintptr_t) iconID));
 	return control;
 }
 
@@ -2565,7 +2587,7 @@ static OSCallbackResponse ProcessLabelMessage(OSObject _object, OSMessage *messa
 #endif
 	
 	if (response == OS_CALLBACK_NOT_HANDLED) {
-		return OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+		return OSForwardMessage(_object, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr), message);
 	}
 
 	return response;
@@ -2578,7 +2600,7 @@ OSObject OSCreateLabel(char *text, size_t textBytes, bool wordWrap) {
 	control->textAlign = OS_DRAW_STRING_HALIGN_LEFT | (wordWrap ? (OS_DRAW_STRING_WORD_WRAP | OS_DRAW_STRING_VALIGN_TOP) : OS_DRAW_STRING_VALIGN_CENTER);
 
 	OSSetText(control, text, textBytes, OS_RESIZE_MODE_EXACT);
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessLabelMessage, nullptr));
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessLabelMessage, nullptr));
 
 	return control;
 }
@@ -2653,7 +2675,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 		}
 	} else if (message->type == OS_MESSAGE_PARENT_UPDATED) {
 		if (!control->maximum) {
-			OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+			OSForwardMessage(_object, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr), message);
 			control->timerHz = 30;
 			control->window->timerControls.InsertStart(&control->timerControlItem);
 		}
@@ -2663,7 +2685,7 @@ static OSCallbackResponse ProcessProgressBarMessage(OSObject _object, OSMessage 
 	}
 
 	if (response == OS_CALLBACK_NOT_HANDLED) {
-		response = OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+		response = OSForwardMessage(_object, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr), message);
 	}
 
 	return response;
@@ -2693,21 +2715,24 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool sm
 		control->value = -50;
 	}
 
-	OSSetCallback(control, OS_MAKE_CALLBACK(ProcessProgressBarMessage, nullptr));
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessProgressBarMessage, nullptr));
 
 	return control;
 }
 
-void OSSetInstance(OSObject _window, void *instance) {
-	((Window *) _window)->instance = instance;
-}
+OSInstance *OSGetInstance(OSObject _object) {
+	APIObject *object = (APIObject *) _object;
 
-void *OSGetInstance(OSObject _window) {
-	return ((Window *) _window)->instance;
-}
-
-void *OSGetInstanceFromControl(OSObject object) {
-	return ((Control *) object)->window->instance;
+	if (object->type == API_OBJECT_WINDOW) {
+		return ((Window *) object)->instance;
+	} else if (object->type == API_OBJECT_CONTROL) {
+		return ((Control *) object)->window->instance;
+	} else if (object->type == API_OBJECT_GRID) {
+		return ((Grid *) object)->window->instance;
+	} else {
+		OSCrashProcess(OS_FATAL_ERROR_INVALID_PANE_OBJECT);
+		return nullptr;
+	}
 }
 
 void OSGetText(OSObject _control, OSString *string) {
@@ -3309,7 +3334,7 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 		} break;
 	}
 
-	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr));
+	OSSetMessageCallback(grid, OS_MAKE_MESSAGE_CALLBACK(ProcessGridMessage, nullptr));
 
 	return grid;
 }
@@ -3335,9 +3360,10 @@ static void SliderValueModified(Slider *grid, bool sendNotification = true) {
 		OSSendMessage(grid, &message);
 
 		if (sendNotification) {
-			message.type = OS_NOTIFICATION_VALUE_CHANGED;
-			message.valueChanged.newValue = OSGetSliderPosition(grid);
-			OSForwardMessage(grid, grid->notificationCallback, &message);
+			OSNotification n;
+			n.type = OS_NOTIFICATION_VALUE_CHANGED;
+			n.valueChanged.newValue = OSGetSliderPosition(grid);
+			OSSendNotification(grid, grid->notificationCallback, &n, OSGetInstance(grid));
 		}
 	}
 }
@@ -3523,7 +3549,7 @@ OSCallbackResponse ProcessSliderMessage(OSObject object, OSMessage *message) {
 	}
 
 	if (response == OS_CALLBACK_NOT_HANDLED) {
-		response = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr), message);
+		response = OSForwardMessage(object, OS_MAKE_MESSAGE_CALLBACK(ProcessGridMessage, nullptr), message);
 	}
 
 	return response;
@@ -3555,7 +3581,7 @@ OSCallbackResponse ProcessSliderHandleMessage(OSObject object, OSMessage *messag
 	}
 
 	if (response == OS_CALLBACK_NOT_HANDLED) {
-		response = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+		response = OSForwardMessage(object, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr), message);
 	}
 
 	return response;
@@ -3589,7 +3615,7 @@ OSObject OSCreateSlider(int minimum, int maximum, int initialValue,
 		slider->preferredWidth = 28;
 	}
 
-	OSSetCallback(slider, OS_MAKE_CALLBACK(ProcessSliderMessage, nullptr));
+	OSSetMessageCallback(slider, OS_MAKE_MESSAGE_CALLBACK(ProcessSliderMessage, nullptr));
 
 	{
 		SliderHandle *handle = (SliderHandle *) GUIAllocate(sizeof(SliderHandle), true);
@@ -3601,7 +3627,7 @@ OSObject OSCreateSlider(int minimum, int maximum, int initialValue,
 		handle->drawParentBackground = true;
 		handle->hasFocusedBackground = true;
 		OSAddControl(slider, 0, 0, handle, 0);
-		OSSetCallback(handle, OS_MAKE_CALLBACK(ProcessSliderHandleMessage, nullptr));
+		OSSetMessageCallback(handle, OS_MAKE_MESSAGE_CALLBACK(ProcessSliderHandleMessage, nullptr));
 
 		if (mode & OS_SLIDER_MODE_HORIZONTAL) {
 			if ((mode & OS_SLIDER_MODE_TICKS_BENEATH) && (mode & OS_SLIDER_MODE_TICKS_ABOVE)) {
@@ -3717,22 +3743,22 @@ static OSCallbackResponse ProcessScrollPaneMessage(OSObject _object, OSMessage *
 	}
 
 	if (response == OS_CALLBACK_NOT_HANDLED) {
-		response = OSForwardMessage(_object, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr), message);
+		response = OSForwardMessage(_object, OS_MAKE_MESSAGE_CALLBACK(ProcessGridMessage, nullptr), message);
 	}
 
 	return response;
 }
 
-OSCallbackResponse ScrollPaneBarMoved(OSObject _object, OSMessage *message) {
-	Scrollbar *scrollbar = (Scrollbar *) _object;
-	Grid *grid = (Grid *) message->context;
+OSCallbackResponse ScrollPaneBarMoved(OSNotification *notification) {
+	Scrollbar *scrollbar = (Scrollbar *) notification->generator;
+	Grid *grid = (Grid *) notification->context;
 
 	if (scrollbar->orientation) {
 		// Vertical scrollbar.
-		grid->yOffset = message->valueChanged.newValue;
+		grid->yOffset = notification->valueChanged.newValue;
 	} else {
 		// Horizontal scrollbar.
-		grid->xOffset = message->valueChanged.newValue;
+		grid->xOffset = notification->valueChanged.newValue;
 	}
 
 	SetParentDescendentInvalidationFlags(grid, DESCENDENT_RELAYOUT);
@@ -3743,7 +3769,7 @@ OSCallbackResponse ScrollPaneBarMoved(OSObject _object, OSMessage *message) {
 
 OSObject OSCreateScrollPane(OSObject content, unsigned flags) {
 	OSObject grid = OSCreateGrid(2, 2, OS_GRID_STYLE_LAYOUT);
-	OSSetCallback(grid, OS_MAKE_CALLBACK(ProcessScrollPaneMessage, nullptr));
+	OSSetMessageCallback(grid, OS_MAKE_MESSAGE_CALLBACK(ProcessScrollPaneMessage, nullptr));
 
 	OSAddGrid(grid, 0, 0, content, OS_CELL_FILL);
 	((Grid *) content)->treatPreferredDimensionsAsMinima = true;
@@ -3751,14 +3777,14 @@ OSObject OSCreateScrollPane(OSObject content, unsigned flags) {
 	if (flags & OS_CREATE_SCROLL_PANE_VERTICAL) {
 		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_VERTICAL, true);
 		OSAddGrid(grid, 1, 0, scrollbar, OS_CELL_V_PUSH | OS_CELL_V_EXPAND);
-		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollPaneBarMoved, content));
+		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_NOTIFICATION_CALLBACK(ScrollPaneBarMoved, content));
 		// OSPrint("vertical %x\n", scrollbar);
 	}
 
 	if (flags & OS_CREATE_SCROLL_PANE_HORIZONTAL) {
 		OSObject scrollbar = OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL, true);
 		OSAddGrid(grid, 0, 1, scrollbar, OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
-		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollPaneBarMoved, content));
+		OSSetObjectNotificationCallback(scrollbar, OS_MAKE_NOTIFICATION_CALLBACK(ScrollPaneBarMoved, content));
 		// OSPrint("horizontal %x\n", scrollbar);
 	}
 
@@ -3790,26 +3816,26 @@ int OSGetScrollbarPosition(OSObject object) {
 }
 
 static void ScrollbarPositionChanged(Scrollbar *scrollbar) {
-	OSMessage message;
-	message.type = OS_NOTIFICATION_VALUE_CHANGED;
-	message.valueChanged.newValue = OSGetScrollbarPosition(scrollbar);
-	OSForwardMessage(scrollbar, scrollbar->notificationCallback, &message);
+	OSNotification n;
+	n.type = OS_NOTIFICATION_VALUE_CHANGED;
+	n.valueChanged.newValue = OSGetScrollbarPosition(scrollbar);
+	OSSendNotification(scrollbar, scrollbar->notificationCallback, &n, OSGetInstance(scrollbar));
 }
 
-static OSCallbackResponse ScrollbarButtonPressed(OSObject object, OSMessage *message) {
-	Control *button = (Control *) object;
+static OSCallbackResponse ScrollbarButtonPressed(OSNotification *notification) {
+	Control *button = (Control *) notification->generator;
 	Scrollbar *scrollbar = (Scrollbar *) button->context;
 
 	int position = OSGetScrollbarPosition(scrollbar);
 	int amount = SCROLLBAR_BUTTON_AMOUNT;
 
-	if (message->context == SCROLLBAR_BUTTON_UP) {
+	if (notification->context == SCROLLBAR_BUTTON_UP) {
 		position -= amount;
-	} else if (message->context == SCROLLBAR_BUTTON_DOWN) {
+	} else if (notification->context == SCROLLBAR_BUTTON_DOWN) {
 		position += amount;
-	} else if (message->context == SCROLLBAR_NUDGE_UP) {
+	} else if (notification->context == SCROLLBAR_NUDGE_UP) {
 		position -= scrollbar->viewportSize;
-	} else if (message->context == SCROLLBAR_NUDGE_DOWN) {
+	} else if (notification->context == SCROLLBAR_NUDGE_DOWN) {
 		position += scrollbar->viewportSize;
 	}
 
@@ -3961,7 +3987,7 @@ static OSCallbackResponse ProcessScrollbarGripMessage(OSObject object, OSMessage
 		}
 	}
 
-	return OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessControlMessage, nullptr), message);
+	return OSForwardMessage(object, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr), message);
 }
 
 static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *message) {
@@ -4005,7 +4031,7 @@ static OSCallbackResponse ProcessScrollbarMessage(OSObject object, OSMessage *me
 	}
 
 	if (result == OS_CALLBACK_NOT_HANDLED) {
-		result = OSForwardMessage(object, OS_MAKE_CALLBACK(ProcessGridMessage, nullptr), message);
+		result = OSForwardMessage(object, OS_MAKE_MESSAGE_CALLBACK(ProcessGridMessage, nullptr), message);
 	}
 
 	return result;
@@ -4077,7 +4103,7 @@ OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition) {
 
 	Scrollbar *scrollbar = (Scrollbar *) memory;
 	scrollbar->type = API_OBJECT_GRID;
-	OSSetCallback(scrollbar, OS_MAKE_CALLBACK(ProcessScrollbarMessage, nullptr));
+	OSSetMessageCallback(scrollbar, OS_MAKE_MESSAGE_CALLBACK(ProcessScrollbarMessage, nullptr));
 
 	scrollbar->orientation = orientation;
 	scrollbar->automaticallyUpdatePosition = automaticallyUpdatePosition;
@@ -4095,21 +4121,21 @@ OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition) {
 	Control *nudgeUp = (Control *) GUIAllocate(sizeof(Control), true);
 	nudgeUp->type = API_OBJECT_CONTROL;
 	nudgeUp->context = scrollbar;
-	nudgeUp->notificationCallback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_UP);
+	nudgeUp->notificationCallback = OS_MAKE_NOTIFICATION_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_UP);
 	nudgeUp->backgrounds = orientation ? scrollbarTrackVerticalBackgrounds : scrollbarTrackHorizontalBackgrounds;
 	nudgeUp->useClickRepeat = true;
-	OSSetCallback(nudgeUp, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr));
+	OSSetMessageCallback(nudgeUp, OS_MAKE_MESSAGE_CALLBACK(ProcessButtonMessage, nullptr));
 
-	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_DOWN);
+	command.callback = OS_MAKE_NOTIFICATION_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_DOWN);
 	Control *nudgeDown = (Control *) GUIAllocate(sizeof(Control), true);
 	nudgeDown->type = API_OBJECT_CONTROL;
 	nudgeDown->context = scrollbar;
-	nudgeDown->notificationCallback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_DOWN);
+	nudgeDown->notificationCallback = OS_MAKE_NOTIFICATION_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_NUDGE_DOWN);
 	nudgeDown->backgrounds = orientation ? scrollbarTrackVerticalBackgrounds : scrollbarTrackHorizontalBackgrounds;
 	nudgeDown->useClickRepeat = true;
-	OSSetCallback(nudgeDown, OS_MAKE_CALLBACK(ProcessButtonMessage, nullptr));
+	OSSetMessageCallback(nudgeDown, OS_MAKE_MESSAGE_CALLBACK(ProcessButtonMessage, nullptr));
 
-	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_UP);
+	command.callback = OS_MAKE_NOTIFICATION_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_UP);
 	Control *up = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_REPEAT);
 	up->backgrounds = scrollbarButtonHorizontalBackgrounds;
 	up->context = scrollbar;
@@ -4122,9 +4148,9 @@ OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdatePosition) {
 	grip->type = API_OBJECT_CONTROL;
 	grip->context = scrollbar;
 	grip->backgrounds = orientation ? scrollbarButtonVerticalBackgrounds : scrollbarButtonHorizontalBackgrounds;
-	OSSetCallback(grip, OS_MAKE_CALLBACK(ProcessScrollbarGripMessage, nullptr));
+	OSSetMessageCallback(grip, OS_MAKE_MESSAGE_CALLBACK(ProcessScrollbarGripMessage, nullptr));
 
-	command.callback = OS_MAKE_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_DOWN);
+	command.callback = OS_MAKE_NOTIFICATION_CALLBACK(ScrollbarButtonPressed, SCROLLBAR_BUTTON_DOWN);
 	Control *down = (Control *) OSCreateButton(&command, OS_BUTTON_STYLE_REPEAT);
 	down->backgrounds = scrollbarButtonHorizontalBackgrounds;
 	down->context = scrollbar;
@@ -4151,14 +4177,14 @@ void OSDisableControl(OSObject _control, bool disabled) {
 	OSSendMessage(_control, &message);
 }
 
-void OSSetObjectNotificationCallback(OSObject _object, OSCallback callback) {
+void OSSetObjectNotificationCallback(OSObject _object, OSNotificationCallback callback) {
 	GUIObject *object = (GUIObject *) _object;
 	object->notificationCallback = callback;
 }
 
-void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback) {
+void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSNotificationCallback callback) {
 	Window *window = (Window *) _window;
-	CommandWindow *command = window->commands + _command->identifier;
+	CommandInstance *command = ((CommandInstance *) window->instance->commands) + _command->identifier;
 	command->notificationCallback = callback;
 
 	LinkedItem<Control> *item = command->controls.firstItem;
@@ -4172,7 +4198,7 @@ void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSC
 
 void OSDisableCommand(OSObject _window, OSCommand *_command, bool disabled) {
 	Window *window = (Window *) _window;
-	CommandWindow *command = window->commands + _command->identifier;
+	CommandInstance *command = ((CommandInstance *) window->instance->commands) + _command->identifier;
 	if (command->disabled == disabled) return;
 	command->disabled = disabled;
 
@@ -4187,7 +4213,7 @@ void OSDisableCommand(OSObject _window, OSCommand *_command, bool disabled) {
 
 bool OSGetCommandCheck(OSObject _window, OSCommand *_command) {
 	Window *window = (Window *) _window;
-	CommandWindow *command = window->commands + _command->identifier;
+	CommandInstance *command = ((CommandInstance *) window->instance->commands) + _command->identifier;
 	return command->checked;
 }
 
@@ -4205,7 +4231,7 @@ void OSCheckCommand(OSObject _window, OSCommand *_command, bool checked) {
 				continue;
 			}
 
-			CommandWindow *command = window->commands + i;
+			CommandInstance *command = ((CommandInstance *) window->instance->commands) + i;
 			command->checked = false;
 			LinkedItem<Control> *item = command->controls.firstItem;
 
@@ -4217,7 +4243,7 @@ void OSCheckCommand(OSObject _window, OSCommand *_command, bool checked) {
 		}
 	} 
 
-	CommandWindow *command = window->commands + _command->identifier;
+	CommandInstance *command = (CommandInstance *) window->instance->commands + _command->identifier;
 	command->checked = checked;
 	LinkedItem<Control> *item = command->controls.firstItem;
 
@@ -4733,13 +4759,13 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
 			{
-				OSMessage m;
-				m.type = OS_NOTIFICATION_DIALOG_CLOSE;
-				response = OSForwardMessage(window, window->notificationCallback, &m);
+				OSNotification n;
+				n.type = OS_NOTIFICATION_DIALOG_CLOSE;
+				response = OSSendNotification(window, window->notificationCallback, &n, window->instance);
 			}
 
 			if (!window->hasMenuParent) {
-				GUIFree(window->commands);
+				GUIFree(window->instance->commands);
 			}
 
 			window->windowItem.RemoveFromList();
@@ -4956,12 +4982,12 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			}
 
 			if (!window->hasMenuParent) {
-				OSMessage message = {};
-				message.type = OS_NOTIFICATION_COMMAND;
-				message.command.window = window;
-				message.command.command = osCommandDestroyWindow;
+				OSNotification n = {};
+				n.type = OS_NOTIFICATION_COMMAND;
+				n.command.window = window;
+				n.command.command = osCommandDestroyWindow;
 				int32_t identifier = osCommandDestroyWindow->identifier;
-				OSForwardMessage(nullptr, window->commands[identifier].notificationCallback, &message);
+				OSSendNotification(window, ((CommandInstance *) window->instance->commands)[identifier].notificationCallback, &n, window->instance);
 			}
 
 			OSSendMessage(window->root, message);
@@ -5258,7 +5284,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	return response;
 }
 
-static Window *CreateWindow(OSWindowSpecification *specification, Window *menuParent, unsigned x = 0, unsigned y = 0, Window *modalParent = nullptr) {
+static Window *CreateWindow(OSWindowSpecification *specification, Window *menuParent, unsigned x = 0, unsigned y = 0, Window *modalParent = nullptr, OSInstance *instance = nullptr) {
 	unsigned flags = specification->flags;
 
 	if (!flags) {
@@ -5288,10 +5314,14 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 
 	if (menuParent) {
 		window->instance = menuParent->instance;
-	}
-
-	if (modalParent) {
+		window->hasMenuParent = true;
+	} else if (modalParent) {
 		window->instance = modalParent->instance;
+	} else if (instance) {
+		window->instance = instance;
+	} else {
+		// TODO Memory leak.
+		window->instance = (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true);
 	}
 
 	OSRectangle bounds;
@@ -5312,20 +5342,17 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	window->minimumHeight = minimumHeight;
 
 	if (!menuParent) {
-		window->commands = (CommandWindow *) GUIAllocate(sizeof(CommandWindow) * _commandCount, true);
+		window->instance->commands = GUIAllocate(sizeof(CommandInstance) * _commandCount, true);
 
 		for (uintptr_t i = 0; i < _commandCount; i++) {
-			CommandWindow *command = window->commands + i;
+			CommandInstance *command = (CommandInstance *) window->instance->commands + i;
 			command->disabled = _commands[i]->defaultDisabled;
 			command->checked = _commands[i]->defaultCheck;
 			command->notificationCallback = _commands[i]->callback;
 		}
-	} else {
-		window->commands = menuParent->commands;
-		window->hasMenuParent = true;
 	}
 
-	OSSetCallback(window, OS_MAKE_CALLBACK(ProcessWindowMessage, nullptr));
+	OSSetMessageCallback(window, OS_MAKE_MESSAGE_CALLBACK(ProcessWindowMessage, nullptr));
 
 	window->root = (Grid *) OSCreateGrid(3, 4, OS_GRID_STYLE_LAYOUT);
 	window->root->noRightToLeftLayout = true;
@@ -5379,26 +5406,22 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	return window;
 }
 
-OSObject OSCreateWindow(OSWindowSpecification *specification) {
-	return CreateWindow(specification, nullptr);
+OSObject OSCreateWindow(OSWindowSpecification *specification, OSInstance *instance) {
+	return CreateWindow(specification, nullptr, 0, 0, nullptr, instance);
 }
 
-static OSCallbackResponse CommandDialogAlertOK(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type == OS_NOTIFICATION_COMMAND) {
-		OSCloseWindow(message->context);
+static OSCallbackResponse CommandDialogAlertOK(OSNotification *notification) {
+	if (notification->type == OS_NOTIFICATION_COMMAND) {
+		OSCloseWindow(notification->context);
 		return OS_CALLBACK_HANDLED;
 	}
 
 	return OS_CALLBACK_NOT_HANDLED;
 }
 
-static OSCallbackResponse CommandDialogAlertCancel(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type == OS_NOTIFICATION_COMMAND) {
-		OSCloseWindow(message->context);
+static OSCallbackResponse CommandDialogAlertCancel(OSNotification *notification) {
+	if (notification->type == OS_NOTIFICATION_COMMAND) {
+		OSCloseWindow(notification->context);
 		return OS_CALLBACK_HANDLED;
 	}
 
@@ -5457,12 +5480,12 @@ OSObject OSShowDialogTextPrompt(char *title, size_t titleBytes,
 
 	OSObject okButton = OSCreateButton(command, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
+	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertOK, dialog));
 	OSSetFocusedControl(okButton, false);
 
 	OSObject cancelButton = OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 1, 0, cancelButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertCancel, dialog));
+	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertCancel, dialog));
 
 	*textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);
 	OSAddControl(layouts[3], 0, 1, *textbox, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
@@ -5484,7 +5507,7 @@ OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 
 	OSObject cancelButton = OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 1, 0, cancelButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertCancel, dialog));
+	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertCancel, dialog));
 	if (command->dangerous) OSSetFocusedControl(cancelButton, false);
 
 	OSAddControl(layouts[3], 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
@@ -5501,8 +5524,8 @@ OSObject OSShowDialogAlert(char *title, size_t titleBytes,
 
 	OSObject okButton = OSCreateButton(osDialogStandardOK, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
-	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_CALLBACK(CommandDialogAlertOK, dialog));
+	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertOK, dialog));
+	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertOK, dialog));
 	OSSetFocusedControl(okButton, false);
 
 	OSAddControl(layouts[3], 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);

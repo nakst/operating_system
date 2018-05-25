@@ -6,10 +6,12 @@
 		(KERNEL_OBJECT_MUTEX | KERNEL_OBJECT_PROCESS | KERNEL_OBJECT_THREAD \
 		 | KERNEL_OBJECT_SHMEM | KERNEL_OBJECT_NODE | KERNEL_OBJECT_EVENT \
 		 | KERNEL_OBJECT_SURFACE | KERNEL_OBJECT_WINDOW | KERNEL_OBJECT_IO_REQUEST \
-		 | KERNEL_OBJECT_CONSTANT_BUFFER))
+		 | KERNEL_OBJECT_CONSTANT_BUFFER | KERNEL_OBJECT_INSTANCE))
 
 enum KernelObjectType {
 	COULD_NOT_RESOLVE_HANDLE	= 0x00000000,
+	KERNEL_OBJECT_NONE		= 0x00008000,
+
 	KERNEL_OBJECT_PROCESS 		= 0x00000001,
 	KERNEL_OBJECT_THREAD		= 0x00000002,
 	KERNEL_OBJECT_SURFACE		= 0x00000004,
@@ -20,7 +22,7 @@ enum KernelObjectType {
 	KERNEL_OBJECT_EVENT		= 0x00000080,
 	KERNEL_OBJECT_IO_REQUEST	= 0x00000100,
 	KERNEL_OBJECT_CONSTANT_BUFFER	= 0x00000200,
-	KERNEL_OBJECT_NONE		= 0x00008000,
+	KERNEL_OBJECT_INSTANCE		= 0x00000400,
 };
 
 inline KernelObjectType operator|(KernelObjectType a, KernelObjectType b) {
@@ -192,6 +194,18 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 		case KERNEL_OBJECT_CONSTANT_BUFFER: {
 			ConstantBuffer *buffer = (ConstantBuffer *) object;
 			OSHeapFree(object, sizeof(ConstantBuffer) + buffer->bytes);
+		} break;
+
+		case KERNEL_OBJECT_INSTANCE: {
+			ProgramInstance *instance = (ProgramInstance *) object;
+			instance->mutex.Acquire();
+			instance->handles--;
+			bool destroy = !instance->handles;
+			instance->mutex.Release();
+
+			if (destroy) {
+				OSHeapFree(instance);
+			}
 		} break;
 
 		default: {

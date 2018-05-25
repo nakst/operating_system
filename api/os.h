@@ -226,10 +226,10 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_BAD_OBJECT_TYPE,
 	OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED,
 	OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS,
-	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_INVALID_STRING_LENGTH,
 	OS_FATAL_ERROR_SPINLOCK_NOT_ACQUIRED,
 	OS_FATAL_ERROR_UNKNOWN_SNAPSHOT_TYPE,
+	OS_FATAL_ERROR_COUNT,
 } OSFatalError;
 
 // These must be negative.
@@ -425,7 +425,8 @@ typedef struct OSRectangle {
 
 #define OS_MAKE_RECTANGLE_ALL(x) ((OSRectangle){(int32_t)(x),(int32_t)(x),(int32_t)(x),(int32_t)(x)})
 #define OS_MAKE_RECTANGLE(l, r, t, b) ((OSRectangle){(int32_t)(l),(int32_t)(r),(int32_t)(t),(int32_t)(b)})
-#define OS_MAKE_CALLBACK(a, b) ((OSCallback){(a),(b)})
+#define OS_MAKE_MESSAGE_CALLBACK(a, b) ((OSMessageCallback){(a),(b)})
+#define OS_MAKE_NOTIFICATION_CALLBACK(a, b) ((OSNotificationCallback){(a),(b)})
 #define OS_MAKE_POINT(x, y) ((OSPoint){(int32_t)(x),(int32_t)(y)})
 
 typedef struct OSColor {
@@ -562,6 +563,110 @@ typedef enum OSGridStyle {
 	OS_GRID_STYLE_BLANK_MENU,
 } OSGridStyle;
 
+typedef enum OSNotificationType {
+	OS_NOTIFICATION_COMMAND			= 0x2000,
+	OS_NOTIFICATION_VALUE_CHANGED		= 0x2001,
+	OS_NOTIFICATION_GET_ITEM		= 0x2002,
+	OS_NOTIFICATION_SET_ITEM		= 0x2004,
+	OS_NOTIFICATION_START_EDIT		= 0x2005,
+	OS_NOTIFICATION_END_EDIT		= 0x2006,
+	OS_NOTIFICATION_CANCEL_EDIT		= 0x2007,
+	OS_NOTIFICATION_CONFIRM_EDIT		= 0x2008,
+	OS_NOTIFICATION_CHOOSE_ITEM		= 0x2009,
+	OS_NOTIFICATION_CONVERT_Y_TO_INDEX	= 0x200A,
+	OS_NOTIFICATION_MEASURE_HEIGHT		= 0x200B,
+	OS_NOTIFICATION_PAINT_ITEM		= 0x200C,
+	OS_NOTIFICATION_PAINT_CELL		= 0x200D,
+	OS_NOTIFICATION_SET_ITEM_RANGE		= 0x200E,
+	OS_NOTIFICATION_SORT_COLUMN		= 0x200F,
+	OS_NOTIFICATION_RIGHT_CLICK		= 0x2010,
+	OS_NOTIFICATION_DIALOG_CLOSE		= 0x2011,
+} OSNotificationType;
+
+typedef struct OSNotification {
+	OSObject generator;
+	struct OSInstance *instance;
+	OSNotificationType type;
+	void *context;
+
+	union {
+		struct {
+			OSObject window;
+			struct OSCommand *command;
+			bool checked;
+		} command;
+
+		struct {
+			int newValue;
+		} valueChanged;
+
+#define OS_LIST_VIEW_ITEM_SELECTED	   (0x0001)
+#define OS_LIST_VIEW_ITEM_CUSTOM	   (0x0002)
+#define OS_LIST_VIEW_ITEM_SELECTED_2	   (0x0004) // Selected by the selection box; cleared when the mouse is released.
+#define OS_LIST_VIEW_ITEM_TEXT             (0x10000)
+#define OS_LIST_VIEW_ITEM_ICON		   (0x20000)
+#define OS_LIST_VIEW_ITEM_WIDTH		   (0x40000)
+#define OS_LIST_VIEW_ITEM_HEIGHT	   (0x80000)
+#define OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT   (-1)
+		struct {
+			char *text; 
+			size_t textBytes;
+			uint32_t mask;
+			int32_t index, column;
+			uint16_t iconID, state;
+			int16_t width, height;
+		} listViewItem;
+
+		struct {
+			int32_t indexFrom, indexTo;
+			uint16_t state, mask;
+		} listViewItemRange;
+
+		struct {
+			int32_t index;
+			bool descending;
+		} listViewColumn;
+
+		struct {
+			int y;
+			uintptr_t index;
+			int offset;
+
+			int knownY;
+			uintptr_t knownIndex;
+		} convertYToIndex;
+
+		struct {
+			uintptr_t fromIndex, toIndex;
+			int height;
+		} measureHeight;
+
+		struct {
+			OSHandle surface;
+			OSRectangle bounds;
+			OSRectangle clip;
+			int32_t index;
+		} paintItem;
+
+		struct {
+			OSHandle surface;
+			OSRectangle bounds;
+			OSRectangle clip;
+			int32_t index, column;
+		} paintCell;
+
+		struct {
+			int positionX;
+			int positionY;
+			int positionXScreen;
+			int positionYScreen;
+			uint8_t clickChainCount;
+			uint8_t activationClick : 1;
+			uint8_t alt : 1, ctrl : 1, shift : 1;
+		} mousePressed;
+	};
+} OSNotification;
+
 typedef enum OSMessageType {
 	// GUI messages:
 
@@ -613,25 +718,6 @@ typedef enum OSMessageType {
 	OS_MESSAGE_MODAL_PARENT_CLICKED		= 0x1010,
 	OS_MESSAGE_UPDATE_WINDOW		= 0x1011,
 	OS_MESSAGE_CLICK_REPEAT			= 0x1012,
-
-	// Notifications:
-	OS_NOTIFICATION_COMMAND			= 0x2000,
-	OS_NOTIFICATION_VALUE_CHANGED		= 0x2001,
-	OS_NOTIFICATION_GET_ITEM		= 0x2002,
-	OS_NOTIFICATION_SET_ITEM		= 0x2004,
-	OS_NOTIFICATION_START_EDIT		= 0x2005,
-	OS_NOTIFICATION_END_EDIT		= 0x2006,
-	OS_NOTIFICATION_CANCEL_EDIT		= 0x2007,
-	OS_NOTIFICATION_CONFIRM_EDIT		= 0x2008,
-	OS_NOTIFICATION_CHOOSE_ITEM		= 0x2009,
-	OS_NOTIFICATION_CONVERT_Y_TO_INDEX	= 0x200A,
-	OS_NOTIFICATION_MEASURE_HEIGHT		= 0x200B,
-	OS_NOTIFICATION_PAINT_ITEM		= 0x200C,
-	OS_NOTIFICATION_PAINT_CELL		= 0x200D,
-	OS_NOTIFICATION_SET_ITEM_RANGE		= 0x200E,
-	OS_NOTIFICATION_SORT_COLUMN		= 0x200F,
-	OS_NOTIFICATION_RIGHT_CLICK		= 0x2010,
-	OS_NOTIFICATION_DIALOG_CLOSE		= 0x2011,
 
 	// Desktop messages:
 	OS_MESSAGE_EXECUTE_PROGRAM		= 0x4800,
@@ -749,71 +835,6 @@ typedef struct OSMessage {
 		} hitTest;
 
 		struct {
-			OSObject window;
-			struct OSCommand *command;
-			bool checked;
-		} command;
-
-		struct {
-			int newValue;
-		} valueChanged;
-
-#define OS_LIST_VIEW_ITEM_SELECTED	   (0x0001)
-#define OS_LIST_VIEW_ITEM_CUSTOM	   (0x0002)
-#define OS_LIST_VIEW_ITEM_SELECTED_2	   (0x0004) // Selected by the selection box; cleared when the mouse is released.
-#define OS_LIST_VIEW_ITEM_TEXT             (0x10000)
-#define OS_LIST_VIEW_ITEM_ICON		   (0x20000)
-#define OS_LIST_VIEW_ITEM_WIDTH		   (0x40000)
-#define OS_LIST_VIEW_ITEM_HEIGHT	   (0x80000)
-#define OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT   (-1)
-		struct {
-			char *text; 
-			size_t textBytes;
-			uint32_t mask;
-			int32_t index, column;
-			uint16_t iconID, state;
-			int16_t width, height;
-		} listViewItem;
-
-		struct {
-			int32_t indexFrom, indexTo;
-			uint16_t state, mask;
-		} listViewItemRange;
-
-		struct {
-			int32_t index;
-			bool descending;
-		} listViewColumn;
-
-		struct {
-			int y;
-			uintptr_t index;
-			int offset;
-
-			int knownY;
-			uintptr_t knownIndex;
-		} convertYToIndex;
-
-		struct {
-			uintptr_t fromIndex, toIndex;
-			int height;
-		} measureHeight;
-
-		struct {
-			OSHandle surface;
-			OSRectangle bounds;
-			OSRectangle clip;
-			int32_t index;
-		} paintItem;
-
-		struct {
-			OSHandle surface;
-			OSRectangle bounds;
-			OSRectangle clip;
-			int32_t index, column;
-		} paintCell;
-
-		struct {
 			uintptr_t index;
 			void *value;
 		} setProperty;
@@ -855,12 +876,18 @@ typedef struct OSDebuggerMessage {
 } OSDebuggerMessage;
 
 typedef int OSCallbackResponse;
-typedef OSCallbackResponse (*OSCallbackFunction)(OSObject object, OSMessage *);
+typedef OSCallbackResponse (*OSMessageCallbackFunction)(OSObject object, OSMessage *);
+typedef OSCallbackResponse (*OSNotificationCallbackFunction)(OSNotification *notification);
 
-typedef struct OSCallback {
-	OSCallbackFunction function;
+typedef struct OSMessageCallback {
+	OSMessageCallbackFunction function;
 	void *context;
-} OSCallback;
+} OSMessageCallback;
+
+typedef struct OSNotificationCallback {
+	OSNotificationCallbackFunction function;
+	void *context;
+} OSNotificationCallback;
 
 typedef struct OSMenuItem {
 	enum {
@@ -904,7 +931,7 @@ typedef struct OSCommand {
 
 	uint16_t iconID;
 
-	OSCallback callback;
+	OSNotificationCallback callback;
 } OSCommand;
 
 typedef struct OSWindowSpecification {
@@ -949,6 +976,12 @@ typedef struct OSSnapshotProcesses {
 	size_t count;
 	OSSnapshotProcessesItem processes[];
 } OSSnapshotProcesses;
+
+typedef struct OSInstance {
+	void *commands;
+	void *argument;
+	OSHandle handle;
+} OSInstance;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)
@@ -1162,8 +1195,9 @@ OS_EXTERN_C void OSSetCursor(OSObject window, OSCursorStyle cursor);
 OS_EXTERN_C OSError OSPostMessage(OSMessage *message);
 OS_EXTERN_C OSError OSPostMessageRemote(OSHandle process, OSMessage *message);
 OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
-OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSObject target, OSCallback callback, OSMessage *message);
-OS_EXTERN_C OSCallback OSSetCallback(OSObject generator, OSCallback callback); // Returns old callback.
+OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSObject target, OSMessageCallback callback, OSMessage *message);
+OS_EXTERN_C OSMessageCallback OSSetMessageCallback(OSObject generator, OSMessageCallback callback); // Returns old callback.
+OS_EXTERN_C OSCallbackResponse OSSendNotification(OSObject generator, OSNotificationCallback callback, OSNotification *notification, OSInstance *instance);
 
 OS_EXTERN_C void OSProcessMessages();
 OS_EXTERN_C void OSSendIdleMessages(bool enabled);
@@ -1180,19 +1214,18 @@ OS_EXTERN_C void OSDisableCommand(OSObject window, OSCommand *command, bool disa
 OS_EXTERN_C void OSCheckCommand(OSObject window, OSCommand *command, bool checked);
 OS_EXTERN_C bool OSGetCommandCheck(OSObject window, OSCommand *command);
 #define OSEnableCommand(_window, _command, _enabled) OSDisableCommand((_window), (_command), !(_enabled))
-OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSCallback callback);
-OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSCallback callback);
+OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSNotificationCallback callback);
+OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSNotificationCallback callback);
 OS_EXTERN_C void OSSetControlCommand(OSObject control, OSCommand *command);
 OS_EXTERN_C void OSIssueCommand(OSCommand *command, OSObject window);
 
-OS_EXTERN_C void OSSetInstance(OSObject window, void *instance);
-OS_EXTERN_C void *OSGetInstance(OSObject window);
-OS_EXTERN_C void *OSGetInstanceFromControl(OSObject object);
+OS_EXTERN_C void OSSetInstance(OSObject window, OSInstance *instance);
+OS_EXTERN_C OSInstance *OSGetInstance(OSObject window);
 
 OS_EXTERN_C void OSDebugGUIObject(OSObject guiObject);
 
 OS_EXTERN_C OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);
-OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification);
+OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification, OSInstance *instance);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style);
 OS_EXTERN_C OSObject OSCreateScrollPane(OSObject content, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);

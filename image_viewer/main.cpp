@@ -15,12 +15,12 @@
 // TODO Clip the panning positions.
 // TODO Prevent zooming changing the pan?
 
-struct Instance {
+struct Instance : OSInstance {
 	OSObject window,
 		 imageDisplay;
 
 	OSHandle imageSurface;
-	OSCallback imageDisplayParentCallback;
+	OSMessageCallback imageDisplayParentCallback;
 	int imageWidth, imageHeight;
 	float zoom, panX, panY;
 	float panOffsetX, panOffsetY;
@@ -45,11 +45,9 @@ struct Global {
 
 Global global;
 
-OSCallbackResponse CommandZoom(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type == OS_NOTIFICATION_COMMAND) {
-		Instance *instance = (Instance *) OSGetInstanceFromControl(object);
+OSCallbackResponse CommandZoom(OSNotification *notification) {
+	if (notification->type == OS_NOTIFICATION_COMMAND) {
+		Instance *instance = (Instance *) notification->instance;
 
 		OSPoint position;
 		OSGetMousePosition(nullptr, &position);
@@ -58,36 +56,34 @@ OSCallbackResponse CommandZoom(OSObject object, OSMessage *message) {
 		// TODO What happens at the top of the screen?
 
 		OSStartGUIAllocationBlock(2048);
-		OSObject menu = OSCreateMenu(menuZoom, object, position, OS_CREATE_MENU_BLANK);
+		OSObject menu = OSCreateMenu(menuZoom, notification->generator, position, OS_CREATE_MENU_BLANK);
 		OSObject grid = OSCreateGrid(1, 1, OS_GRID_STYLE_BLANK_MENU);
 		OSSetRootGrid(menu, grid);
 		OSObject slider = OSCreateSlider(1, 20, instance->zoom, OS_SLIDER_MODE_VERTICAL | OS_SLIDER_MODE_OPPOSITE_VALUE, 1, 1);
 		OSAddControl(grid, 0, 0, slider, OS_CELL_FILL);
-		OSSetObjectNotificationCallback(slider, OS_MAKE_CALLBACK(CommandZoom, instance));
+		OSSetObjectNotificationCallback(slider, OS_MAKE_NOTIFICATION_CALLBACK(CommandZoom, instance));
 		OSEndGUIAllocationBlock();
-	} else if (message->type == OS_NOTIFICATION_VALUE_CHANGED) {
-		Instance *instance = (Instance *) message->context;
+	} else if (notification->type == OS_NOTIFICATION_VALUE_CHANGED) {
+		Instance *instance = (Instance *) notification->context;
 		instance->repaintImageDisplay = true;
-		instance->zoom = message->valueChanged.newValue;
+		instance->zoom = notification->valueChanged.newValue;
 		OSRepaintControl(instance->imageDisplay);
 	} else {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	if (message->type != OS_NOTIFICATION_COMMAND) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
 	}
 
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse CommandRotate(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type != OS_NOTIFICATION_COMMAND) {
+OSCallbackResponse CommandRotate(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+	Instance *instance = (Instance *) notification->instance;
 	instance->repaintImageDisplay = true;
 	OSRepaintControl(instance->imageDisplay);
 
@@ -117,7 +113,7 @@ OSCallbackResponse CommandRotate(OSObject object, OSMessage *message) {
 		for (int x = 0; x < instance->imageWidth; x++) {
 			uint32_t *destination = (uint32_t *) (newBitmap + y * buffer.stride + x * 4), *source;
 
-			if (message->context == (void *) COMMAND_ROTATE_ANTI_CLOCKWISE) {
+			if (notification->context == (void *) COMMAND_ROTATE_ANTI_CLOCKWISE) {
 				source = (uint32_t *) (oldBitmap + x * oldStride + (instance->imageHeight - y - 1) * 4);
 			} else {
 				source = (uint32_t *) (oldBitmap + (instance->imageWidth - x - 1) * oldStride + y * 4);
@@ -165,9 +161,8 @@ void Instance::ReportError(unsigned where, OSError error) {
 			OS_ICON_ERROR, window);
 }
 
-OSCallbackResponse DestroyInstance(OSObject object, OSMessage *message) {
-	(void) object;
-	Instance *instance = (Instance *) message->context;
+OSCallbackResponse DestroyInstance(OSNotification *notification) {
+	Instance *instance = (Instance *) notification->context;
 	global.instances.Remove(&instance->thisItem);
 	OSHeapFree(instance);
 	return OS_CALLBACK_HANDLED;
@@ -316,10 +311,9 @@ void Instance::Initialise(char *path, size_t pathBytes) {
 
 	OSStartGUIAllocationBlock(8192);
 
-	window = OSCreateWindow(mainWindow);
-	OSSetInstance(window, this);
+	window = OSCreateWindow(mainWindow, this);
 
-	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_CALLBACK(DestroyInstance, this));
+	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, this));
 
 	OSObject rootLayout = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
 	OSSetRootGrid(window, rootLayout);
@@ -334,7 +328,7 @@ void Instance::Initialise(char *path, size_t pathBytes) {
 	imageDisplay = OSCreateBlankControl(0, 0, OS_CURSOR_NORMAL, OS_BLANK_CONTROL_IGNORE_ACTIVATION_CLICKS);
 	OSAddControl(rootLayout, 0, 1, imageDisplay, OS_CELL_H_EXPAND | OS_CELL_H_PUSH 
 							| OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
-	imageDisplayParentCallback = OSSetCallback(imageDisplay, OS_MAKE_CALLBACK(ProcessImageDisplayMessage, this)); 
+	imageDisplayParentCallback = OSSetMessageCallback(imageDisplay, OS_MAKE_MESSAGE_CALLBACK(ProcessImageDisplayMessage, this)); 
 
 	OSEnableCommand(window, commandRotateAntiClockwise, true);
 	OSEnableCommand(window, commandRotateClockwise, true);
@@ -355,6 +349,6 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 }
 
 void ProgramEntry() {
-	OSSetCallback(osSystemMessages, OS_MAKE_CALLBACK(ProcessSystemMessage, nullptr));
+	OSSetMessageCallback(osSystemMessages, OS_MAKE_MESSAGE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
 }

@@ -3,7 +3,7 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/Programs/Calculator/manifest.h"
 
-struct Instance {
+struct Instance : OSInstance {
 	OSObject textbox;
 };
 
@@ -21,11 +21,9 @@ struct EvaluateResult {
 	double value;
 };
 
-OSCallbackResponse Insert(OSObject object, OSMessage *message) {
-	(void) object;
-
-	char c = (char) (uintptr_t) message->context;
-	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+OSCallbackResponse Insert(OSNotification *notification) {
+	char c = (char) (uintptr_t) notification->context;
+	Instance *instance = (Instance *) notification->instance;
 
 	OSString oldText;
 	OSGetText(instance->textbox, &oldText);
@@ -220,10 +218,8 @@ EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) 
 #undef EVALUATE
 }
 
-OSCallbackResponse Evaluate(OSObject object, OSMessage *message) {
-	(void) object;
-
-	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+OSCallbackResponse Evaluate(OSNotification *notification) {
+	Instance *instance = (Instance *) notification->instance;
 
 	OSString expression;
 	OSGetText(instance->textbox, &expression);
@@ -259,8 +255,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 
 		OSStartGUIAllocationBlock(16384);
 
-		OSObject window = OSCreateWindow(mainWindow);
-		OSSetInstance(window, instance);
+		OSObject window = OSCreateWindow(mainWindow, instance);
 
 		OSObject grid = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER);
 		OSObject keypad = OSCreateGrid(5, 4, OS_GRID_STYLE_GROUP_BOX);
@@ -299,6 +294,6 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 }
 
 void ProgramEntry() {
-	OSSetCallback(osSystemMessages, OS_MAKE_CALLBACK(ProcessSystemMessage, nullptr));
+	OSSetMessageCallback(osSystemMessages, OS_MAKE_MESSAGE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
 }

@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 // #define WALLPAPER ("/OS/Sample Images/Flower.jpg")
-#define FIRST_PROGRAM ("System Monitor")
+#define FIRST_PROGRAM ("File Manager")
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"
@@ -56,12 +56,13 @@ char *errorMessages[] = {
 	(char *) "BAD_OBJECT_TYPE",
 	(char *) "MESSAGE_SHOULD_BE_HANDLED",
 	(char *) "INDEX_OUT_OF_BOUNDS",
+	(char *) "INVALID_STRING_LENGTH",
+	(char *) "SPINLOCK_NOT_ACQUIRED",
+	(char *) "UNKNOWN_SNAPSHOT_TYPE",
 };
 
-OSCallbackResponse CommandShutdown(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type != OS_NOTIFICATION_COMMAND) {
+OSCallbackResponse CommandShutdown(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
@@ -70,10 +71,8 @@ OSCallbackResponse CommandShutdown(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse ShutdownDialogCallback(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type == OS_NOTIFICATION_DIALOG_CLOSE) {
+OSCallbackResponse ShutdownDialogCallback(OSNotification *notification) {
+	if (notification->type == OS_NOTIFICATION_DIALOG_CLOSE) {
 		shutdownDialog = nullptr;
 		return OS_CALLBACK_HANDLED;
 	}
@@ -81,20 +80,17 @@ OSCallbackResponse ShutdownDialogCallback(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_NOT_HANDLED;
 }
 
-OSCallbackResponse CommandRightToLeftLayout(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type != OS_NOTIFICATION_COMMAND) {
+OSCallbackResponse CommandRightToLeftLayout(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	OSSyscall(OS_SYSCALL_SET_SYSTEM_CONSTANT, OS_SYSTEM_CONSTANT_RIGHT_TO_LEFT_LAYOUT, message->command.checked, 0, 0);
+	OSSyscall(OS_SYSCALL_SET_SYSTEM_CONSTANT, OS_SYSTEM_CONSTANT_RIGHT_TO_LEFT_LAYOUT, notification->command.checked, 0, 0);
 
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
-	(void) _object;
+OSCallbackResponse ProcessSystemMessage(OSObject, OSMessage *message) {
 	OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 
 	switch (message->type) {
@@ -256,7 +252,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 						OSLiteral("Are you sure you want to shutdown?"),
 						OSLiteral("Any unsaved work will be lost."),
 						OS_ICON_SHUTDOWN, OS_INVALID_OBJECT, commandShutdown);
-				OSSetObjectNotificationCallback(shutdownDialog, OS_MAKE_CALLBACK(ShutdownDialogCallback, nullptr));
+				OSSetObjectNotificationCallback(shutdownDialog, OS_MAKE_NOTIFICATION_CALLBACK(ShutdownDialogCallback, nullptr));
 			} else {
 				OSSetFocusedWindow(shutdownDialog);
 			}
@@ -428,15 +424,17 @@ extern "C" void ProgramEntry() {
 		}
 	}
 
+#if 0
 	{
 		OSObject window = OSCreateWindow(windowControlPanel);
 		OSObject rootLayout = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
 		OSSetRootGrid(window, rootLayout);
 		OSAddControl(rootLayout, 0, 0, OSCreateButton(commandRightToLeftLayout, OS_BUTTON_STYLE_NORMAL), OS_FLAGS_DEFAULT);
 	}
+#endif
 
 	OSExecuteProgram(OSLiteral(FIRST_PROGRAM));
 
-	OSSetCallback(osSystemMessages, OS_MAKE_CALLBACK(ProcessSystemMessage, nullptr));
+	OSSetMessageCallback(osSystemMessages, OS_MAKE_MESSAGE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
 }

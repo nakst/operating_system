@@ -329,7 +329,7 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 			Token value;
 
 			if (FindProperty("callback", &value)) {
-				fprintf(output, "OSCallbackResponse %.*s(OSObject object, OSMessage *message);\n\n", value.bytes, value.text);
+				fprintf(output, "OSCallbackResponse %.*s(OSNotification *notification);\n\n", value.bytes, value.text);
 			}
 
 			fprintf(output, "OSCommand _%.*s = {\n\t.identifier = %d,\n", section.bytes, section.text, (int) (commandCount - 1));

@@ -12,14 +12,12 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/Programs/File Manager/manifest.h"
 
-// TODO Why doesn't running the kernel executable crash?
-
 struct FolderChild {
 	OSDirectoryChild data;
 	uint16_t state;
 };
 
-struct Instance {
+struct Instance : OSInstance {
 	OSObject folderListing,
 		 folderPath,
 		 statusLabel,
@@ -213,14 +211,12 @@ int SortFolder(const void *_a, const void *_b, void *argument) {
 	return result * (instance->sortDescending ? -1 : 1);
 }
 
-OSCallbackResponse CallbackOpenItem(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type != OS_NOTIFICATION_COMMAND) {
+OSCallbackResponse CallbackOpenItem(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+	Instance *instance = (Instance *) notification->instance;
 
 	uintptr_t i = 0;
 
@@ -259,16 +255,14 @@ OSCallbackResponse CallbackOpenItem(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse CommandNew(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type != OS_NOTIFICATION_COMMAND) {
+OSCallbackResponse CommandNew(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+	Instance *instance = (Instance *) notification->instance;
 
-	switch ((uintptr_t) message->context) {
+	switch ((uintptr_t) notification->context) {
 		case COMMAND_NEW_FOLDER: {
 			size_t length;
 			uintptr_t attempt = 1;
@@ -317,16 +311,14 @@ OSCallbackResponse CommandNew(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse CommandNavigate(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type != OS_NOTIFICATION_COMMAND) {
+OSCallbackResponse CommandNavigate(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+	Instance *instance = (Instance *) notification->instance;
 
-	switch ((uintptr_t) message->context) {
+	switch ((uintptr_t) notification->context) {
 		case COMMAND_NAVIGATE_BACKWARDS: {
 			instance->pathBackwardHistoryPosition--;
 			instance->LoadFolder(instance->pathBackwardHistory[instance->pathBackwardHistoryPosition],
@@ -357,7 +349,7 @@ OSCallbackResponse CommandNavigate(OSObject object, OSMessage *message) {
 	
 		case COMMAND_NAVIGATE_PATH: {
 			OSString string;
-			OSGetText(object, &string);
+			OSGetText(notification->generator, &string);
 
 			if (!instance->LoadFolder(string.buffer, string.bytes)) {
 				return OS_CALLBACK_REJECTED;
@@ -371,16 +363,14 @@ OSCallbackResponse CommandNavigate(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse CallbackBookmarkFolder(OSObject object, OSMessage *message) {
-	(void) object;
-
-	if (message->type != OS_NOTIFICATION_COMMAND) {
+OSCallbackResponse CallbackBookmarkFolder(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	Instance *instance = (Instance *) OSGetInstance(message->command.window);
+	Instance *instance = (Instance *) notification->instance;
 
-	bool checked = message->command.checked;
+	bool checked = notification->command.checked;
 
 	if (checked) {
 		// Add bookmark.
@@ -395,16 +385,15 @@ OSCallbackResponse CallbackBookmarkFolder(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage *message) {
-	Instance *instance = (Instance *) message->context;
-	(void) object;
+OSCallbackResponse ProcessBookmarkListingNotification(OSNotification *notification) {
+	Instance *instance = (Instance *) notification->context;
 	
-	switch (message->type) {
+	switch (notification->type) {
 		case OS_NOTIFICATION_GET_ITEM: {
-			uintptr_t index = message->listViewItem.index;
+			uintptr_t index = notification->listViewItem.index;
 			Bookmark *bookmark = global.bookmarks + index;
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
 				size_t length = 0;
 
 				if (bookmark->pathBytes != 1) {
@@ -414,34 +403,34 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 					length = 1;
 				}
 
-				message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+				notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 						"%s", length, bookmark->path + bookmark->pathBytes - length);
-				message->listViewItem.text = guiStringBuffer;
+				notification->listViewItem.text = guiStringBuffer;
 			}
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
 				if (!OSCompareStrings(bookmark->path, instance->path, bookmark->pathBytes, instance->pathBytes)) {
-					message->listViewItem.state |= OS_LIST_VIEW_ITEM_SELECTED;
+					notification->listViewItem.state |= OS_LIST_VIEW_ITEM_SELECTED;
 				}
 			}
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_ICON) {
-				message->listViewItem.iconID = OS_ICON_FOLDER;
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_ICON) {
+				notification->listViewItem.iconID = OS_ICON_FOLDER;
 			}
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
-				message->listViewItem.height = OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT;
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
+				notification->listViewItem.height = OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT;
 			}
 
 			return OS_CALLBACK_HANDLED;
 		} break;
 
 		case OS_NOTIFICATION_SET_ITEM: {
-			uintptr_t index = message->listViewItem.index;
+			uintptr_t index = notification->listViewItem.index;
 			Bookmark *bookmark = global.bookmarks + index;
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
-				if (message->listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) {
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
+				if (notification->listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) {
 					instance->LoadFolder(bookmark->path, bookmark->pathBytes);
 				}
 			}
@@ -455,13 +444,12 @@ OSCallbackResponse ProcessBookmarkListingNotification(OSObject object, OSMessage
 	}
 }
 
-OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *message) {
-	Instance *instance = (Instance *) message->context;
-	(void) object;
+OSCallbackResponse ProcessFolderListingNotification(OSNotification *notification) {
+	Instance *instance = (Instance *) notification->context;
 	
-	switch (message->type) {
+	switch (notification->type) {
 		case OS_NOTIFICATION_GET_ITEM: {
-			uintptr_t index = message->listViewItem.index;
+			uintptr_t index = notification->listViewItem.index;
 			FolderChild *child = instance->folderChildren + index;
 			OSDirectoryChild *data = &child->data;
 
@@ -469,75 +457,75 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 				OSCrashProcess(OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS);
 			}
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
-				switch (message->listViewItem.column) {
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_TEXT) {
+				switch (notification->listViewItem.column) {
 					case COLUMN_NAME: {
-						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+						notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 								"%s", data->nameLengthBytes, data->name);
 					} break;
 
 					case COLUMN_DATE_MODIFIED: {
-						message->listViewItem.textBytes = 0;
+						notification->listViewItem.textBytes = 0;
 					} break;
 
 					case COLUMN_TYPE: {
-						message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+						notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 								"%z", data->information.type == OS_NODE_FILE ? GetFileType(GetFileType(data->name, data->nameLengthBytes)) : "Folder");
 					} break;
 
 					case COLUMN_SIZE: {
-						message->listViewItem.textBytes = 0;
+						notification->listViewItem.textBytes = 0;
 
 						if (data->information.type == OS_NODE_FILE) {
 							int fileSize = data->information.fileSize;
 
 							if (fileSize == 0) {
-								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+								notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"(empty)");
 							} else if (fileSize == 1) {
-								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+								notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"1 byte", fileSize);
 							} else if (fileSize < 1000) {
-								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+								notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"%d bytes", fileSize);
 							} else if (fileSize < 1000000) {
-								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+								notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"%d.%d KB", fileSize / 1000, (fileSize / 100) % 10);
 							} else if (fileSize < 1000000000) {
-								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+								notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"%d.%d MB", fileSize / 1000000, (fileSize / 100000) % 10);
 							} else {
-								message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
+								notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 										"%d.%d GB", fileSize / 1000000000, (fileSize / 100000000) % 10);
 							}
 						} else if (data->information.type == OS_NODE_DIRECTORY) {
 							uint64_t children = data->information.directoryChildren;
 
-							if (children == 0) message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "(empty)");
-							else if (children == 1) message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "1 item");
-							else message->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "%d items", children);
+							if (children == 0) notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "(empty)");
+							else if (children == 1) notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "1 item");
+							else notification->listViewItem.textBytes = OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, "%d items", children);
 						}
 					} break;
 				}
 
-				message->listViewItem.text = guiStringBuffer;
+				notification->listViewItem.text = guiStringBuffer;
 			}
 
-			message->listViewItem.state = child->state & ((uint16_t) message->listViewItem.mask);
+			notification->listViewItem.state = child->state & ((uint16_t) notification->listViewItem.mask);
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_ICON) {
-				message->listViewItem.iconID = data->information.type == OS_NODE_DIRECTORY ? OS_ICON_FOLDER : OS_ICON_FILE;
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_ICON) {
+				notification->listViewItem.iconID = data->information.type == OS_NODE_DIRECTORY ? OS_ICON_FOLDER : OS_ICON_FILE;
 			}
 
-			if (message->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
-				message->listViewItem.height = OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT;
+			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_HEIGHT) {
+				notification->listViewItem.height = OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT;
 			}
 
 			return OS_CALLBACK_HANDLED;
 		} break;
 
 		case OS_NOTIFICATION_SET_ITEM: {
-			uintptr_t index = message->listViewItem.index;
+			uintptr_t index = notification->listViewItem.index;
 
 			if (index >= instance->folderChildCount) {
 				OSCrashProcess(OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS);
@@ -549,45 +537,45 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 				instance->selectedChildCount--;
 			}
 
-			child->state = (child->state & ~((uint16_t) message->listViewItem.mask)) | (message->listViewItem.state & message->listViewItem.mask);
+			child->state = (child->state & ~((uint16_t) notification->listViewItem.mask)) | (notification->listViewItem.state & notification->listViewItem.mask);
 
 			if (child->state & OS_LIST_VIEW_ITEM_SELECTED) {
 				instance->selectedChildCount++;
 			}
 
-			OSEnableCommand(OSGetWindow(object), commandOpenItem, instance->selectedChildCount);
+			OSEnableCommand(OSGetWindow(notification->generator), commandOpenItem, instance->selectedChildCount);
 
 			return OS_CALLBACK_HANDLED;
 		} break;
 
 		case OS_NOTIFICATION_CHOOSE_ITEM: {
-			OSIssueCommand(commandOpenItem, OSGetWindow(object));
+			OSIssueCommand(commandOpenItem, OSGetWindow(notification->generator));
 
 			return OS_CALLBACK_HANDLED;
 		} break;
 
 		case OS_NOTIFICATION_SET_ITEM_RANGE: {
-			if (message->listViewItemRange.indexFrom < 0 || message->listViewItemRange.indexFrom > (int) instance->folderChildCount
-					|| message->listViewItemRange.indexTo < 0 || message->listViewItemRange.indexTo > (int) instance->folderChildCount) {
+			if (notification->listViewItemRange.indexFrom < 0 || notification->listViewItemRange.indexFrom > (int) instance->folderChildCount
+					|| notification->listViewItemRange.indexTo < 0 || notification->listViewItemRange.indexTo > (int) instance->folderChildCount) {
 				OSCrashProcess(OS_FATAL_ERROR_INDEX_OUT_OF_BOUNDS);
 			}
 
-			for (int i = message->listViewItemRange.indexFrom; i < message->listViewItemRange.indexTo; i++) {
+			for (int i = notification->listViewItemRange.indexFrom; i < notification->listViewItemRange.indexTo; i++) {
 				FolderChild *child = instance->folderChildren + i;
 
 				if (child->state & OS_LIST_VIEW_ITEM_SELECTED) {
 					instance->selectedChildCount--;
 				}
 
-				child->state &= ~message->listViewItemRange.mask;
-				child->state |= message->listViewItemRange.mask & message->listViewItemRange.state;
+				child->state &= ~notification->listViewItemRange.mask;
+				child->state |= notification->listViewItemRange.mask & notification->listViewItemRange.state;
 
 				if (child->state & OS_LIST_VIEW_ITEM_SELECTED) {
 					instance->selectedChildCount++;
 				}
 			}
 
-			OSEnableCommand(OSGetWindow(object), commandOpenItem, instance->selectedChildCount);
+			OSEnableCommand(OSGetWindow(notification->generator), commandOpenItem, instance->selectedChildCount);
 
 			return OS_CALLBACK_HANDLED;
 		} break;
@@ -596,8 +584,8 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 			OSListViewReset(instance->folderListing);
 			instance->selectedChildCount = 0;
 
-			instance->sortColumn = message->listViewColumn.index;
-			instance->sortDescending = message->listViewColumn.descending;
+			instance->sortColumn = notification->listViewColumn.index;
+			instance->sortDescending = notification->listViewColumn.descending;
 			OSSort(instance->folderChildren, instance->folderChildCount, sizeof(FolderChild), SortFolder, instance);
 
 			OSListViewInsert(instance->folderListing, 0, instance->folderChildCount);
@@ -607,9 +595,9 @@ OSCallbackResponse ProcessFolderListingNotification(OSObject object, OSMessage *
 
 		case OS_NOTIFICATION_RIGHT_CLICK: {
 			if (instance->selectedChildCount) {
-				OSCreateMenu(menuItemContext, object, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
+				OSCreateMenu(menuItemContext, notification->generator, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
 			} else {
-				OSCreateMenu(menuFolderListingContext, object, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
+				OSCreateMenu(menuFolderListingContext, notification->generator, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
 			}
 
 			return OS_CALLBACK_HANDLED;
@@ -862,9 +850,8 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	return true;
 }
 
-OSCallbackResponse DestroyInstance(OSObject object, OSMessage *message) {
-	(void) object;
-	Instance *instance = (Instance *) message->context;
+OSCallbackResponse DestroyInstance(OSNotification *notification) {
+	Instance *instance = (Instance *) notification->context;
 	OSHeapFree(instance->folderChildren);
 	OSHeapFree(instance->path);
 	global.instances.Remove(&instance->thisItem);
@@ -878,10 +865,9 @@ void Instance::Initialise() {
 
 	OSStartGUIAllocationBlock(32768);
 
-	window = OSCreateWindow(mainWindow);
-	OSSetInstance(window, this);
+	window = OSCreateWindow(mainWindow, this);
 
-	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_CALLBACK(DestroyInstance, this));
+	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, this));
 
 	OSObject rootLayout = OSCreateGrid(1, 6, OS_GRID_STYLE_LAYOUT);
 	OSObject contentSplit = OSCreateGrid(3, 1, OS_GRID_STYLE_LAYOUT);
@@ -896,13 +882,13 @@ void Instance::Initialise() {
 	OSAddGrid(rootLayout, 0, 5, statusBar, OS_CELL_H_EXPAND | OS_CELL_H_PUSH);
 
 	bookmarkList = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT | OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT, OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT);
-	OSSetObjectNotificationCallback(bookmarkList, OS_MAKE_CALLBACK(ProcessBookmarkListingNotification, this));
+	OSSetObjectNotificationCallback(bookmarkList, OS_MAKE_NOTIFICATION_CALLBACK(ProcessBookmarkListingNotification, this));
 	OSAddControl(contentSplit, 0, 0, bookmarkList, OS_CELL_H_EXPAND | OS_CELL_V_EXPAND);
 	OSSetProperty(bookmarkList, OS_GUI_OBJECT_PROPERTY_SUGGESTED_WIDTH, (void *) 160);
 	OSListViewInsert(bookmarkList, 0, global.bookmarkCount);
 
 	folderListing = OSCreateListView(OS_CREATE_LIST_VIEW_MULTI_SELECT | OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT | OS_CREATE_LIST_VIEW_SORTABLE, OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT);
-	OSSetObjectNotificationCallback(folderListing, OS_MAKE_CALLBACK(ProcessFolderListingNotification, this));
+	OSSetObjectNotificationCallback(folderListing, OS_MAKE_NOTIFICATION_CALLBACK(ProcessFolderListingNotification, this));
 	OSAddControl(contentSplit, 2, 0, folderListing, OS_CELL_FILL);
 	OSListViewSetColumns(folderListing, folderListingColumns, sizeof(folderListingColumns) / sizeof(folderListingColumns[0]));
 
@@ -949,6 +935,6 @@ void ProgramEntry() {
 	global.AddBookmark(OSLiteral("/OS"));
 	global.AddBookmark(OSLiteral("/Programs"));
 
-	OSSetCallback(osSystemMessages, OS_MAKE_CALLBACK(ProcessSystemMessage, nullptr));
+	OSSetMessageCallback(osSystemMessages, OS_MAKE_MESSAGE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
 }

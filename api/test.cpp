@@ -59,9 +59,7 @@ void LocalMutexTest(void *argument) {
 	OSTerminateThread(OS_CURRENT_THREAD);
 }
 
-OSCallbackResponse SliderValueChanged(OSObject object, OSMessage *message) {
-	(void) object;
-
+OSCallbackResponse SliderValueChanged(OSNotification *message) {
 	if (message->type != OS_NOTIFICATION_VALUE_CHANGED) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
@@ -70,9 +68,7 @@ OSCallbackResponse SliderValueChanged(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse ListViewCallback(OSObject object, OSMessage *message) {
-	(void) object;
-
+OSCallbackResponse ListViewCallback(OSNotification *message) {
 	if (message->type == OS_NOTIFICATION_GET_ITEM) {
 		uintptr_t index = message->listViewItem.index;
 		Word *word = words + index;
@@ -221,7 +217,7 @@ void CreateList(OSObject content) {
 #else
 	listView = OSCreateListView(OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_MULTI_SELECT, 0);
 #endif
-	OSSetObjectNotificationCallback(listView, OS_MAKE_CALLBACK(ListViewCallback, nullptr));
+	OSSetObjectNotificationCallback(listView, OS_MAKE_NOTIFICATION_CALLBACK(ListViewCallback, nullptr));
 	OSAddControl(content, 0, 4, listView, OS_CELL_FILL);
 	OSListViewInsert(listView, 0, wordCount/* / 16*/);
 
@@ -233,9 +229,7 @@ void CreateList(OSObject content) {
 	OSPrint("Loaded test list with %d words (%d total)\n", wordCount, totalWords);
 }
 
-OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {
-	(void) object;
-
+OSCallbackResponse ScrollbarMoved(OSNotification *message) {
 	if (message->valueChanged.newValue == 300) {
 		// OSSetScrollbarPosition(object, 200, false);
 		// vp = 800;
@@ -245,19 +239,15 @@ OSCallbackResponse ScrollbarMoved(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse Crash(OSObject object, OSMessage *message) {
-	(void) object;
-	(void) message;
-
+OSCallbackResponse Crash(OSNotification *message) {
 	// OSPrint("object = %x\n", object);
 	// OSListViewInsert(listView, 5, wordCount / 16);
-	OSCreateMenu(menuPrograms, object, OS_CREATE_MENU_AT_SOURCE, OS_FLAGS_DEFAULT);
+	OSCreateMenu(menuPrograms, message->generator, OS_CREATE_MENU_AT_SOURCE, OS_FLAGS_DEFAULT);
 
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse Launch(OSObject object, OSMessage *message) {
-	(void) object;
+OSCallbackResponse Launch(OSNotification *message) {
 #if 0
 	OSProcessInformation information;
 	OSCreateProcess((char *) message->context, OSCStringLength((char *) message->context), &information, nullptr);
@@ -268,10 +258,8 @@ OSCallbackResponse Launch(OSObject object, OSMessage *message) {
 	return OS_CALLBACK_HANDLED;
 }
 
-OSCallbackResponse ProcessActionOK(OSObject object, OSMessage *message) {
-	(void) object;
+OSCallbackResponse ProcessActionOK(OSNotification *message) {
 	(void) message;
-
 	static int progress = 0;
 	progress++;
 	if (progress <= 5) {
@@ -354,8 +342,7 @@ int CompareIntegers(const void *a, const void *b) {
 	return *c - *d;
 }
 
-OSCallbackResponse ToggleEnabled(OSObject object, OSMessage *message) {
-	(void) object;
+OSCallbackResponse ToggleEnabled(OSNotification *message) {
 	OSPrint("context = %x\n", message->context);
 	OSEnableControl(message->context, message->command.checked);
 	// OSSetScrollbarMeasurements(scrollbar, 10, 20);
@@ -834,7 +821,7 @@ extern "C" void ProgramEntry() {
 	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
 	ws.menubar = myMenuBar;
-	window = OSCreateWindow(&ws);
+	window = OSCreateWindow(&ws, (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true));
 
 	OSObject b;
 	OSObject content = OSCreateGrid(4, 6, OS_GRID_STYLE_CONTAINER);
@@ -846,7 +833,7 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 0, 2, b = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL), 0);
 
-	OSSetCommandNotificationCallback(window, actionToggleEnabled, OS_MAKE_CALLBACK(ToggleEnabled, b));
+	OSSetCommandNotificationCallback(window, actionToggleEnabled, OS_MAKE_NOTIFICATION_CALLBACK(ToggleEnabled, b));
 	OSAddControl(content, 0, 1, OSCreateButton(actionToggleEnabled, OS_BUTTON_STYLE_NORMAL), 0);
 
 	OSAddControl(content, 1, 2, OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
@@ -862,7 +849,7 @@ extern "C" void ProgramEntry() {
 				OS_SLIDER_MODE_HORIZONTAL | OS_SLIDER_MODE_TICKS_BOTH_SIDES | OS_SLIDER_MODE_SNAP_TO_TICKS, 
 				5, 4), 0);
 
-	OSSetObjectNotificationCallback(sliderV, OS_MAKE_CALLBACK(SliderValueChanged, progressBar));
+	OSSetObjectNotificationCallback(sliderV, OS_MAKE_NOTIFICATION_CALLBACK(SliderValueChanged, progressBar));
 
 	{
 		OSObject textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);
@@ -886,7 +873,7 @@ extern "C" void ProgramEntry() {
 	OSAddControl(content, 0, 4, scrollbar, OS_CELL_V_PUSH | OS_CELL_V_EXPAND | OS_CELL_H_CENTER);
 #endif
 	OSSetScrollbarMeasurements(scrollbar, 400, 100);
-	OSSetObjectNotificationCallback(scrollbar, OS_MAKE_CALLBACK(ScrollbarMoved, nullptr));
+	OSSetObjectNotificationCallback(scrollbar, OS_MAKE_NOTIFICATION_CALLBACK(ScrollbarMoved, nullptr));
 	// OSDebugGUIObject(scrollbar);
 #endif
 
@@ -926,7 +913,7 @@ extern "C" void ProgramEntry() {
 #endif
 
 	{
-		OSObject window = OSCreateWindow(windowTest2);
+		OSObject window = OSCreateWindow(windowTest2, (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true));
 		OSObject content = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
 #if 1
 		OSObject scrollPane = OSCreateScrollPane(content, OS_CREATE_SCROLL_PANE_VERTICAL);

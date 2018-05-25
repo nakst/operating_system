@@ -179,18 +179,18 @@ static void ListViewInsertItemsIntoVisibleItemsList(ListView *list, uintptr_t in
 
 	uintptr_t i;
 
-	OSMessage m = {};
-	m.type = OS_NOTIFICATION_GET_ITEM;
-	m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+	OSNotification n = {};
+	n.type = OS_NOTIFICATION_GET_ITEM;
+	n.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
 	for (i = index; i < index + count && remaining > 0; i++) {
-		m.listViewItem.index = i;
+		n.listViewItem.index = i;
 
-		if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
+		if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) != OS_CALLBACK_HANDLED) {
 			OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 		}
 
-		int height = m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
+		int height = n.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? n.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
 
 		ListViewItem *item = ListViewInsertVisibleItem(list, i, contentBounds.bottom - remaining, height);
 		item->repaint = true;
@@ -297,9 +297,9 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 
 	int constantHeight = list->constantHeight;
 
-	OSMessage m = {};
-	m.type = OS_NOTIFICATION_GET_ITEM;
-	m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+	OSNotification n = {};
+	n.type = OS_NOTIFICATION_GET_ITEM;
+	n.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
 	OSRectangle contentBounds = list->contentBounds;
 
@@ -313,28 +313,28 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 				list->firstVisibleItem = newScrollY / constantHeight;
 				list->offsetIntoFirstVisibleItem = newScrollY % constantHeight;
 			} else {
-				m.type = OS_NOTIFICATION_CONVERT_Y_TO_INDEX;
-				m.convertYToIndex.y = newScrollY;
+				n.type = OS_NOTIFICATION_CONVERT_Y_TO_INDEX;
+				n.convertYToIndex.y = newScrollY;
 
 				int knownY = oldScrollY - list->offsetIntoFirstVisibleItem;
-				m.convertYToIndex.knownY = knownY;
-				m.convertYToIndex.knownIndex = list->firstVisibleItem;
+				n.convertYToIndex.knownY = knownY;
+				n.convertYToIndex.knownIndex = list->firstVisibleItem;
 
-				if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
+				if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) == OS_CALLBACK_NOT_HANDLED) {
 					if (knownY < newScrollY) {
 						int height = knownY;
-						m.type = OS_NOTIFICATION_GET_ITEM;
-						m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+						n.type = OS_NOTIFICATION_GET_ITEM;
+						n.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
 						for (uintptr_t i = list->firstVisibleItem; i < list->itemCount; i++) {
-							m.listViewItem.index = i;
+							n.listViewItem.index = i;
 
-							if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
+							if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) == OS_CALLBACK_NOT_HANDLED) {
 								OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 							}
 
 							int startHeight = height;
-							height += m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
+							height += n.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? n.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
 
 							if (height > newScrollY) {
 								list->firstVisibleItem = i;
@@ -344,21 +344,21 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 						}
 					} else {
 						int height = knownY;
-						m.type = OS_NOTIFICATION_GET_ITEM;
-						m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+						n.type = OS_NOTIFICATION_GET_ITEM;
+						n.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
 						if (!list->firstVisibleItem) {
 							list->offsetIntoFirstVisibleItem = newScrollY;
 						}
 
 						for (uintptr_t i = list->firstVisibleItem; i > 0; i--) {
-							m.listViewItem.index = i - 1;
+							n.listViewItem.index = i - 1;
 
-							if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_NOT_HANDLED) {
+							if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) == OS_CALLBACK_NOT_HANDLED) {
 								OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 							}
 
-							height -= m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
+							height -= n.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? n.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT;
 
 							if (height < newScrollY) {
 								list->firstVisibleItem = i - 1;
@@ -368,8 +368,8 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 						}
 					}
 				} else {
-					list->firstVisibleItem = m.convertYToIndex.index;
-					list->offsetIntoFirstVisibleItem = m.convertYToIndex.offset;
+					list->firstVisibleItem = n.convertYToIndex.index;
+					list->offsetIntoFirstVisibleItem = n.convertYToIndex.offset;
 				}
 			}
 		} else {
@@ -415,9 +415,9 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 				int height = constantHeight;
 
 				if (!(list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT)) {
-					m.listViewItem.index = list->firstVisibleItem - 1;
-					OSForwardMessage(list, list->notificationCallback, &m);
-					height = m.listViewItem.height;
+					n.listViewItem.index = list->firstVisibleItem - 1;
+					OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
+					height = n.listViewItem.height;
 					if (height == OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT) height = LIST_VIEW_DEFAULT_ROW_HEIGHT;
 				}
 
@@ -459,28 +459,28 @@ static void ListViewScrollVertically(ListView *list, int newScrollY) {
 static void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage *message, int row, int column, OSRectangle rowClip, OSListViewColumn *columnData) {
 	OSRectangle textRegion = OS_MAKE_RECTANGLE(cellBounds.left + 4, cellBounds.right - 8, cellBounds.top + 2, cellBounds.bottom - 2);
 
-	OSMessage m;
+	OSNotification n;
 
-	m.type = OS_NOTIFICATION_PAINT_CELL;
-	m.paintCell.index = row;
-	m.paintCell.column = column;
-	m.paintCell.surface = message->paint.surface;
-	m.paintCell.clip = rowClip;
-	m.paintCell.bounds = textRegion;
+	n.type = OS_NOTIFICATION_PAINT_CELL;
+	n.paintCell.index = row;
+	n.paintCell.column = column;
+	n.paintCell.surface = message->paint.surface;
+	n.paintCell.clip = rowClip;
+	n.paintCell.bounds = textRegion;
 
-	if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED) {
+	if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) == OS_CALLBACK_HANDLED) {
 		return;
 	}
 
 	bool hasIcon = columnData && (columnData->flags & OS_LIST_VIEW_COLUMN_ICON);
 
-	m.type = OS_NOTIFICATION_GET_ITEM;
-	m.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT | (hasIcon ? OS_LIST_VIEW_ITEM_ICON : 0);
-	m.listViewItem.index = row;
-	m.listViewItem.column = column;
-	m.listViewItem.textBytes = 0;
+	n.type = OS_NOTIFICATION_GET_ITEM;
+	n.listViewItem.mask = OS_LIST_VIEW_ITEM_TEXT | (hasIcon ? OS_LIST_VIEW_ITEM_ICON : 0);
+	n.listViewItem.index = row;
+	n.listViewItem.column = column;
+	n.listViewItem.textBytes = 0;
 
-	if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
+	if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) != OS_CALLBACK_HANDLED) {
 		OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 	}
 
@@ -489,7 +489,7 @@ static void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage 
 		region.right = region.left + 16;
 		textRegion.left += 20;
 
-		uint16_t iconID = m.listViewItem.iconID;
+		uint16_t iconID = n.listViewItem.iconID;
 		int h = (region.bottom - region.top) / 2 + region.top - 8;
 		UIImage image = icons16[iconID];
 		OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, 
@@ -498,8 +498,8 @@ static void ListViewPaintCell(ListView *list, OSRectangle cellBounds, OSMessage 
 	}
 
 	OSString string;
-	string.buffer = m.listViewItem.text;
-	string.bytes = m.listViewItem.textBytes;
+	string.buffer = n.listViewItem.text;
+	string.bytes = n.listViewItem.textBytes;
 
 	DrawString(message->paint.surface, textRegion, &string, 
 			((columnData ? (columnData->flags & OS_LIST_VIEW_COLUMN_RIGHT_ALIGNED) : column) 
@@ -518,23 +518,23 @@ static bool ListViewGetBorderImage(ListView *list, uintptr_t i, UIImage *image) 
 	bool listFocus = list->window->focus == list;
 	bool focus = list->focusedItem == i && listFocus;
 
-	OSMessage m;
-	m.type = OS_NOTIFICATION_GET_ITEM;
-	m.listViewItem.index = i;
-	m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2;
-	m.listViewItem.state = 0;
+	OSNotification n;
+	n.type = OS_NOTIFICATION_GET_ITEM;
+	n.listViewItem.index = i;
+	n.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2;
+	n.listViewItem.state = 0;
 
-	if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED) {
+	if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) == OS_CALLBACK_HANDLED) {
 		if (list->draggingSelectionBox) {
 			if (list->ctrlHeldInLastLeftClick) {
-				uint8_t s1 = (m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) ? 1 : 0;
-				uint8_t s2 = (m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED_2) ? 1 : 0;
+				uint8_t s1 = (n.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) ? 1 : 0;
+				uint8_t s2 = (n.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED_2) ? 1 : 0;
 				selected = s1 ^ s2;
 			} else {
-				selected = m.listViewItem.state & (OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2);
+				selected = n.listViewItem.state & (OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2);
 			}
 		} else {
-			selected = m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
+			selected = n.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED;
 		}
 	}
 
@@ -687,7 +687,7 @@ static void ListViewPaint(ListView *list, OSMessage *message) {
 				continue;
 			}
 
-			OSMessage m = {};
+			OSNotification n = {};
 
 			row.top = contentBounds.top + marginOffset + y;
 			row.bottom = contentBounds.top + marginOffset + y + item->height;
@@ -720,13 +720,13 @@ static void ListViewPaint(ListView *list, OSMessage *message) {
 				} 
 			}
 
-			m.type = OS_NOTIFICATION_PAINT_ITEM;
-			m.paintItem.index = i;
-			m.paintItem.surface = message->paint.surface;
-			m.paintItem.clip = rowClip;
-			m.paintItem.bounds = row;
+			n.type = OS_NOTIFICATION_PAINT_ITEM;
+			n.paintItem.index = i;
+			n.paintItem.surface = message->paint.surface;
+			n.paintItem.clip = rowClip;
+			n.paintItem.bounds = row;
 
-			OSCallbackResponse response = OSForwardMessage(list, list->notificationCallback, &m);
+			OSCallbackResponse response = OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 			
 			if (response == OS_CALLBACK_NOT_HANDLED) {
 				if (list->columns) {
@@ -774,26 +774,26 @@ static void ListViewSetRange(ListView *list, int from, int to, uint16_t mask, ui
 	if (to < 0) to = 0; 
 	if (to >= (int) list->itemCount) to = list->itemCount;
 
-	OSMessage m;
+	OSNotification n;
 
-	m.type = OS_NOTIFICATION_SET_ITEM_RANGE;
-	m.listViewItemRange.indexFrom = from;
-	m.listViewItemRange.indexTo = to;
-	m.listViewItemRange.mask = mask;
-	m.listViewItemRange.state = state;
+	n.type = OS_NOTIFICATION_SET_ITEM_RANGE;
+	n.listViewItemRange.indexFrom = from;
+	n.listViewItemRange.indexTo = to;
+	n.listViewItemRange.mask = mask;
+	n.listViewItemRange.state = state;
 
-	if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_NOT_HANDLED) {
+	if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) != OS_CALLBACK_NOT_HANDLED) {
 		return;
 	}
 
-	m.type = OS_NOTIFICATION_SET_ITEM;
-	m.listViewItem.mask = mask;
-	m.listViewItem.state = state;
+	n.type = OS_NOTIFICATION_SET_ITEM;
+	n.listViewItem.mask = mask;
+	n.listViewItem.state = state;
 
 	for (int i = from; i < to; i++) {
-		m.listViewItem.index = i;
+		n.listViewItem.index = i;
 
-		if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_REJECTED) {
+		if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) == OS_CALLBACK_REJECTED) {
 			return;
 		}
 	}
@@ -830,7 +830,7 @@ static void ListViewSelectionBoxChanged(ListView *list, OSRectangle oldBox, OSRe
 		list->foundFirstItemInSelectionBox = true;
 	}
 
-	OSMessage m = {};
+	OSNotification n = {};
 
 	if (moveS2ToS) {
 		if (list->ctrlHeldInLastLeftClick) {
@@ -839,7 +839,7 @@ static void ListViewSelectionBoxChanged(ListView *list, OSRectangle oldBox, OSRe
 			if (toNew < 0) toNew = 0; 
 			if (toNew >= (int) list->itemCount) toNew = list->itemCount - 1;
 
-			m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2;
+			n.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2;
 
 			for (int i = fromNew; i <= toNew; i++) {
 				if (i < 0) {
@@ -850,19 +850,19 @@ static void ListViewSelectionBoxChanged(ListView *list, OSRectangle oldBox, OSRe
 					break;
 				}
 
-				m.type = OS_NOTIFICATION_GET_ITEM;
-				m.listViewItem.state = 0;
-				m.listViewItem.index = i;
-				if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_REJECTED) break;
+				n.type = OS_NOTIFICATION_GET_ITEM;
+				n.listViewItem.state = 0;
+				n.listViewItem.index = i;
+				if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) == OS_CALLBACK_REJECTED) break;
 
-				uint8_t s1 = (m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) ? 1 : 0;
-				uint8_t s2 = (m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED_2) ? 1 : 0;
+				uint8_t s1 = (n.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) ? 1 : 0;
+				uint8_t s2 = (n.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED_2) ? 1 : 0;
 				uint8_t s3 = s1 ^ s2;
 
-				m.type = OS_NOTIFICATION_SET_ITEM;
-				m.listViewItem.state = s3 ? OS_LIST_VIEW_ITEM_SELECTED : 0;
-				m.listViewItem.index = i;
-				if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_REJECTED) break;
+				n.type = OS_NOTIFICATION_SET_ITEM;
+				n.listViewItem.state = s3 ? OS_LIST_VIEW_ITEM_SELECTED : 0;
+				n.listViewItem.index = i;
+				if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) == OS_CALLBACK_REJECTED) break;
 			}
 		} else {
 			ListViewSetRange(list, fromNew, toNew + 1, OS_LIST_VIEW_ITEM_SELECTED | OS_LIST_VIEW_ITEM_SELECTED_2, OS_LIST_VIEW_ITEM_SELECTED);
@@ -1002,16 +1002,16 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 		}
 
 		if (list->pressingColumnHeader) {
-			OSMessage m;
-			m.type = OS_NOTIFICATION_SORT_COLUMN;
-			m.listViewColumn.descending = false;
+			OSNotification n;
+			n.type = OS_NOTIFICATION_SORT_COLUMN;
+			n.listViewColumn.descending = false;
 
 			for (uintptr_t i = 0; i < list->columnCount; i++) {
 				if (i == list->highlightColumn) {
 					if (list->columns[i].flags & OS_LIST_VIEW_COLUMN_SORT_ASCENDING) {
 						list->columns[i].flags &= ~(OS_LIST_VIEW_COLUMN_SORT_ASCENDING | OS_LIST_VIEW_COLUMN_SORT_DESCENDING);
 						list->columns[i].flags |= OS_LIST_VIEW_COLUMN_SORT_DESCENDING;
-						m.listViewColumn.descending = true;
+						n.listViewColumn.descending = true;
 					} else {
 						list->columns[i].flags &= ~(OS_LIST_VIEW_COLUMN_SORT_ASCENDING | OS_LIST_VIEW_COLUMN_SORT_DESCENDING);
 						list->columns[i].flags |= OS_LIST_VIEW_COLUMN_SORT_ASCENDING;
@@ -1021,14 +1021,23 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 				}
 			}
 
-			m.listViewColumn.index = list->highlightColumn;
-			OSForwardMessage(list, list->notificationCallback, &m);
+			n.listViewColumn.index = list->highlightColumn;
+			OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 		}
 
 		if (message->type == OS_MESSAGE_MOUSE_RIGHT_RELEASED) {
-			OSMessage m = *message;
-			m.type = OS_NOTIFICATION_RIGHT_CLICK;
-			OSForwardMessage(list, list->notificationCallback, &m);
+			OSNotification n;
+			n.mousePressed.positionX = message->mousePressed.positionX;
+			n.mousePressed.positionY = message->mousePressed.positionY;
+			n.mousePressed.positionXScreen = message->mousePressed.positionXScreen;
+			n.mousePressed.positionYScreen = message->mousePressed.positionYScreen;
+			n.mousePressed.clickChainCount = message->mousePressed.clickChainCount;
+			n.mousePressed.activationClick = message->mousePressed.activationClick;
+			n.mousePressed.alt = message->mousePressed.alt;
+			n.mousePressed.ctrl = message->mousePressed.ctrl;
+			n.mousePressed.shift = message->mousePressed.shift;
+			n.type = OS_NOTIFICATION_RIGHT_CLICK;
+			OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 		}
 
 		list->draggingSelectionBox = false;
@@ -1087,7 +1096,7 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			return;
 		}
 
-		OSMessage m;
+		OSNotification n;
 
 		if (!message->mousePressed.ctrl || !(list->flags & OS_CREATE_LIST_VIEW_MULTI_SELECT)) {
 			ListViewSetRange(list, 0, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, 0);
@@ -1104,21 +1113,21 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 				bool select = true;
 
 				if (message->mousePressed.ctrl && !message->mousePressed.shift) {
-					m.type = OS_NOTIFICATION_GET_ITEM;
-					m.listViewItem.index = i;
-					m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
-					m.listViewItem.state = 0;
+					n.type = OS_NOTIFICATION_GET_ITEM;
+					n.listViewItem.index = i;
+					n.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+					n.listViewItem.state = 0;
 
-					if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED) {
-						select = (m.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) ? false : true;
+					if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) == OS_CALLBACK_HANDLED) {
+						select = (n.listViewItem.state & OS_LIST_VIEW_ITEM_SELECTED) ? false : true;
 					}
 				}
 
-				m.type = OS_NOTIFICATION_SET_ITEM;
-				m.listViewItem.index = i;
-				m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
-				m.listViewItem.state = select ? OS_LIST_VIEW_ITEM_SELECTED : 0;
-				OSForwardMessage(list, list->notificationCallback, &m);
+				n.type = OS_NOTIFICATION_SET_ITEM;
+				n.listViewItem.index = i;
+				n.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+				n.listViewItem.state = select ? OS_LIST_VIEW_ITEM_SELECTED : 0;
+				OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 			}
 
 			list->focusedItem = to;
@@ -1128,8 +1137,8 @@ static void ListViewMouseUpdated(ListView *list, OSMessage *message) {
 			}
 
 			if (message->mousePressed.clickChainCount == 2) { 
-				m.type = OS_NOTIFICATION_CHOOSE_ITEM;
-				OSForwardMessage(list, list->notificationCallback, &m);
+				n.type = OS_NOTIFICATION_CHOOSE_ITEM;
+				OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 			}
 		} else if (list->highlightColumn != (uintptr_t) -1) {
 			list->pressingColumnHeader = true;
@@ -1160,22 +1169,22 @@ static void ListViewProcessKeyPress(ListView *list, OSCallbackResponse &response
 		}
 	} else if (scancode == OS_SCANCODE_SPACE && !shift) {
 		if (list->focusedItem != (uintptr_t) -1) {
-			OSMessage m;
+			OSNotification n;
 
-			m.listViewItem.index = list->focusedItem;
-			m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+			n.listViewItem.index = list->focusedItem;
+			n.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
 
-			m.type = OS_NOTIFICATION_GET_ITEM;
-			OSForwardMessage(list, list->notificationCallback, &m);
+			n.type = OS_NOTIFICATION_GET_ITEM;
+			OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 
-			m.type = OS_NOTIFICATION_SET_ITEM;
-			m.listViewItem.state ^= OS_LIST_VIEW_ITEM_SELECTED;
-			OSForwardMessage(list, list->notificationCallback, &m);
+			n.type = OS_NOTIFICATION_SET_ITEM;
+			n.listViewItem.state ^= OS_LIST_VIEW_ITEM_SELECTED;
+			OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 		}
 	} else if (scancode == OS_SCANCODE_ENTER && !shift && !ctrl) {
-		OSMessage m;
-		m.type = OS_NOTIFICATION_CHOOSE_ITEM;
-		OSForwardMessage(list, list->notificationCallback, &m);
+		OSNotification n;
+		n.type = OS_NOTIFICATION_CHOOSE_ITEM;
+		OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 	} else if ((scancode == OS_SCANCODE_LEFT_ARROW || scancode == OS_SCANCODE_RIGHT_ARROW) && !shift && !ctrl) {
 		if (list->showScrollbarX) {
 			int x = OSGetScrollbarPosition(list->scrollbarX);
@@ -1205,12 +1214,12 @@ static void ListViewProcessKeyPress(ListView *list, OSCallbackResponse &response
 				ListViewSetRange(list, list->shiftAnchorItem, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, OS_LIST_VIEW_ITEM_SELECTED);
 			}
 		} else {
-			OSMessage m;
-			m.type = OS_NOTIFICATION_SET_ITEM;
-			m.listViewItem.index = list->focusedItem;
-			m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
-			m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
-			OSForwardMessage(list, list->notificationCallback, &m);
+			OSNotification n;
+			n.type = OS_NOTIFICATION_SET_ITEM;
+			n.listViewItem.index = list->focusedItem;
+			n.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+			n.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+			OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 
 			list->shiftAnchorItem = list->focusedItem;
 		}
@@ -1236,31 +1245,31 @@ static void ListViewProcessKeyPress(ListView *list, OSCallbackResponse &response
 		if (valid && !ctrl) {
 			if (shift && !newSelection) {
 				if ((up && oldFocus > list->shiftAnchorItem) || (!up && oldFocus < list->shiftAnchorItem)) {
-					OSMessage m;
-					m.type = OS_NOTIFICATION_SET_ITEM;
-					m.listViewItem.index = oldFocus;
-					m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
-					m.listViewItem.state = 0;
-					OSForwardMessage(list, list->notificationCallback, &m);
+					OSNotification n;
+					n.type = OS_NOTIFICATION_SET_ITEM;
+					n.listViewItem.index = oldFocus;
+					n.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+					n.listViewItem.state = 0;
+					OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 				}
 
-				OSMessage m;
-				m.type = OS_NOTIFICATION_SET_ITEM;
-				m.listViewItem.index = list->focusedItem;
-				m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
-				m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
-				OSForwardMessage(list, list->notificationCallback, &m);
+				OSNotification n;
+				n.type = OS_NOTIFICATION_SET_ITEM;
+				n.listViewItem.index = list->focusedItem;
+				n.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+				n.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+				OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 			} else {
 				list->shiftAnchorItem = list->focusedItem;
 
 				ListViewSetRange(list, 0, list->itemCount, OS_LIST_VIEW_ITEM_SELECTED, 0);
 
-				OSMessage m;
-				m.type = OS_NOTIFICATION_SET_ITEM;
-				m.listViewItem.index = list->focusedItem;
-				m.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
-				m.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
-				OSForwardMessage(list, list->notificationCallback, &m);
+				OSNotification n;
+				n.type = OS_NOTIFICATION_SET_ITEM;
+				n.listViewItem.index = list->focusedItem;
+				n.listViewItem.mask = OS_LIST_VIEW_ITEM_SELECTED;
+				n.listViewItem.state = OS_LIST_VIEW_ITEM_SELECTED;
+				OSSendNotification(list, list->notificationCallback, &n, list->window->instance);
 			}
 		}
 
@@ -1277,16 +1286,16 @@ static void ListViewProcessKeyPress(ListView *list, OSCallbackResponse &response
 				if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
 					y -= list->constantHeight;
 				} else {
-					OSMessage m;
-					m.type = OS_NOTIFICATION_GET_ITEM;
-					m.listViewItem.index = list->focusedItem;
-					m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+					OSNotification n;
+					n.type = OS_NOTIFICATION_GET_ITEM;
+					n.listViewItem.index = list->focusedItem;
+					n.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
-					if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
+					if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) != OS_CALLBACK_HANDLED) {
 						OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 					}
 
-					y -= (m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT);
+					y -= (n.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? n.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT);
 				}
 
 				y -= list->margin.top;
@@ -1457,25 +1466,23 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 	return response;
 }
 
-static OSCallbackResponse ListViewScrollbarXMoved(OSObject scrollbar, OSMessage *message) {
-	(void) scrollbar;
-	ListView *list = (ListView *) message->context;
+static OSCallbackResponse ListViewScrollbarXMoved(OSNotification *notification) {
+	ListView *list = (ListView *) notification->context;
 
-	if (message->type == OS_NOTIFICATION_VALUE_CHANGED) {
+	if (notification->type == OS_NOTIFICATION_VALUE_CHANGED) {
 		RepaintControl(list);
-		list->scrollX = message->valueChanged.newValue;
+		list->scrollX = notification->valueChanged.newValue;
 		return OS_CALLBACK_HANDLED;
 	}
 
 	return OS_CALLBACK_NOT_HANDLED;
 }
 
-static OSCallbackResponse ListViewScrollbarYMoved(OSObject scrollbar, OSMessage *message) {
-	(void) scrollbar;
-	ListView *list = (ListView *) message->context;
+static OSCallbackResponse ListViewScrollbarYMoved(OSNotification *notification) {
+	ListView *list = (ListView *) notification->context;
 
-	if (message->type == OS_NOTIFICATION_VALUE_CHANGED) {
-		int newScrollY = message->valueChanged.newValue;
+	if (notification->type == OS_NOTIFICATION_VALUE_CHANGED) {
+		int newScrollY = notification->valueChanged.newValue;
 		ListViewScrollVertically(list, newScrollY);
 		return OS_CALLBACK_HANDLED;
 	}
@@ -1497,7 +1504,7 @@ OSObject OSCreateListView(unsigned flags, int constantHeight) {
 	list->preferredWidth = 80;
 	list->preferredHeight = 80;
 
-	OSSetCallback(list, OS_MAKE_CALLBACK(ProcessListViewMessage, nullptr));
+	OSSetMessageCallback(list, OS_MAKE_MESSAGE_CALLBACK(ProcessListViewMessage, nullptr));
 
 	list->scrollbarX = (Scrollbar *) OSCreateScrollbar(OS_ORIENTATION_HORIZONTAL, false);
 	list->scrollbarY = (Scrollbar *) OSCreateScrollbar(OS_ORIENTATION_VERTICAL, false);
@@ -1522,40 +1529,40 @@ OSObject OSCreateListView(unsigned flags, int constantHeight) {
 
 	list->constantHeight = constantHeight == OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? LIST_VIEW_DEFAULT_ROW_HEIGHT : constantHeight;
 
-	OSSetObjectNotificationCallback(list->scrollbarX, OS_MAKE_CALLBACK(ListViewScrollbarXMoved, list));
-	OSSetObjectNotificationCallback(list->scrollbarY, OS_MAKE_CALLBACK(ListViewScrollbarYMoved, list));
+	OSSetObjectNotificationCallback(list->scrollbarX, OS_MAKE_NOTIFICATION_CALLBACK(ListViewScrollbarXMoved, list));
+	OSSetObjectNotificationCallback(list->scrollbarY, OS_MAKE_NOTIFICATION_CALLBACK(ListViewScrollbarYMoved, list));
 
 	return list;
 }
 
 static int ListViewMeasure(ListView *list, uintptr_t index, size_t count) {
-	OSMessage m = {};
-	m.type = OS_NOTIFICATION_GET_ITEM;
-	m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+	OSNotification n = {};
+	n.type = OS_NOTIFICATION_GET_ITEM;
+	n.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
 	if (list->flags & OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT) {
 		return count * list->constantHeight;
 	} else {
-		m.type = OS_NOTIFICATION_MEASURE_HEIGHT;
-		m.measureHeight.fromIndex = index;
-		m.measureHeight.toIndex = index + count;
+		n.type = OS_NOTIFICATION_MEASURE_HEIGHT;
+		n.measureHeight.fromIndex = index;
+		n.measureHeight.toIndex = index + count;
 
-		if (OSForwardMessage(list, list->notificationCallback, &m) == OS_CALLBACK_HANDLED) {
-			return m.measureHeight.height;
+		if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) == OS_CALLBACK_HANDLED) {
+			return n.measureHeight.height;
 		} else {
 			int itemsHeight = 0;
 
-			m.type = OS_NOTIFICATION_GET_ITEM;
-			m.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
+			n.type = OS_NOTIFICATION_GET_ITEM;
+			n.listViewItem.mask = OS_LIST_VIEW_ITEM_HEIGHT;
 
 			for (uintptr_t i = 0; i < count; i++) {
-				m.listViewItem.index = index + i;
+				n.listViewItem.index = index + i;
 
-				if (OSForwardMessage(list, list->notificationCallback, &m) != OS_CALLBACK_HANDLED) {
+				if (OSSendNotification(list, list->notificationCallback, &n, list->window->instance) != OS_CALLBACK_HANDLED) {
 					OSCrashProcess(OS_FATAL_ERROR_MESSAGE_SHOULD_BE_HANDLED);
 				}
 
-				itemsHeight += (m.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? m.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT);
+				itemsHeight += (n.listViewItem.height != OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT ? n.listViewItem.height : LIST_VIEW_DEFAULT_ROW_HEIGHT);
 			}
 
 			return itemsHeight;

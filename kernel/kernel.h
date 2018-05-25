@@ -181,7 +181,15 @@ struct UniqueIdentifier {
 
 struct ConstantBuffer {
 	size_t bytes;
-	// Data follows;
+	// Data follows.
+};
+
+struct ProgramInstance {
+	struct Process *owner;
+	ProgramInstance *parent;
+	void *apiObject;
+	uintptr_t handles;
+	Mutex mutex;
 };
 
 UniqueIdentifier installationID; // The identifier of this OS installation, given to us by the bootloader.
