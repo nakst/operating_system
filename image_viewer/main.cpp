@@ -158,12 +158,14 @@ void Instance::ReportError(unsigned where, OSError error) {
 	}
 
 	OSShowDialogAlert(OSLiteral("Error"), OSLiteral(message), OSLiteral(description), 
-			OS_ICON_ERROR, window);
+			this, OS_ICON_ERROR, window);
 }
 
 OSCallbackResponse DestroyInstance(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_WINDOW_CLOSE) return OS_CALLBACK_NOT_HANDLED;
 	Instance *instance = (Instance *) notification->context;
 	global.instances.Remove(&instance->thisItem);
+	OSDestroyInstance(instance);
 	OSHeapFree(instance);
 	return OS_CALLBACK_HANDLED;
 }
@@ -308,12 +310,12 @@ void Instance::Initialise(char *path, size_t pathBytes) {
 
 	thisItem.thisItem = this;
 	global.instances.InsertEnd(&thisItem);
+	OSInitialiseInstance(this);
 
 	OSStartGUIAllocationBlock(8192);
 
 	window = OSCreateWindow(mainWindow, this);
-
-	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, this));
+	OSSetObjectNotificationCallback(window, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, this));
 
 	OSObject rootLayout = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
 	OSSetRootGrid(window, rootLayout);
@@ -330,9 +332,9 @@ void Instance::Initialise(char *path, size_t pathBytes) {
 							| OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
 	imageDisplayParentCallback = OSSetMessageCallback(imageDisplay, OS_MAKE_MESSAGE_CALLBACK(ProcessImageDisplayMessage, this)); 
 
-	OSEnableCommand(window, commandRotateAntiClockwise, true);
-	OSEnableCommand(window, commandRotateClockwise, true);
-	OSEnableCommand(window, commandZoom, true);
+	OSEnableCommand(this, commandRotateAntiClockwise, true);
+	OSEnableCommand(this, commandRotateClockwise, true);
+	OSEnableCommand(this, commandZoom, true);
 
 	OSEndGUIAllocationBlock();
 }

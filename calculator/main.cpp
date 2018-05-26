@@ -247,15 +247,25 @@ OSObject CreateKeypadButton(OSCommand *command) {
 	return button;
 }
 
+OSCallbackResponse DestroyInstance(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_WINDOW_CLOSE) return OS_CALLBACK_NOT_HANDLED;
+	Instance *instance = (Instance *) notification->context;
+	OSDestroyInstance(instance);
+	OSHeapFree(instance);
+	return OS_CALLBACK_HANDLED;
+}
+
 OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	(void) _object;
 
 	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
 		Instance *instance = (Instance *) OSHeapAllocate(sizeof(Instance), true);
+		OSInitialiseInstance(instance);
 
 		OSStartGUIAllocationBlock(16384);
 
 		OSObject window = OSCreateWindow(mainWindow, instance);
+		OSSetObjectNotificationCallback(window, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, instance));
 
 		OSObject grid = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER);
 		OSObject keypad = OSCreateGrid(5, 4, OS_GRID_STYLE_GROUP_BOX);

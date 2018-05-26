@@ -821,7 +821,8 @@ extern "C" void ProgramEntry() {
 	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
 	ws.menubar = myMenuBar;
-	window = OSCreateWindow(&ws, (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true));
+	OSInstance *instance = (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true);
+	window = OSCreateWindow(&ws, instance);
 
 	OSObject b;
 	OSObject content = OSCreateGrid(4, 6, OS_GRID_STYLE_CONTAINER);
@@ -833,7 +834,7 @@ extern "C" void ProgramEntry() {
 
 	OSAddControl(content, 0, 2, b = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL), 0);
 
-	OSSetCommandNotificationCallback(window, actionToggleEnabled, OS_MAKE_NOTIFICATION_CALLBACK(ToggleEnabled, b));
+	OSSetCommandNotificationCallback(instance, actionToggleEnabled, OS_MAKE_NOTIFICATION_CALLBACK(ToggleEnabled, b));
 	OSAddControl(content, 0, 1, OSCreateButton(actionToggleEnabled, OS_BUTTON_STYLE_NORMAL), 0);
 
 	OSAddControl(content, 1, 2, OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
@@ -908,8 +909,8 @@ extern "C" void ProgramEntry() {
 		OSCreateThread(LocalMutexTest, &information, (void *) (uintptr_t) i);
 	}
 
-	OSDisableCommand(window, actionToggleEnabled, false);
-	OSDisableCommand(window, actionOK, false);
+	OSDisableCommand(instance, actionToggleEnabled, false);
+	OSDisableCommand(instance, actionOK, false);
 #endif
 
 	{

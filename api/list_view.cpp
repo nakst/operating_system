@@ -5,6 +5,7 @@
 #define LIST_VIEW_HEADER_HEIGHT (25)
 
 // TODO Can't resize columns on single select mode?
+// TODO Redraw all when adding/removing scrollbars.
 // TODO Better scrolling down with keyboard.
 // TODO Dragging.
 // TODO Tile view.

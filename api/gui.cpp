@@ -42,14 +42,11 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
-// TODO Separate windows from instances (in progress).
-// 	- Bugs: corrupt heap when closing windows with File Manager and System Monitor.
-// 		system monitor can't enable End Process command?
-
 // TODO Loading GUI layouts from manifests.
 // 	- GUI editor.
 // TODO Keyboard controls.
 // 	- Access keys.
+// 	- Number pad.
 // TODO Textboxes.
 // 	- Undo/redo.
 // 	- Multi-line.
@@ -690,6 +687,7 @@ struct Window : GUIObject {
 	int timerHz, caretBlinkStep, caretBlinkPause;
 
 	OSInstance *instance;
+	bool temporaryInstance;
 	bool hasMenuParent;
 
 	bool willUpdateAfterMessageProcessing;
@@ -1871,14 +1869,14 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			OSSyscall(OS_SYSCALL_RESET_CLICK_CHAIN, 0, 0, 0, 0);
 		}
 
-		OSEnableCommand(control->window, osCommandPaste, ClipboardTextBytes());
-		OSEnableCommand(control->window, osCommandSelectAll, true);
+		OSEnableCommand(control->window->instance, osCommandPaste, ClipboardTextBytes());
+		OSEnableCommand(control->window->instance, osCommandSelectAll, true);
 
-		OSSetCommandNotificationCallback(control->window, osCommandPaste, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
-		OSSetCommandNotificationCallback(control->window, osCommandSelectAll, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
-		OSSetCommandNotificationCallback(control->window, osCommandCopy, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
-		OSSetCommandNotificationCallback(control->window, osCommandCut, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
-		OSSetCommandNotificationCallback(control->window, osCommandDelete, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
+		OSSetCommandNotificationCallback(control->window->instance, osCommandPaste, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
+		OSSetCommandNotificationCallback(control->window->instance, osCommandSelectAll, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
+		OSSetCommandNotificationCallback(control->window->instance, osCommandCopy, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
+		OSSetCommandNotificationCallback(control->window->instance, osCommandCut, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
+		OSSetCommandNotificationCallback(control->window->instance, osCommandDelete, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTextboxNotification, control));
 
 		{
 			OSNotification n;
@@ -1892,15 +1890,15 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			}
 		}
 	} else if (message->type == OS_MESSAGE_CLIPBOARD_UPDATED) {
-		OSEnableCommand(control->window, osCommandPaste, ClipboardTextBytes());
+		OSEnableCommand(control->window->instance, osCommandPaste, ClipboardTextBytes());
 	} else if (message->type == OS_MESSAGE_END_LAST_FOCUS) {
 		ensureCaretVisible = true;
 
-		OSDisableCommand(control->window, osCommandPaste, true);
-		OSDisableCommand(control->window, osCommandSelectAll, true);
-		OSDisableCommand(control->window, osCommandCopy, true);
-		OSDisableCommand(control->window, osCommandCut, true);
-		OSDisableCommand(control->window, osCommandDelete, true);
+		OSDisableCommand(control->window->instance, osCommandPaste, true);
+		OSDisableCommand(control->window->instance, osCommandSelectAll, true);
+		OSDisableCommand(control->window->instance, osCommandCopy, true);
+		OSDisableCommand(control->window->instance, osCommandCut, true);
+		OSDisableCommand(control->window->instance, osCommandDelete, true);
 	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
 		FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, message->mousePressed.clickChainCount);
 		lastClickChainCount = message->mousePressed.clickChainCount;
@@ -2100,7 +2098,6 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 					control->sentEditResultNotification = true;
 
 					n.type = OS_NOTIFICATION_COMMAND;
-					n.command.window = control->window;
 					n.command.command = control->command;
 
 					OSCallbackResponse response = OSSendNotification(control, control->notificationCallback, &n, OSGetInstance(control));
@@ -2153,9 +2150,9 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 	if (control->window && control->window->lastFocus == control) {
 		bool noSelection = control->caret.byte == control->caret2.byte;
-		OSDisableCommand(control->window, osCommandCopy, noSelection);
-		OSDisableCommand(control->window, osCommandCut, noSelection);
-		OSDisableCommand(control->window, osCommandDelete, noSelection);
+		OSDisableCommand(control->window->instance, osCommandCopy, noSelection);
+		OSDisableCommand(control->window->instance, osCommandCut, noSelection);
+		OSDisableCommand(control->window->instance, osCommandDelete, noSelection);
 	}
 
 	if (ensureCaretVisible) {
@@ -2192,23 +2189,23 @@ OSObject OSCreateTextbox(OSTextboxStyle style) {
 	return control;
 }
 
-static void IssueCommand(Control *control, OSCommand *command = nullptr, Window *window = nullptr) {
-	if (!window) window = control->window;
+static void IssueCommand(Control *control, OSCommand *command = nullptr, OSInstance *instance = nullptr) {
+	if (!instance) instance = control->window->instance;
 	if (!command) command = control->command;
 
-	if (control ? (control->disabled) : (((CommandInstance *) window->instance->commands)[command->identifier].disabled)) {
+	if (control ? (control->disabled) : (((CommandInstance *) instance->commands)[command->identifier].disabled)) {
 		return;
 	}
 
 	bool checkable = control ? control->checkable : command->checkable;
 	bool radioCheck = control ? control->radioCheck : command->radioCheck;
-	bool isChecked = control ? control->isChecked : ((CommandInstance *) window->instance->commands)[command->identifier].checked;
+	bool isChecked = control ? control->isChecked : ((CommandInstance *) instance->commands)[command->identifier].checked;
 
 	if (radioCheck) {
 		isChecked = true;
 
 		if (command) {
-			OSCheckCommand(window, command, isChecked);
+			OSCheckCommand(instance, command, isChecked);
 		}
 	} else if (checkable) {
 		// Update the checked state.
@@ -2216,33 +2213,34 @@ static void IssueCommand(Control *control, OSCommand *command = nullptr, Window 
 
 		if (command) {
 			// Update the command.
-			OSCheckCommand(window, command, isChecked);
+			OSCheckCommand(instance, command, isChecked);
 		} else {
 			control->isChecked = isChecked;
 		}
 	}
 
-	OSNotification n;
+	OSNotification n = {};
 	n.type = OS_NOTIFICATION_COMMAND;
 	n.command.checked = isChecked;
-	n.command.window = window;
 	n.command.command = command;
 
 	if (control) {
-		OSSendNotification(control, control->notificationCallback, &n, OSGetInstance(control));
+		OSSendNotification(control, control->notificationCallback, &n, instance);
 	} else {
-		OSSendNotification(window, ((CommandInstance *) window->instance->commands)[command->identifier].notificationCallback, &n, window->instance);
+		OSSendNotification(nullptr, ((CommandInstance *) instance->commands)[command->identifier].notificationCallback, &n, instance);
 	}
 
+#if 0
 	if (window->flags & OS_CREATE_WINDOW_MENU) {
 		OSMessage m;
 		m.type = OS_MESSAGE_DESTROY;
 		OSSendMessage(openMenus[0].window, &m);
 	}
+#endif
 }
 
-void OSIssueCommand(OSCommand *command, OSObject window) {
-	IssueCommand(nullptr, command, (Window *) window);
+void OSIssueCommand(OSInstance *instance, OSCommand *command) {
+	IssueCommand(nullptr, command, instance);
 }
 
 OSObject OSGetWindow(OSObject object) {
@@ -2255,6 +2253,12 @@ OSCallbackResponse ProcessButtonMessage(OSObject object, OSMessage *message) {
 	
 	if (message->type == OS_MESSAGE_CLICKED) {
 		IssueCommand(control);
+
+		if (control->window->flags & OS_CREATE_WINDOW_MENU) {
+			OSMessage m;
+			m.type = OS_MESSAGE_DESTROY;
+			OSSendMessage(openMenus[0].window, &m);
+		}
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
 		if (!control->checkable && (control->window->flags & OS_CREATE_WINDOW_DIALOG)) {
 			if (control->window->buttonFocus) OSRepaintControl(control->window->buttonFocus);
@@ -4182,9 +4186,8 @@ void OSSetObjectNotificationCallback(OSObject _object, OSNotificationCallback ca
 	object->notificationCallback = callback;
 }
 
-void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSNotificationCallback callback) {
-	Window *window = (Window *) _window;
-	CommandInstance *command = ((CommandInstance *) window->instance->commands) + _command->identifier;
+void OSSetCommandNotificationCallback(OSInstance *instance, OSCommand *_command, OSNotificationCallback callback) {
+	CommandInstance *command = ((CommandInstance *) instance->commands) + _command->identifier;
 	command->notificationCallback = callback;
 
 	LinkedItem<Control> *item = command->controls.firstItem;
@@ -4196,9 +4199,8 @@ void OSSetCommandNotificationCallback(OSObject _window, OSCommand *_command, OSN
 	}
 }
 
-void OSDisableCommand(OSObject _window, OSCommand *_command, bool disabled) {
-	Window *window = (Window *) _window;
-	CommandInstance *command = ((CommandInstance *) window->instance->commands) + _command->identifier;
+void OSDisableCommand(OSInstance *instance, OSCommand *_command, bool disabled) {
+	CommandInstance *command = ((CommandInstance *) instance->commands) + _command->identifier;
 	if (command->disabled == disabled) return;
 	command->disabled = disabled;
 
@@ -4211,15 +4213,12 @@ void OSDisableCommand(OSObject _window, OSCommand *_command, bool disabled) {
 	}
 }
 
-bool OSGetCommandCheck(OSObject _window, OSCommand *_command) {
-	Window *window = (Window *) _window;
-	CommandInstance *command = ((CommandInstance *) window->instance->commands) + _command->identifier;
+bool OSGetCommandCheck(OSInstance *instance, OSCommand *_command) {
+	CommandInstance *command = ((CommandInstance *) instance->commands) + _command->identifier;
 	return command->checked;
 }
 
-void OSCheckCommand(OSObject _window, OSCommand *_command, bool checked) {
-	Window *window = (Window *) _window;
-
+void OSCheckCommand(OSInstance *instance, OSCommand *_command, bool checked) {
 	if (_command->radioCheck) {
 		for (uintptr_t i = 0; i < _commandCount; i++) {
 			if ((int) i == _command->identifier) {
@@ -4231,7 +4230,7 @@ void OSCheckCommand(OSObject _window, OSCommand *_command, bool checked) {
 				continue;
 			}
 
-			CommandInstance *command = ((CommandInstance *) window->instance->commands) + i;
+			CommandInstance *command = ((CommandInstance *) instance->commands) + i;
 			command->checked = false;
 			LinkedItem<Control> *item = command->controls.firstItem;
 
@@ -4243,7 +4242,7 @@ void OSCheckCommand(OSObject _window, OSCommand *_command, bool checked) {
 		}
 	} 
 
-	CommandInstance *command = (CommandInstance *) window->instance->commands + _command->identifier;
+	CommandInstance *command = (CommandInstance *) instance->commands + _command->identifier;
 	command->checked = checked;
 	LinkedItem<Control> *item = command->controls.firstItem;
 
@@ -4758,14 +4757,13 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		} break;
 
 		case OS_MESSAGE_WINDOW_DESTROYED: {
-			{
-				OSNotification n;
-				n.type = OS_NOTIFICATION_DIALOG_CLOSE;
-				response = OSSendNotification(window, window->notificationCallback, &n, window->instance);
-			}
+			OSNotification n;
+			n.type = OS_NOTIFICATION_WINDOW_CLOSE;
+			OSSendNotification(window, window->notificationCallback, &n, window->instance);
 
-			if (!window->hasMenuParent) {
-				GUIFree(window->instance->commands);
+			if (window->temporaryInstance) {
+				OSDestroyInstance(window->instance);
+				OSHeapFree(window->instance);
 			}
 
 			window->windowItem.RemoveFromList();
@@ -4780,6 +4778,10 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					navigateMenuItem->pressedByKeyboard = false;
 					OSAnimateControl(navigateMenuItem, false);
 					IssueCommand(navigateMenuItem);
+
+					OSMessage m;
+					m.type = OS_MESSAGE_DESTROY;
+					OSSendMessage(openMenus[0].window, &m);
 				}
 			} else {
 				GUIObject *control = window->lastFocus;
@@ -4899,7 +4901,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			
 			if (message->keyboard.scancode == OS_SCANCODE_F4 && message->keyboard.alt) {
 				if (window->flags & OS_CREATE_WINDOW_DIALOG) {
-					IssueCommand(nullptr, osDialogStandardCancel, window);
+					IssueCommand(nullptr, osDialogStandardCancel, window->instance);
 				} else {
 					OSMessage m;
 					m.type = OS_MESSAGE_DESTROY;
@@ -4907,7 +4909,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				}
 			} else if (message->keyboard.scancode == OS_SCANCODE_ESCAPE) {
 				if (window->flags & OS_CREATE_WINDOW_DIALOG) {
-					IssueCommand(nullptr, osDialogStandardCancel, window);
+					IssueCommand(nullptr, osDialogStandardCancel, window->instance);
 				} else if (window->hasMenuParent) {
 					OSMessage m;
 					m.type = OS_MESSAGE_DESTROY;
@@ -4936,7 +4938,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 				if (response == OS_CALLBACK_NOT_HANDLED) {
 					for (uintptr_t i = 0; i < _commandCount; i++) {
 						if (CompareKeyboardShortcut(_commands[i], message)) {
-							IssueCommand(nullptr, _commands[i], window);
+							IssueCommand(nullptr, _commands[i], window->instance);
 							response = OS_CALLBACK_HANDLED;
 							break;
 						}
@@ -4979,15 +4981,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					openMenuCount = i;
 					break;
 				}
-			}
-
-			if (!window->hasMenuParent) {
-				OSNotification n = {};
-				n.type = OS_NOTIFICATION_COMMAND;
-				n.command.window = window;
-				n.command.command = osCommandDestroyWindow;
-				int32_t identifier = osCommandDestroyWindow->identifier;
-				OSSendNotification(window, ((CommandInstance *) window->instance->commands)[identifier].notificationCallback, &n, window->instance);
 			}
 
 			OSSendMessage(window->root, message);
@@ -5284,6 +5277,21 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	return response;
 }
 
+void OSInitialiseInstance(OSInstance *instance) {
+	instance->commands = GUIAllocate(sizeof(CommandInstance) * _commandCount, true);
+
+	for (uintptr_t i = 0; i < _commandCount; i++) {
+		CommandInstance *command = (CommandInstance *) instance->commands + i;
+		command->disabled = _commands[i]->defaultDisabled;
+		command->checked = _commands[i]->defaultCheck;
+		command->notificationCallback = _commands[i]->callback;
+	}
+}
+
+void OSDestroyInstance(OSInstance *instance) {
+	GUIFree(instance->commands);
+}
+
 static Window *CreateWindow(OSWindowSpecification *specification, Window *menuParent, unsigned x = 0, unsigned y = 0, Window *modalParent = nullptr, OSInstance *instance = nullptr) {
 	unsigned flags = specification->flags;
 
@@ -5312,16 +5320,21 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	window->windowItem.thisItem = window;
 	allWindows.InsertEnd(&window->windowItem);
 
-	if (menuParent) {
+	if (instance) {
+		window->instance = instance;
+	} else if (menuParent) {
 		window->instance = menuParent->instance;
 		window->hasMenuParent = true;
 	} else if (modalParent) {
 		window->instance = modalParent->instance;
-	} else if (instance) {
-		window->instance = instance;
 	} else {
-		// TODO Memory leak.
+		window->temporaryInstance = true;
 		window->instance = (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true);
+		OSInitialiseInstance(window->instance);
+	}
+
+	if (!window->instance->commands) {
+		OSCrashProcess(OS_FATAL_ERROR_INVALID_INSTANCE);
 	}
 
 	OSRectangle bounds;
@@ -5340,17 +5353,6 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	window->cursor = OS_CURSOR_NORMAL;
 	window->minimumWidth = minimumWidth;
 	window->minimumHeight = minimumHeight;
-
-	if (!menuParent) {
-		window->instance->commands = GUIAllocate(sizeof(CommandInstance) * _commandCount, true);
-
-		for (uintptr_t i = 0; i < _commandCount; i++) {
-			CommandInstance *command = (CommandInstance *) window->instance->commands + i;
-			command->disabled = _commands[i]->defaultDisabled;
-			command->checked = _commands[i]->defaultCheck;
-			command->notificationCallback = _commands[i]->callback;
-		}
-	}
 
 	OSSetMessageCallback(window, OS_MAKE_MESSAGE_CALLBACK(ProcessWindowMessage, nullptr));
 
@@ -5437,12 +5439,12 @@ void OSCloseWindow(OSObject window) {
 static OSObject CreateDialog(char *title, size_t titleBytes,
 				char *message, size_t messageBytes,
 				uint16_t iconID, OSObject modalParent,
-				OSObject *layouts, OSWindowSpecification *_specification) {
+				OSObject *layouts, OSWindowSpecification *_specification, OSInstance *instance) {
 	OSWindowSpecification specification = *_specification;
 	specification.title = title;
 	specification.titleBytes = titleBytes;
 
-	OSObject dialog = CreateWindow(&specification, nullptr, 0, 0, (Window *) modalParent);
+	OSObject dialog = CreateWindow(&specification, nullptr, 0, 0, (Window *) modalParent, instance);
 
 	OSObject layout1 = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
 	OSObject layout2 = OSCreateGrid(3, 1, OS_GRID_STYLE_CONTAINER);
@@ -5474,18 +5476,18 @@ static OSObject CreateDialog(char *title, size_t titleBytes,
 
 OSObject OSShowDialogTextPrompt(char *title, size_t titleBytes,
 		char *message, size_t messageBytes,
-		uint16_t iconID, OSObject modalParent, OSCommand *command, OSObject *textbox) {
+		OSInstance *instance, uint16_t iconID, OSObject modalParent, OSCommand *command, OSObject *textbox) {
 	OSObject layouts[6];
-	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogTextPrompt);
+	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogTextPrompt, instance);
 
 	OSObject okButton = OSCreateButton(command, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertOK, dialog));
+	OSSetCommandNotificationCallback(((Window *) dialog)->instance, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertOK, dialog));
 	OSSetFocusedControl(okButton, false);
 
 	OSObject cancelButton = OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 1, 0, cancelButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertCancel, dialog));
+	OSSetCommandNotificationCallback(((Window *) dialog)->instance, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertCancel, dialog));
 
 	*textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);
 	OSAddControl(layouts[3], 0, 1, *textbox, OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
@@ -5497,9 +5499,9 @@ OSObject OSShowDialogTextPrompt(char *title, size_t titleBytes,
 OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
-				   uint16_t iconID, OSObject modalParent, OSCommand *command) {
+				   OSInstance *instance, uint16_t iconID, OSObject modalParent, OSCommand *command) {
 	OSObject layouts[6];
-	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogStandard);
+	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogStandard, instance);
 
 	OSObject okButton = OSCreateButton(command, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
@@ -5507,7 +5509,7 @@ OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 
 	OSObject cancelButton = OSCreateButton(osDialogStandardCancel, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 1, 0, cancelButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertCancel, dialog));
+	OSSetCommandNotificationCallback(((Window *) dialog)->instance, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertCancel, dialog));
 	if (command->dangerous) OSSetFocusedControl(cancelButton, false);
 
 	OSAddControl(layouts[3], 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);
@@ -5518,14 +5520,14 @@ OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 OSObject OSShowDialogAlert(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
-				   uint16_t iconID, OSObject modalParent) {
+				   OSInstance *instance, uint16_t iconID, OSObject modalParent) {
 	OSObject layouts[6];
-	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogStandard);
+	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogStandard, instance);
 
 	OSObject okButton = OSCreateButton(osDialogStandardOK, OS_BUTTON_STYLE_NORMAL);
 	OSAddControl(layouts[5], 0, 0, okButton, OS_CELL_H_RIGHT);
-	OSSetCommandNotificationCallback(dialog, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertOK, dialog));
-	OSSetCommandNotificationCallback(dialog, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertOK, dialog));
+	OSSetCommandNotificationCallback(((Window *) dialog)->instance, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertOK, dialog));
+	OSSetCommandNotificationCallback(((Window *) dialog)->instance, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CommandDialogAlertOK, dialog));
 	OSSetFocusedControl(okButton, false);
 
 	OSAddControl(layouts[3], 0, 1, OSCreateLabel(description, descriptionBytes, true), OS_CELL_H_EXPAND | OS_CELL_H_PUSH | OS_CELL_V_EXPAND);

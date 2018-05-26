@@ -1,6 +1,3 @@
-[command osCommandDestroyWindow]
-label = "Destroy Window";
-
 [command osCommandCopy]
 label = "\$Copy";
 shortcut = "Ctrl+C";

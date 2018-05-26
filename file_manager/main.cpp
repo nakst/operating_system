@@ -357,8 +357,8 @@ OSCallbackResponse CommandNavigate(OSNotification *notification) {
 		} break;
 	}
 
-	OSEnableCommand(instance->window, commandNavigateBackwards, instance->pathBackwardHistoryPosition);
-	OSEnableCommand(instance->window, commandNavigateForwards, instance->pathForwardHistoryPosition);
+	OSEnableCommand(instance, commandNavigateBackwards, instance->pathBackwardHistoryPosition);
+	OSEnableCommand(instance, commandNavigateForwards, instance->pathForwardHistoryPosition);
 
 	return OS_CALLBACK_HANDLED;
 }
@@ -369,7 +369,6 @@ OSCallbackResponse CallbackBookmarkFolder(OSNotification *notification) {
 	}
 
 	Instance *instance = (Instance *) notification->instance;
-
 	bool checked = notification->command.checked;
 
 	if (checked) {
@@ -543,13 +542,13 @@ OSCallbackResponse ProcessFolderListingNotification(OSNotification *notification
 				instance->selectedChildCount++;
 			}
 
-			OSEnableCommand(OSGetWindow(notification->generator), commandOpenItem, instance->selectedChildCount);
+			OSEnableCommand(instance, commandOpenItem, instance->selectedChildCount);
 
 			return OS_CALLBACK_HANDLED;
 		} break;
 
 		case OS_NOTIFICATION_CHOOSE_ITEM: {
-			OSIssueCommand(commandOpenItem, OSGetWindow(notification->generator));
+			OSIssueCommand(instance, commandOpenItem);
 
 			return OS_CALLBACK_HANDLED;
 		} break;
@@ -575,7 +574,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSNotification *notification
 				}
 			}
 
-			OSEnableCommand(OSGetWindow(notification->generator), commandOpenItem, instance->selectedChildCount);
+			OSEnableCommand(instance, commandOpenItem, instance->selectedChildCount);
 
 			return OS_CALLBACK_HANDLED;
 		} break;
@@ -704,7 +703,7 @@ void Instance::ReportError(unsigned where, OSError error) {
 	}
 
 	OSShowDialogAlert(OSLiteral("Error"), OSLiteral(message), OSLiteral(description), 
-			OS_ICON_ERROR, window);
+			this, OS_ICON_ERROR, window);
 }
 
 bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pathBytes2, unsigned historyMode) {
@@ -792,11 +791,11 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	OSListViewReset(folderListing);
 	OSListViewInsert(folderListing, 0, childCount);
 	OSSetText(folderPath, path, pathBytes, OS_RESIZE_MODE_IGNORE);
-	OSEnableCommand(window, commandNavigateParent, pathBytes1 != 1);
+	OSEnableCommand(this, commandNavigateParent, pathBytes1 != 1);
 	OSListViewInvalidate(bookmarkList, 0, global.bookmarkCount);
 
 	selectedChildCount = 0;
-	OSEnableCommand(window, commandOpenItem, false);
+	OSEnableCommand(this, commandOpenItem, false);
 
 	{
 		bool found = false;
@@ -808,7 +807,7 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 			}
 		}
 
-		OSCheckCommand(window, commandBookmarkFolder, found);
+		OSCheckCommand(this, commandBookmarkFolder, found);
 	}
 
 	// Add the previous folder to the history.
@@ -826,7 +825,7 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 		historyBytes[historyPosition] = oldPathBytes;
 		historyPosition++;
 
-		OSEnableCommand(window, historyMode == LOAD_FOLDER_BACKWARDS ? commandNavigateForwards : commandNavigateBackwards, true);
+		OSEnableCommand(this, historyMode == LOAD_FOLDER_BACKWARDS ? commandNavigateForwards : commandNavigateBackwards, true);
 
 		// If this was a normal navigation, clear the forward history.
 		if (!historyMode) {
@@ -834,7 +833,7 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 				OSHeapFree(pathForwardHistory[--pathForwardHistoryPosition]);
 			}
 
-			OSEnableCommand(window, commandNavigateForwards, false);
+			OSEnableCommand(this, commandNavigateForwards, false);
 		}
 	}
 
@@ -851,10 +850,12 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 }
 
 OSCallbackResponse DestroyInstance(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_WINDOW_CLOSE) return OS_CALLBACK_NOT_HANDLED;
 	Instance *instance = (Instance *) notification->context;
 	OSHeapFree(instance->folderChildren);
 	OSHeapFree(instance->path);
 	global.instances.Remove(&instance->thisItem);
+	OSDestroyInstance(instance);
 	OSHeapFree(instance);
 	return OS_CALLBACK_HANDLED;
 }
@@ -862,12 +863,12 @@ OSCallbackResponse DestroyInstance(OSNotification *notification) {
 void Instance::Initialise() {
 	thisItem.thisItem = this;
 	global.instances.InsertEnd(&thisItem);
+	OSInitialiseInstance(this);
 
 	OSStartGUIAllocationBlock(32768);
 
 	window = OSCreateWindow(mainWindow, this);
-
-	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, this));
+	OSSetObjectNotificationCallback(window, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, this));
 
 	OSObject rootLayout = OSCreateGrid(1, 6, OS_GRID_STYLE_LAYOUT);
 	OSObject contentSplit = OSCreateGrid(3, 1, OS_GRID_STYLE_LAYOUT);

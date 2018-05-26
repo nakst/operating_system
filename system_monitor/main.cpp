@@ -1,3 +1,5 @@
+// TODO Maintain focused list view item after sort.
+
 #include "../api/os.h"
 
 #define MANIFEST_PARSER_LIBRARY
@@ -43,6 +45,7 @@ struct Instance : OSInstance {
 		 statusLabel,
 		 taskListing,
 		 newTaskTextbox,
+		 endProcessConfirmDialog,
 		 optionsWindow;
 
 	uintptr_t sortColumn;
@@ -76,7 +79,7 @@ void TerminateProcess() {
 		OSShowDialogAlert(OSLiteral("Terminate Process"),
 				OSLiteral("The process could not be terminated."),
 				OSLiteral("You do not have permission to manage this process."),
-				OS_ICON_ERROR, instance.window);
+				&instance, OS_ICON_ERROR, instance.window);
 		return;
 	}
 
@@ -88,7 +91,7 @@ OSCallbackResponse CloseOptionsWindow(OSNotification *notification) {
 	if (notification->context == (void *) 1) {
 		instance.updateSpeed = instance.originalUpdateSpeed;
 	} else if (notification->context == (void *) 2) {
-		instance.showEndProcessConfirmationDialog = OSGetCommandCheck(instance.optionsWindow, commandShowEndProcessConfirmationDialog);
+		instance.showEndProcessConfirmationDialog = OSGetCommandCheck(&instance, commandShowEndProcessConfirmationDialog);
 	}
 
 	OSCloseWindow(instance.optionsWindow);
@@ -138,16 +141,16 @@ OSCallbackResponse Command(OSNotification *notification) {
 				OSPackWindow(instance.optionsWindow);
 
 				switch (instance.updateSpeed) {
-					case 500:  OSCheckCommand(instance.optionsWindow, commandUpdateSpeedHigh,   true); break;
-					case 2000: OSCheckCommand(instance.optionsWindow, commandUpdateSpeedNormal, true); break;
-					case 5000: OSCheckCommand(instance.optionsWindow, commandUpdateSpeedLow,    true); break;
+					case 500:  OSCheckCommand(&instance, commandUpdateSpeedHigh,   true); break;
+					case 2000: OSCheckCommand(&instance, commandUpdateSpeedNormal, true); break;
+					case 5000: OSCheckCommand(&instance, commandUpdateSpeedLow,    true); break;
 				}
 
-				OSCheckCommand(instance.optionsWindow, commandShowEndProcessConfirmationDialog, instance.showEndProcessConfirmationDialog);
+				OSCheckCommand(&instance, commandShowEndProcessConfirmationDialog, instance.showEndProcessConfirmationDialog);
 				OSSetFocusedControl(okButton, false);
 
-				OSSetCommandNotificationCallback(instance.optionsWindow, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CloseOptionsWindow, (void *) 1));
-				OSSetCommandNotificationCallback(instance.optionsWindow, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CloseOptionsWindow, (void *) 2));
+				OSSetCommandNotificationCallback(&instance, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CloseOptionsWindow, (void *) 1));
+				OSSetCommandNotificationCallback(&instance, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CloseOptionsWindow, (void *) 2));
 
 				OSEndGUIAllocationBlock();
 			} else {
@@ -170,7 +173,7 @@ OSCallbackResponse Command(OSNotification *notification) {
 		case COMMAND_NEW_TASK: {
 			OSShowDialogTextPrompt(OSLiteral("New Task"),
 				   OSLiteral("Enter the name of the program you want to start:"),
-				   OS_ICON_RUN, instance.window,
+				   &instance, OS_ICON_RUN, instance.window,
 				   commandNewTaskConfirm, &instance.newTaskTextbox);
 		} break;
 
@@ -187,10 +190,10 @@ OSCallbackResponse Command(OSNotification *notification) {
 
 		case COMMAND_END_PROCESS: {
 			if (instance.showEndProcessConfirmationDialog) {
-				OSShowDialogConfirm(OSLiteral("Terminate Process"),
+				instance.endProcessConfirmDialog = OSShowDialogConfirm(OSLiteral("Terminate Process"),
 						OSLiteral("Are you sure you want to terminate this process?"),
 						OSLiteral("Any unsaved data will be lost."),
-						OS_ICON_WARNING, instance.window,
+						&instance, OS_ICON_WARNING, instance.window,
 						commandEndProcessConfirm);
 			} else {
 				TerminateProcess();
@@ -198,7 +201,7 @@ OSCallbackResponse Command(OSNotification *notification) {
 		} break;
 
 		case COMMAND_END_PROCESS_CONFIRM: {
-			OSCloseWindow(notification->command.window);
+			OSCloseWindow(instance.endProcessConfirmDialog);
 			TerminateProcess();
 		} break;
 	}
@@ -306,7 +309,7 @@ OSCallbackResponse ProcessTaskListingNotification(OSNotification *notification) 
 			process->state = (process->state & ~((uint16_t) notification->listViewItem.mask)) | (notification->listViewItem.state & notification->listViewItem.mask);
 
 			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
-				OSEnableCommand(instance.window, commandEndProcess, process->state & OS_LIST_VIEW_ITEM_SELECTED);
+				OSEnableCommand(&instance, commandEndProcess, process->state & OS_LIST_VIEW_ITEM_SELECTED);
 			}
 
 			return OS_CALLBACK_HANDLED;
@@ -328,7 +331,7 @@ OSCallbackResponse ProcessTaskListingNotification(OSNotification *notification) 
 }
 
 OSCallbackResponse DestroyInstance(OSNotification *notification) {
-	(void) notification;
+	if (notification->type != OS_NOTIFICATION_WINDOW_CLOSE) return OS_CALLBACK_NOT_HANDLED;
 
 	// TODO Don't rely on hardcoded paths.
 	OSNodeInformation node;
@@ -350,6 +353,7 @@ OSCallbackResponse DestroyInstance(OSNotification *notification) {
 		OSPrint("Warning: Could not save System Monitor configuration.");
 	}
 
+	OSDestroyInstance(&instance);
 	OSTerminateProcess(OS_CURRENT_PROCESS);
 	return OS_CALLBACK_HANDLED;
 }
@@ -441,7 +445,7 @@ void RefreshProcessesThread(void *argument) {
 			}
 		}
 
-		OSEnableCommand(instance.window, commandEndProcess, foundSelection);
+		OSEnableCommand(&instance, commandEndProcess, foundSelection);
 		OSSetText(instance.statusLabel, guiStringBuffer, OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 					"%d processes", currentCount), OS_RESIZE_MODE_GROW_ONLY);
 
@@ -471,6 +475,7 @@ void ParseConfiguration(Token attribute, Token section, Token name, Token value,
 
 void Instance::Initialise() {
 	createdInstance = true;
+	OSInitialiseInstance(this);
 
 	OSStartGUIAllocationBlock(16384);
 
@@ -489,8 +494,7 @@ void Instance::Initialise() {
 	}
 
 	window = OSCreateWindow(mainWindow, this);
-
-	OSSetCommandNotificationCallback(window, osCommandDestroyWindow, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, nullptr));
+	OSSetObjectNotificationCallback(window, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, nullptr));
 
 	OSObject rootLayout = OSCreateGrid(1, 3, OS_GRID_STYLE_LAYOUT);
 	OSSetRootGrid(window, rootLayout);

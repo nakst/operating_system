@@ -9,8 +9,10 @@
 #define MIDDLE_BUTTON (2)
 #define RIGHT_BUTTON (4)
 
+// TODO Better alt-tab with modal windows.
 // TODO Don't send key released messages if the focused window has changed.
 // TODO Prevent accessing the window's surface during a resize.
+// 	-> I think this isn't a problem anymore since we probably lock surfaces during drawing operations?
 
 struct Window {
 	void Update(bool fromUser);
@@ -67,6 +69,7 @@ struct WindowManager {
 	uint64_t clickChainStartMs;
 	unsigned clickChainCount;
 	int clickChainX, clickChainY;
+	unsigned altTabCount;
 
 	Timer clickRepeatTimer;
 };
@@ -274,7 +277,29 @@ void WindowManager::PressKey(unsigned scancode) {
 	if (scancode == OS_SCANCODE_RIGHT_ALT) alt2 = true;
 	if (scancode == (OS_SCANCODE_RIGHT_ALT | SCANCODE_KEY_RELEASED)) alt2 = false;
 
-	if (activeWindow) {
+	if (scancode == (OS_SCANCODE_LEFT_ALT | SCANCODE_KEY_RELEASED) || scancode == (OS_SCANCODE_RIGHT_ALT | SCANCODE_KEY_RELEASED)) {
+		altTabCount = 0;
+	}
+
+	if (scancode == OS_SCANCODE_TAB && alt) {
+		if (windowsCount == 1) {
+			SetActiveWindow(windows[0]);
+		} else if (windowsCount > 1) {
+			altTabCount++;
+
+			if (altTabCount == windowsCount) {
+				altTabCount = windowsCount - 1;
+			}
+
+			for (uintptr_t i = 0; i < windowsCount; i++) {
+				Print("%d: %x\n", i, windows[i]);
+			}
+
+			Print("-> %d:%d\n", altTabCount, windowsCount - altTabCount - 1);
+
+			SetActiveWindow(windows[windowsCount - altTabCount - 1]);
+		}
+	} else if (activeWindow) {
 		Window *window = activeWindow;
 
 		OSMessage message = {};

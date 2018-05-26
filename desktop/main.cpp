@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 // #define WALLPAPER ("/OS/Sample Images/Flower.jpg")
-#define FIRST_PROGRAM ("File Manager")
+#define FIRST_PROGRAM ("System Monitor")
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"
@@ -72,7 +72,7 @@ OSCallbackResponse CommandShutdown(OSNotification *notification) {
 }
 
 OSCallbackResponse ShutdownDialogCallback(OSNotification *notification) {
-	if (notification->type == OS_NOTIFICATION_DIALOG_CLOSE) {
+	if (notification->type == OS_NOTIFICATION_WINDOW_CLOSE) {
 		shutdownDialog = nullptr;
 		return OS_CALLBACK_HANDLED;
 	}
@@ -139,7 +139,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject, OSMessage *message) {
 			OSShowDialogAlert(OSLiteral("Program Crashed"),
 					crashMessage2, crashMessage2Length,
 					crashMessage, crashMessageLength,
-					OS_ICON_ERROR, OS_INVALID_OBJECT);
+					nullptr, OS_ICON_ERROR, OS_INVALID_OBJECT);
 
 			// If this was an installed program, we'll have to restart the process.
 			for (uintptr_t i = 0; i < installedProgramCount; i++) {
@@ -233,7 +233,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject, OSMessage *message) {
 				OSShowDialogAlert(OSLiteral("Invalid Program"),
 						OSLiteral("The program failed to start."),
 						buffer, bufferLength,
-						OS_ICON_ERROR, OS_INVALID_OBJECT);
+						nullptr, OS_ICON_ERROR, OS_INVALID_OBJECT);
 			}
 
 			OSHeapFree(name);
@@ -243,7 +243,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject, OSMessage *message) {
 			OSShowDialogAlert(OSLiteral("Invalid Program"),
 					OSLiteral("The program failed to start."),
 					OSLiteral("The executable file was either corrupt, or not designed to run on your computer."),
-					OS_ICON_ERROR, OS_INVALID_OBJECT);
+					nullptr, OS_ICON_ERROR, OS_INVALID_OBJECT);
 		} break;
 
 		case OS_MESSAGE_POWER_BUTTON_PRESSED: {
@@ -251,7 +251,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject, OSMessage *message) {
 				shutdownDialog = OSShowDialogConfirm(OSLiteral("Shutdown"),
 						OSLiteral("Are you sure you want to shutdown?"),
 						OSLiteral("Any unsaved work will be lost."),
-						OS_ICON_SHUTDOWN, OS_INVALID_OBJECT, commandShutdown);
+						nullptr, OS_ICON_SHUTDOWN, OS_INVALID_OBJECT, commandShutdown);
 				OSSetObjectNotificationCallback(shutdownDialog, OS_MAKE_NOTIFICATION_CALLBACK(ShutdownDialogCallback, nullptr));
 			} else {
 				OSSetFocusedWindow(shutdownDialog);
@@ -403,7 +403,7 @@ extern "C" void ProgramEntry() {
 		OSShowDialogAlert(OSLiteral("Desktop Multiple Processes"),
 				OSLiteral("You attempted to launch multiple desktop processes."),
 				OSLiteral("Only one desktop process can exist per user account."),
-				OS_ICON_ERROR, OS_INVALID_OBJECT);
+				nullptr, OS_ICON_ERROR, OS_INVALID_OBJECT);
 		OSProcessMessages();
 		return;
 	}
@@ -419,7 +419,7 @@ extern "C" void ProgramEntry() {
 			OSShowDialogAlert(OSLiteral("System Configuration Error"),
 					OSLiteral("The system configuration could not be loaded."),
 					OSLiteral(""),
-					OS_ICON_ERROR, OS_INVALID_OBJECT);
+					nullptr, OS_ICON_ERROR, OS_INVALID_OBJECT);
 			OSProcessMessages();
 		}
 	}

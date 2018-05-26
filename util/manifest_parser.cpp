@@ -16,6 +16,7 @@
 #include "../api/utf8.h"
 
 void OSCrashProcess(OSError x) {
+	(void) x;
 	assert(false);
 }
 #else
