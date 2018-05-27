@@ -293,3 +293,29 @@ OSHandle OSTakeSystemSnapshot(int type, size_t *bufferSize) {
 OSHandle OSOpenProcess(uint64_t pid) {
 	return OSSyscall(OS_SYSCALL_OPEN_PROCESS, pid, 0, 0, 0);
 }
+
+OSError OSOpenInstance(OSInstance *instance, OSInstance *parent, const char *name, size_t nameBytes) {
+	instance->foreign = true;
+	intptr_t handle = OSSyscall(OS_SYSCALL_OPEN_INSTANCE, (uintptr_t) name, nameBytes, (uintptr_t) instance, parent->handle);
+
+	if (OS_CHECK_ERROR(handle)) {
+		return (OSError) handle;
+	} else {
+		instance->handle = handle;
+
+		if (OSWait(&instance->handle, 1, 10000)) {
+			OSCloseHandle(instance->handle);
+			return OS_ERROR_TIMEOUT_REACHED;
+		} else {
+			return OS_SUCCESS;
+		}
+	}
+}
+
+OSHandle OSShareInstance(OSHandle instance, OSHandle targetProcess) {
+	return OSSyscall(OS_SYSCALL_SHARE_INSTANCE, instance, targetProcess, 0, 0);
+}
+
+void OSIssueForeignCommand(OSInstance *instance, char *name, size_t nameBytes) {
+	OSSyscall(OS_SYSCALL_ISSUE_FOREIGN_COMMAND, instance->handle, (uintptr_t) name, nameBytes, 0);
+}

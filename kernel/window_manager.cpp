@@ -65,6 +65,7 @@ struct WindowManager {
 	unsigned lastButtons;
 	bool shift, alt, ctrl;
 	bool shift2, alt2, ctrl2;
+	bool numlock;
 
 	uint64_t clickChainStartMs;
 	unsigned clickChainCount;
@@ -291,12 +292,6 @@ void WindowManager::PressKey(unsigned scancode) {
 				altTabCount = windowsCount - 1;
 			}
 
-			for (uintptr_t i = 0; i < windowsCount; i++) {
-				Print("%d: %x\n", i, windows[i]);
-			}
-
-			Print("-> %d:%d\n", altTabCount, windowsCount - altTabCount - 1);
-
 			SetActiveWindow(windows[windowsCount - altTabCount - 1]);
 		}
 	} else if (activeWindow) {
@@ -310,6 +305,55 @@ void WindowManager::PressKey(unsigned scancode) {
 		message.keyboard.shift = shift | shift2;
 		message.keyboard.scancode = scancode & ~SCANCODE_KEY_RELEASED;
 		window->owner->messageQueue.SendMessage(message);
+
+		int numpad = 0, nshift = 0;
+
+		if (numlock) {
+			if (scancode == OS_SCANCODE_NUM_DIVIDE  ) { numpad = OS_SCANCODE_SLASH; }
+			if (scancode == OS_SCANCODE_NUM_MULTIPLY) { numpad = OS_SCANCODE_8; nshift = 1; }
+			if (scancode == OS_SCANCODE_NUM_SUBTRACT) { numpad = OS_SCANCODE_HYPHEN; }
+			if (scancode == OS_SCANCODE_NUM_ADD	) { numpad = OS_SCANCODE_EQUALS; nshift = 1; }
+			if (scancode == OS_SCANCODE_NUM_ENTER	) { numpad = OS_SCANCODE_ENTER; }
+			if (scancode == OS_SCANCODE_NUM_POINT	) { numpad = OS_SCANCODE_PERIOD; }
+			if (scancode == OS_SCANCODE_NUM_0	) { numpad = OS_SCANCODE_0; }
+			if (scancode == OS_SCANCODE_NUM_1	) { numpad = OS_SCANCODE_1; }
+			if (scancode == OS_SCANCODE_NUM_2	) { numpad = OS_SCANCODE_2; }
+			if (scancode == OS_SCANCODE_NUM_3	) { numpad = OS_SCANCODE_3; }
+			if (scancode == OS_SCANCODE_NUM_4	) { numpad = OS_SCANCODE_4; }
+			if (scancode == OS_SCANCODE_NUM_5	) { numpad = OS_SCANCODE_5; }
+			if (scancode == OS_SCANCODE_NUM_6	) { numpad = OS_SCANCODE_6; }
+			if (scancode == OS_SCANCODE_NUM_7	) { numpad = OS_SCANCODE_7; }
+			if (scancode == OS_SCANCODE_NUM_8	) { numpad = OS_SCANCODE_8; }
+			if (scancode == OS_SCANCODE_NUM_9	) { numpad = OS_SCANCODE_9; }
+		} else {
+			if (scancode == OS_SCANCODE_NUM_DIVIDE  ) { numpad = OS_SCANCODE_SLASH; }
+			if (scancode == OS_SCANCODE_NUM_MULTIPLY) { numpad = OS_SCANCODE_8; nshift = 1; }
+			if (scancode == OS_SCANCODE_NUM_SUBTRACT) { numpad = OS_SCANCODE_HYPHEN; }
+			if (scancode == OS_SCANCODE_NUM_ADD	) { numpad = OS_SCANCODE_EQUALS; nshift = 1; }
+			if (scancode == OS_SCANCODE_NUM_ENTER	) { numpad = OS_SCANCODE_ENTER; }
+			if (scancode == OS_SCANCODE_NUM_POINT	) { numpad = OS_SCANCODE_DELETE; }
+			if (scancode == OS_SCANCODE_NUM_0	) { numpad = OS_SCANCODE_INSERT; }
+			if (scancode == OS_SCANCODE_NUM_1	) { numpad = OS_SCANCODE_END; }
+			if (scancode == OS_SCANCODE_NUM_2	) { numpad = OS_SCANCODE_DOWN_ARROW; }
+			if (scancode == OS_SCANCODE_NUM_3	) { numpad = OS_SCANCODE_PAGE_DOWN; }
+			if (scancode == OS_SCANCODE_NUM_4	) { numpad = OS_SCANCODE_LEFT_ARROW; }
+			if (scancode == OS_SCANCODE_NUM_6	) { numpad = OS_SCANCODE_RIGHT_ARROW; }
+			if (scancode == OS_SCANCODE_NUM_7	) { numpad = OS_SCANCODE_HOME; }
+			if (scancode == OS_SCANCODE_NUM_8	) { numpad = OS_SCANCODE_UP_ARROW; }
+			if (scancode == OS_SCANCODE_NUM_9	) { numpad = OS_SCANCODE_PAGE_UP; }
+		}
+
+		if (numpad && !shift && !shift2) {
+			OSMessage message = {};
+			message.type = (scancode & SCANCODE_KEY_RELEASED) ? OS_MESSAGE_KEY_RELEASED : OS_MESSAGE_KEY_PRESSED;
+			message.context = window->apiWindow;
+			message.keyboard.alt = alt | alt2;
+			message.keyboard.ctrl = ctrl | ctrl2;
+			message.keyboard.shift = nshift;
+			message.keyboard.scancode = numpad;
+			message.keyboard.numpad = true;
+			window->owner->messageQueue.SendMessage(message);
+		}
 	}
 }
 

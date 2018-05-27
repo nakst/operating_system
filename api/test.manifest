@@ -69,3 +69,7 @@ height = 200;
 minimumWidth = 50;
 minimumHeight = 50;
 title = "Window Test 2";
+
+[command sendRemoteCommand]
+label = "Send remote command";
+callback = SendRemoteCommand;

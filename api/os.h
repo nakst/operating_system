@@ -231,6 +231,8 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_UNKNOWN_SNAPSHOT_TYPE,
 	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_INVALID_INSTANCE,
+	OS_FATAL_ERROR_PROCESS_ALREADY_ATTACHED,
+	OS_FATAL_ERROR_INSTANCE_NOT_READY,
 } OSFatalError;
 
 // These must be negative.
@@ -342,6 +344,10 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_TAKE_SYSTEM_SNAPSHOT,
 	OS_SYSCALL_OPEN_PROCESS,
 	OS_SYSCALL_SET_SYSTEM_CONSTANT,
+	OS_SYSCALL_OPEN_INSTANCE,
+	OS_SYSCALL_ATTACH_INSTANCE_TO_PROCESS,
+	OS_SYSCALL_SHARE_INSTANCE,
+	OS_SYSCALL_ISSUE_FOREIGN_COMMAND,
 } OSSyscallType;
 
 #define OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND (0)
@@ -729,6 +735,7 @@ typedef enum OSMessageType {
 	// Instance messages:
 	OS_MESSAGE_CREATE_INSTANCE		= 0x4A00,
 	OS_MESSAGE_PROCESS_STARTED		= 0x4A01,
+	OS_MESSAGE_ISSUE_COMMAND		= 0x4A02,
 
 	// Debugger messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x4C00,
@@ -790,7 +797,8 @@ typedef struct OSMessage {
 
 		struct {
 			unsigned scancode; 
-			bool alt, ctrl, shift;
+			uint8_t alt : 1, ctrl : 1, shift : 1, 
+				numpad : 1;
 			OSObject notHandledBy; // Used in tab traversal.
 		} keyboard;
 
@@ -849,9 +857,13 @@ typedef struct OSMessage {
 		struct OSClipboardHeader clipboard;
 
 		struct {
-			OSHandle nameBuffer;
+			OSHandle nameBuffer, instance;
 			size_t nameBytes;
 		} executeProgram;
+
+		struct {
+			OSHandle instanceHandle;
+		} createInstance;
 
 		struct {
 			uint64_t microsecondsSinceLastIdleMessage;
@@ -861,6 +873,11 @@ typedef struct OSMessage {
 			uintptr_t index;
 			uint64_t newValue;
 		} systemConstantUpdated;
+
+		struct {
+			OSHandle nameBuffer;
+			size_t nameBytes;
+		} issueCommand;
 	};
 } OSMessage;
 
@@ -916,6 +933,9 @@ typedef struct OSCommand {
 
 	char *label;
 	size_t labelBytes;
+
+	char *name;
+	size_t nameBytes;
 
 	char *shortcut;
 	size_t shortcutBytes;
@@ -981,9 +1001,13 @@ typedef struct OSSnapshotProcesses {
 } OSSnapshotProcesses;
 
 typedef struct OSInstance {
-	void *commands;
 	void *argument;
+
+	// Internal use only:
+	void *commands;
 	OSHandle handle;
+	bool foreign;
+	uintptr_t reserved;
 } OSInstance;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
@@ -1066,6 +1090,7 @@ extern OSObject osSystemMessages;
 
 #define OS_OPEN_NODE_FAIL_IF_FOUND	(0x1000)
 #define OS_OPEN_NODE_FAIL_IF_NOT_FOUND	(0x2000)
+#define OS_OPEN_NODE_FILE 		(0x0000)
 #define OS_OPEN_NODE_DIRECTORY		(0x4000)
 #define OS_OPEN_NODE_CREATE_DIRECTORIES	(0x8000) // Create the directories leading to the file, if they don't already exist.
 
@@ -1109,6 +1134,9 @@ OS_EXTERN_C OSHandle OSCreateEvent(bool autoReset);
 
 #define OS_MAX_PROGRAM_NAME_LENGTH (256)
 OS_EXTERN_C void OSExecuteProgram(const char *name, size_t nameBytes);
+OS_EXTERN_C OSError OSOpenInstance(OSInstance *instance, OSInstance *parent, const char *programName, size_t programNameBytes);
+OS_EXTERN_C OSHandle OSShareInstance(OSHandle instanceHandle, OSHandle targetProcess);
+
 OS_EXTERN_C void OSReadConstantBuffer(OSHandle constantBuffer, void *output);
 
 OS_EXTERN_C OSHandle OSOpenProcess(uint64_t pid);
@@ -1220,13 +1248,14 @@ OS_EXTERN_C void OSSetCommandNotificationCallback(OSInstance *instance, OSComman
 OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSNotificationCallback callback);
 OS_EXTERN_C void OSSetControlCommand(OSObject control, OSCommand *command);
 OS_EXTERN_C void OSIssueCommand(OSInstance *instance, OSCommand *command);
+OS_EXTERN_C void OSIssueForeignCommand(OSInstance *instance, char *name, size_t nameBytes);
 
 OS_EXTERN_C void OSSetInstance(OSObject window, OSInstance *instance);
 OS_EXTERN_C OSInstance *OSGetInstance(OSObject guiObject);
 
 OS_EXTERN_C void OSDebugGUIObject(OSObject guiObject);
 
-OS_EXTERN_C void OSInitialiseInstance(OSInstance *instance);
+OS_EXTERN_C void OSInitialiseInstance(OSInstance *instance, OSHandle handle);
 OS_EXTERN_C void OSDestroyInstance(OSInstance *instance);
 
 OS_EXTERN_C OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);

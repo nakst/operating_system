@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 // #define WALLPAPER ("/OS/Sample Images/Flower.jpg")
-#define FIRST_PROGRAM ("System Monitor")
+#define FIRST_PROGRAM ("/OS/Test.esx")
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"
@@ -214,6 +214,12 @@ OSCallbackResponse ProcessSystemMessage(OSObject, OSMessage *message) {
 				if (program->process) {
 					OSMessage m = {};
 					m.type = OS_MESSAGE_CREATE_INSTANCE;
+
+					if (message->executeProgram.instance) {
+						m.createInstance.instanceHandle = OSShareInstance(message->executeProgram.instance, program->process);
+						OSCloseHandle(message->executeProgram.instance);
+					}
+
 					OSPostMessageRemote(program->process, &m);
 				}
 			} else if (executable) {

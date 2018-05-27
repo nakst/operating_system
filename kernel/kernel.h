@@ -185,11 +185,12 @@ struct ConstantBuffer {
 };
 
 struct ProgramInstance {
-	struct Process *owner;
+	struct Process *volatile owner;
 	ProgramInstance *parent;
 	void *apiObject;
 	uintptr_t handles;
 	Mutex mutex;
+	Event attachedToProcessEvent;
 };
 
 UniqueIdentifier installationID; // The identifier of this OS installation, given to us by the bootloader.

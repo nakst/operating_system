@@ -343,6 +343,14 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 				fprintf(output, "\t.labelBytes = 0,\n");
 			}
 
+			if (FindProperty("name", &value)) {
+				fprintf(output, "\t.name = (char *) %.*s,\n", value.bytes, value.text);
+				fprintf(output, "\t.nameBytes = %d,\n", value.bytes - 2);
+			} else {
+				fprintf(output, "\t.name = (char *) \"\",\n");
+				fprintf(output, "\t.nameBytes = 0,\n");
+			}
+
 			if (FindProperty("shortcut", &value)) {
 				fprintf(output, "\t.shortcut = (char *) %.*s,\n", value.bytes, value.text);
 				fprintf(output, "\t.shortcutBytes = %d,\n", value.bytes - 2);

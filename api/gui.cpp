@@ -46,7 +46,6 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- GUI editor.
 // TODO Keyboard controls.
 // 	- Access keys.
-// 	- Number pad.
 // TODO Textboxes.
 // 	- Undo/redo.
 // 	- Multi-line.
@@ -2237,6 +2236,22 @@ static void IssueCommand(Control *control, OSCommand *command = nullptr, OSInsta
 		OSSendMessage(openMenus[0].window, &m);
 	}
 #endif
+}
+
+void IssueCommand(OSMessage *message) {
+	OSInstance *instance = (OSInstance *) message->context;
+	char *name = (char *) OSHeapAllocate(message->issueCommand.nameBytes, false);
+	OSReadConstantBuffer(message->issueCommand.nameBuffer, name);
+
+	for (uintptr_t i = 0; i < _commandCount; i++) {
+		if (0 == OSCompareStrings(_commands[i]->name, name, _commands[i]->nameBytes, message->issueCommand.nameBytes)) {
+			OSIssueCommand(instance, _commands[i]);
+			break;
+		}
+	}
+
+	OSHeapFree(name);
+	OSCloseHandle(message->issueCommand.nameBuffer);
 }
 
 void OSIssueCommand(OSInstance *instance, OSCommand *command) {
@@ -5277,7 +5292,9 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	return response;
 }
 
-void OSInitialiseInstance(OSInstance *instance) {
+void OSInitialiseInstance(OSInstance *instance, OSHandle handle) {
+	instance->foreign = false;
+	instance->handle = handle;
 	instance->commands = GUIAllocate(sizeof(CommandInstance) * _commandCount, true);
 
 	for (uintptr_t i = 0; i < _commandCount; i++) {
@@ -5286,10 +5303,15 @@ void OSInitialiseInstance(OSInstance *instance) {
 		command->checked = _commands[i]->defaultCheck;
 		command->notificationCallback = _commands[i]->callback;
 	}
+
+	if (handle) {
+		OSSyscall(OS_SYSCALL_ATTACH_INSTANCE_TO_PROCESS, handle, (uintptr_t) instance, 0, 0);
+	}
 }
 
 void OSDestroyInstance(OSInstance *instance) {
-	GUIFree(instance->commands);
+	if (instance->handle) OSCloseHandle(instance->handle);
+	if (!instance->foreign) GUIFree(instance->commands);
 }
 
 static Window *CreateWindow(OSWindowSpecification *specification, Window *menuParent, unsigned x = 0, unsigned y = 0, Window *modalParent = nullptr, OSInstance *instance = nullptr) {
@@ -5330,7 +5352,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	} else {
 		window->temporaryInstance = true;
 		window->instance = (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true);
-		OSInitialiseInstance(window->instance);
+		OSInitialiseInstance(window->instance, OS_INVALID_HANDLE);
 	}
 
 	if (!window->instance->commands) {

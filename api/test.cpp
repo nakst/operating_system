@@ -31,6 +31,7 @@ Word words[50000];
 char buffer[1024];
 
 OSHandle mutexes[2];
+OSInstance calculator;
 
 void LocalMutexTest(void *argument) {
 	int i = (uintptr_t) argument;
@@ -358,6 +359,12 @@ void Delete(OSHandle handle) {
 	OSDeleteNode(handle);
 }
 
+OSCallbackResponse SendRemoteCommand(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) return OS_CALLBACK_NOT_HANDLED;
+	OSIssueForeignCommand(&calculator, OSLiteral("evaluate"));
+	return OS_CALLBACK_HANDLED;
+}
+
 void EnumerateRootThread(void *argument) {
 	(void) argument;
 
@@ -371,7 +378,7 @@ void EnumerateRootThread(void *argument) {
 }
 
 extern "C" void ProgramEntry() {
-#if 1
+#if 0
 	if (x != 5) OSCrashProcess(600);
 	if (y2.a != 1) OSCrashProcess(601);
 	if (y2.b != 2) OSCrashProcess(602);
@@ -811,6 +818,7 @@ extern "C" void ProgramEntry() {
 	}
 
 	OSPrint("All tests completed successfully.\n");
+#endif
 	// OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 	
 	OSWindowSpecification ws = {};
@@ -822,6 +830,7 @@ extern "C" void ProgramEntry() {
 	ws.titleBytes = OSCStringLength(ws.title);
 	ws.menubar = myMenuBar;
 	OSInstance *instance = (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true);
+	OSInitialiseInstance(instance, 0);
 	window = OSCreateWindow(&ws, instance);
 
 	OSObject b;
@@ -846,9 +855,14 @@ extern "C" void ProgramEntry() {
 	OSAddControl(content, 2, 4, sliderV = OSCreateSlider(0, 100, 50, 
 				OS_SLIDER_MODE_VERTICAL | OS_SLIDER_MODE_TICKS_BOTH_SIDES | OS_SLIDER_MODE_OPPOSITE_VALUE, 
 				5, 4), 0);
+#if 0
 	OSAddControl(content, 0, 5, sliderH = OSCreateSlider(0, 100, 50, 
 				OS_SLIDER_MODE_HORIZONTAL | OS_SLIDER_MODE_TICKS_BOTH_SIDES | OS_SLIDER_MODE_SNAP_TO_TICKS, 
 				5, 4), 0);
+#endif
+	(void) sliderH;
+
+	OSAddControl(content, 0, 5, OSCreateButton(sendRemoteCommand, OS_BUTTON_STYLE_NORMAL), OS_FLAGS_DEFAULT);
 
 	OSSetObjectNotificationCallback(sliderV, OS_MAKE_NOTIFICATION_CALLBACK(SliderValueChanged, progressBar));
 
@@ -880,6 +894,7 @@ extern "C" void ProgramEntry() {
 
 	CreateList(content);
 
+#if 0
 	OSPrint("%F, %F, %F, %F, %F, %F\n", floor(2.5), floor(-2.5), floor(3), ceil(2.5), ceil(-2.5), ceil(3));
 	OSPrint("sin(3) = %F\n", sin(3));
 
@@ -908,13 +923,14 @@ extern "C" void ProgramEntry() {
 		OSThreadInformation information;
 		OSCreateThread(LocalMutexTest, &information, (void *) (uintptr_t) i);
 	}
+#endif
 
 	OSDisableCommand(instance, actionToggleEnabled, false);
 	OSDisableCommand(instance, actionOK, false);
-#endif
 
+#if 0
 	{
-		OSObject window = OSCreateWindow(windowTest2, (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true));
+		OSObject window = OSCreateWindow(windowTest2, nullptr);
 		OSObject content = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
 #if 1
 		OSObject scrollPane = OSCreateScrollPane(content, OS_CREATE_SCROLL_PANE_VERTICAL);
@@ -929,6 +945,12 @@ extern "C" void ProgramEntry() {
 		OSObject textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);
 		OSAddControl(content, 0, 0, textbox, OS_CELL_H_PUSH | OS_CELL_V_PUSH | OS_CELL_H_EXPAND);
 		OSSetText(textbox, OSLiteral(loremIpsum), OS_RESIZE_MODE_IGNORE);
+	}
+#endif
+
+	{
+		OSError error = OSOpenInstance(&calculator, instance, OSLiteral("calculator"));
+		OSPrint("error = %d\n", error);
 	}
 
 	OSProcessMessages();

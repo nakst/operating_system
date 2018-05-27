@@ -204,6 +204,10 @@ void CloseHandleToObject(void *object, KernelObjectType type, uint64_t flags) {
 			instance->mutex.Release();
 
 			if (destroy) {
+				if (instance->parent) {
+					CloseHandleToObject(instance->parent, KERNEL_OBJECT_INSTANCE);
+				}
+
 				OSHeapFree(instance);
 			}
 		} break;

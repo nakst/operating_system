@@ -115,6 +115,9 @@ void OSProcessMessages() {
 				osSystemConstants[message.systemConstantUpdated.index] = message.systemConstantUpdated.newValue;
 				RefreshAllWindows();
 				goto done;
+			} else if (message.type == OS_MESSAGE_ISSUE_COMMAND) {
+				IssueCommand(&message);
+				goto done;
 			}
 
 			if (message.context) {

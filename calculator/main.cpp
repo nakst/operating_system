@@ -260,7 +260,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 
 	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
 		Instance *instance = (Instance *) OSHeapAllocate(sizeof(Instance), true);
-		OSInitialiseInstance(instance);
+		OSInitialiseInstance(instance, message->createInstance.instanceHandle);
 
 		OSStartGUIAllocationBlock(16384);
 

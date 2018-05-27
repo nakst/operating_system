@@ -475,7 +475,6 @@ void ParseConfiguration(Token attribute, Token section, Token name, Token value,
 
 void Instance::Initialise() {
 	createdInstance = true;
-	OSInitialiseInstance(this);
 
 	OSStartGUIAllocationBlock(16384);
 
@@ -534,6 +533,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 		if (createdInstance) {
 			OSSetFocusedWindow(instance.window);
 		} else {
+			OSInitialiseInstance(&instance, message->createInstance.instanceHandle);
 			instance.Initialise();
 		}
 

@@ -127,3 +127,4 @@ shortcut = "Shift+)";
 callback = Evaluate;
 label = "=";
 shortcut = "ENTER";
+name = "evaluate";
