@@ -900,7 +900,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 					} break;
 
 					case KERNEL_OBJECT_INSTANCE: {
-						events[i] = &((ProgramInstance *) object)->attachedToProcessEvent;
+						events[i] = &((ProgramInstance *) object)->event;
 					} break;
 
 					default: {
@@ -1204,7 +1204,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			} else {
 				instance->owner = currentProcess;
 				instance->apiObject = (void *) argument1;
-				instance->attachedToProcessEvent.Set();
+				instance->event.Set();
 			}
 
 			instance->mutex.Release();
@@ -1216,26 +1216,93 @@ uintptr_t DoSyscall(OSSyscallType index,
 			}
 		} break;
 
+		case OS_SYSCALL_GET_REQUEST_RESPONSE: {
+			KernelObjectType type = KERNEL_OBJECT_INSTANCE;
+			ProgramInstance *instance = (ProgramInstance *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(instance, argument0));
+
+			SYSCALL_BUFFER(argument1, sizeof(size_t), 1);
+
+			if (instance->parent && instance->parent->owner != currentProcess) {
+				SYSCALL_RETURN(OS_FATAL_ERROR_PARENT_INSTANCE_PROCESS_MISMATCH, true);
+			}
+
+			size_t responseBytes = 0;
+			OSHandle response = OS_INVALID_HANDLE;
+
+			instance->mutex.Acquire();
+			response = instance->lastResponse;
+			responseBytes = instance->lastResponseBytes;
+			instance->mutex.Release();
+
+			*((size_t *) argument1) = responseBytes;
+			SYSCALL_RETURN(response, false);
+		} break;
+
+		case OS_SYSCALL_SET_REQUEST_RESPONSE: {
+			KernelObjectType type = KERNEL_OBJECT_INSTANCE;
+			ProgramInstance *instance = (ProgramInstance *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
+			Defer(currentProcess->handleTable.CompleteHandle(instance, argument0));
+
+			if (!instance->parent) {
+				SYSCALL_RETURN(OS_SUCCESS, false);
+			}
+
+			SYSCALL_BUFFER(argument1, argument2, 1);
+
+			OSHandle handle = MakeConstantBuffer((void *) argument1, argument2, instance->parent->owner);
+
+			instance->mutex.Acquire();
+			instance->lastResponse = handle;
+			instance->lastResponseBytes = argument2;
+			instance->event.Set();
+			instance->mutex.Release();
+
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
+
 		case OS_SYSCALL_ISSUE_FOREIGN_COMMAND: {
 			KernelObjectType type = KERNEL_OBJECT_INSTANCE;
 			ProgramInstance *instance = (ProgramInstance *) currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(instance, argument0));
 
-			SYSCALL_BUFFER(argument1, argument3, 1);
+			SYSCALL_BUFFER(argument1, argument2, 1);
 
 			if (!instance->owner) {
-				OSCrashProcess(OS_FATAL_ERROR_INSTANCE_NOT_READY);
+				SYSCALL_RETURN(OS_FATAL_ERROR_INSTANCE_NOT_READY, true);
 			}
 
-			OSHandle handle = MakeConstantBuffer((void *) argument1, argument3, instance->owner);
+			if (instance->parent && instance->parent->owner != currentProcess) {
+				SYSCALL_RETURN(OS_FATAL_ERROR_PARENT_INSTANCE_PROCESS_MISMATCH, true);
+			}
+
+			if (argument3 && !instance->parent) {
+				SYSCALL_RETURN(OS_FATAL_ERROR_NO_INSTANCE_PARENT, true);
+			}
+
+			OSHandle handle = MakeConstantBuffer((void *) argument1, argument2, instance->owner);
 
 			OSMessage m = {};
-			m.type = OS_MESSAGE_ISSUE_COMMAND;
 			m.context = instance->apiObject;
-			m.issueCommand.parametersBuffer = handle;
-			m.issueCommand.parameterCount = argument2;
-			m.issueCommand.parametersBytes = argument3;
+
+			if (argument3) {
+				m.type = OS_MESSAGE_ISSUE_REQUEST;
+				m.issueRequest.requestBuffer = handle;
+				m.issueRequest.requestBytes = argument2;
+				
+				instance->mutex.Acquire();
+				instance->event.Reset();
+				instance->lastResponse = OS_INVALID_HANDLE;
+				instance->lastResponseBytes = 0;
+				instance->mutex.Release();
+			} else {
+				m.type = OS_MESSAGE_ISSUE_COMMAND;
+				m.issueCommand.nameBuffer = handle;
+				m.issueCommand.nameBytes = argument2;
+			}
 
 			if (!instance->owner->messageQueue.SendMessage(m)) {
 				// TODO Handle leak.
@@ -1286,30 +1353,6 @@ uintptr_t DoSyscall(OSSyscallType index,
 			}
 
 			SYSCALL_RETURN(currentProcess->handleTable.OpenHandle(handle), false);
-		} break;
-
-		case OS_SYSCALL_EXECUTE_PROGRAM: {
-			SYSCALL_BUFFER(argument0, argument1, 1);
-
-			if (argument1 > OS_MAX_PROGRAM_NAME_LENGTH || argument1 < 1) {
-				SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_STRING_LENGTH, true);
-			}
-
-			OSMessage m = {};
-			m.type = OS_MESSAGE_EXECUTE_PROGRAM;
-			m.executeProgram.nameBuffer = MakeConstantBufferForDesktop((void *) argument0, argument1);
-			m.executeProgram.nameBytes = argument1;
-
-			if (m.executeProgram.nameBuffer == OS_INVALID_HANDLE) {
-				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);
-			}
-
-			if (!desktopProcess->messageQueue.SendMessage(m)) {
-				// TODO Handle leak.
-				SYSCALL_RETURN(OS_ERROR_MESSAGE_QUEUE_FULL, false);
-			}
-
-			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
 
 		case OS_SYSCALL_READ_CONSTANT_BUFFER: {

@@ -43,8 +43,6 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
 // TODO Instancing.
-// 	- Change OSCommand to OSAction.
-// 	- Use OSCommand for IPC interfaces.
 // 	- Introduce standard IPC interfaces, e.g. for scripting languages.
 // 	- Switching the instance of the current window.
 // 	- Global action state.
@@ -2254,48 +2252,22 @@ static void IssueCommand(Control *control, OSCommand *command = nullptr, OSInsta
 
 void IssueCommand(OSMessage *message) {
 	OSInstance *instance = (OSInstance *) message->context;
-	char *data = (char *) OSHeapAllocate(message->issueCommand.parametersBytes, false);
-	OSReadConstantBuffer(message->issueCommand.parametersBuffer, data);
+	char *data = (char *) OSHeapAllocate(message->issueCommand.nameBytes, false);
+	OSReadConstantBuffer(message->issueCommand.nameBuffer, data);
 
 	{
-		for (uintptr_t i = 0, j = 0; i < message->issueCommand.parameterCount; i++) {
-			while (j < message->issueCommand.parametersBytes) {
-				if (data[j]) {
-					j++;
-				} else {
-					j++;
-					break;
-				}
-			}
-
-			if ((j == message->issueCommand.parametersBytes && i != message->issueCommand.parameterCount - 1)
-					|| (j != message->issueCommand.parametersBytes && i == message->issueCommand.parameterCount - 1)) {
-				goto error;
-			}
-		}
-
-		size_t nameBytes = OSCStringLength(data);
+		size_t nameBytes = message->issueCommand.nameBytes;
 
 		for (uintptr_t i = 0; i < _commandCount; i++) {
 			if (0 == OSCompareStrings(_commands[i]->name, data, _commands[i]->nameBytes, nameBytes)) {
-				OSPrint("Issuing command '%s' with arguments:\n", nameBytes, data);
-
-				uintptr_t j = nameBytes + 1;
-
-				for (uintptr_t i = 0; i < message->issueCommand.parameterCount - 1; i++) {
-					OSPrint("\t%d: '%s'\n", i, OSCStringLength(data + j), data + j);
-					j += OSCStringLength(data + j) + 1;
-				}
-
 				OSIssueCommand(instance, _commands[i]);
 				break;
 			}
 		}
 	}
 
-	error:;
 	OSHeapFree(data);
-	OSCloseHandle(message->issueCommand.parametersBuffer);
+	OSCloseHandle(message->issueCommand.nameBuffer);
 }
 
 void OSIssueCommand(OSInstance *instance, OSCommand *command) {

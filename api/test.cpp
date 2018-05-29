@@ -361,7 +361,16 @@ void Delete(OSHandle handle) {
 
 OSCallbackResponse SendRemoteCommand(OSNotification *notification) {
 	if (notification->type != OS_NOTIFICATION_COMMAND) return OS_CALLBACK_NOT_HANDLED;
-	OSIssueForeignCommand(&calculator, "evaluate\0" "3 + 5\0", 2);
+	OSIssueForeignCommand(&calculator, OSLiteral("evaluate"));
+
+	size_t outputBytes;
+	OSHandle outputBuffer = OSIssueRequest(&calculator, OSLiteral("EVALUATE\f3 + 5\f"), OS_WAIT_NO_TIMEOUT, &outputBytes);
+	char *buffer = (char *) OSHeapAllocate(outputBytes, false);
+	OSReadConstantBuffer(outputBuffer, buffer);
+	OSCloseHandle(outputBuffer);
+	OSPrint("Received response: %s\n", outputBytes, buffer);
+	OSHeapFree(buffer);
+
 	return OS_CALLBACK_HANDLED;
 }
 
@@ -377,7 +386,10 @@ void EnumerateRootThread(void *argument) {
 	}
 }
 
-extern "C" void ProgramEntry() {
+OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
+	(void) _object;
+
+	if (message->type != OS_MESSAGE_CREATE_INSTANCE) return OS_CALLBACK_NOT_HANDLED;
 #if 0
 	if (x != 5) OSCrashProcess(600);
 	if (y2.a != 1) OSCrashProcess(601);
@@ -830,7 +842,7 @@ extern "C" void ProgramEntry() {
 	ws.titleBytes = OSCStringLength(ws.title);
 	ws.menubar = myMenuBar;
 	OSInstance *instance = (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true);
-	OSInitialiseInstance(instance, 0);
+	OSInitialiseInstance(instance, message);
 	window = OSCreateWindow(&ws, instance);
 
 	OSObject b;
@@ -953,5 +965,10 @@ extern "C" void ProgramEntry() {
 		OSPrint("error = %d\n", error);
 	}
 
+	return OS_CALLBACK_HANDLED;
+}
+
+extern "C" void ProgramEntry() {
+	OSSetMessageCallback(osSystemMessages, OS_MAKE_MESSAGE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();
 }

@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 // #define WALLPAPER ("/OS/Sample Images/Flower.jpg")
-#define FIRST_PROGRAM ("file manager")
+#define FIRST_PROGRAM ("/OS/Test.esx")
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"
@@ -59,6 +59,10 @@ char *errorMessages[] = {
 	(char *) "INVALID_STRING_LENGTH",
 	(char *) "SPINLOCK_NOT_ACQUIRED",
 	(char *) "UNKNOWN_SNAPSHOT_TYPE",
+	(char *) "INVALID_INSTANCE",
+	(char *) "PROCESS_ALREADY_ATTACHED",
+	(char *) "INSTANCE_NOT_READY",
+	(char *) "PARENT_INSTANCE_PROCESS_MISMATCH",
 };
 
 OSCallbackResponse CommandShutdown(OSNotification *notification) {
@@ -231,6 +235,19 @@ OSCallbackResponse ProcessSystemMessage(OSObject, OSMessage *message) {
 				OSProcessInformation information;
 
 				if (OS_SUCCESS == OSCreateProcess(name, nameBytes, &information, nullptr)) {
+					OSMessage m = {};
+					m.type = OS_MESSAGE_CREATE_INSTANCE;
+
+					if (message->executeProgram.instance) {
+						m.createInstance.instanceHandle = OSShareInstance(message->executeProgram.instance, information.handle);
+						OSCloseHandle(message->executeProgram.instance);
+					}
+
+					m.createInstance.headless = message->executeProgram.flags & OS_OPEN_INSTANCE_HEADLESS;
+					OSPrint("instanceHandle = %d\n", m.createInstance.instanceHandle);
+
+					OSPostMessageRemote(information.handle, &m);
+
 					OSCloseHandle(information.handle);
 					OSCloseHandle(information.mainThread.handle);
 				}

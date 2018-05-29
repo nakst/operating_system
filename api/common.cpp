@@ -4,23 +4,6 @@
 #define CF(x) OS ## x
 #endif
 
-size_t CF(CStringLength)(char *string) {
-	if (!string) {
-		return (size_t) -1;
-	}
-
-	size_t size = 0;
-
-	while (true) {
-		if (*string) {
-			size++;
-			string++;
-		} else {
-			return size;
-		}
-	}
-}
-
 size_t CF(CStringLength)(const char *string) {
 	if (!string) {
 		return (size_t) -1;
@@ -115,13 +98,13 @@ void CF(MoveMemory)(void *_start, void *_end, intptr_t amount, bool zeroEmptySpa
 	}
 }
 
-int CF(CompareBytes)(void *a, void *b, size_t bytes) {
+int CF(CompareBytes)(const void *a, const void *b, size_t bytes) {
 	if (!bytes) {
 		return 0;
 	}
 
-	uint8_t *x = (uint8_t *) a;
-	uint8_t *y = (uint8_t *) b;
+	const uint8_t *x = (const uint8_t *) a;
+	const uint8_t *y = (const uint8_t *) b;
 
 	for (uintptr_t i = 0; i < bytes; i++) {
 		if (x[i] < y[i]) {

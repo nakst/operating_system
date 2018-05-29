@@ -21,6 +21,8 @@ struct EvaluateResult {
 	double value;
 };
 
+char buffer[1024];
+
 OSCallbackResponse Insert(OSNotification *notification) {
 	char c = (char) (uintptr_t) notification->context;
 	Instance *instance = (Instance *) notification->instance;
@@ -224,7 +226,6 @@ OSCallbackResponse Evaluate(OSNotification *notification) {
 	OSString expression;
 	OSGetText(instance->textbox, &expression);
 
-	char buffer[1024];
 	EvaluateResult e = Evaluate(expression.buffer, expression.bytes);
 
 	size_t length;
@@ -298,7 +299,43 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 		OSEndGUIAllocationBlock();
 
 		return OS_CALLBACK_HANDLED;
-	} 
+	} else if (message->type == OS_MESSAGE_PROCESS_REQUEST) {
+		size_t arguments = 0;
+
+		for (uintptr_t i = 0; i < message->processRequest.requestBytes; i++) {
+			if (message->processRequest.request[i] == '\f') {
+				arguments++;
+			}
+		}
+
+		const char *e = "EVALUATE\f";
+
+		if (arguments == 2) {
+			if (OSCStringLength(e) < message->processRequest.requestBytes 
+					&& 0 == OSCompareBytes(e, message->processRequest.request, OSCStringLength(e))) {
+				while (*message->processRequest.request != '\f') {
+					message->processRequest.request++;
+					message->processRequest.requestBytes--;
+				}
+
+				message->processRequest.request++;
+				message->processRequest.requestBytes -= 2;
+
+				EvaluateResult e = Evaluate(message->processRequest.request, message->processRequest.requestBytes);
+
+				size_t length;
+
+				if (e.error) {
+					length = OSFormatString(buffer, 1024, "error");
+				} else {
+					length = OSFormatString(buffer, 1024, "%F", e.value);
+				}
+
+				message->processRequest.response = buffer;
+				message->processRequest.responseBytes = length;
+			}
+		}
+	}
 
 	return OS_CALLBACK_NOT_HANDLED;
 }

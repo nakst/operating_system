@@ -185,12 +185,15 @@ struct ConstantBuffer {
 };
 
 struct ProgramInstance {
-	struct Process *volatile owner;
-	ProgramInstance *parent;
+	// TODO Do we need a handle to the owner?
+	struct Process *volatile owner; // The process to which messages are sent.
+	ProgramInstance *parent; // The owner of this process is the only process that can send messages to this instance.
 	void *apiObject;
 	uintptr_t handles;
 	Mutex mutex;
-	Event attachedToProcessEvent;
+	Event event;
+	volatile OSHandle lastResponse;
+	volatile size_t lastResponseBytes;
 };
 
 UniqueIdentifier installationID; // The identifier of this OS installation, given to us by the bootloader.

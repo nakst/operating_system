@@ -267,7 +267,7 @@ OSError OSMoveNode(OSHandle node, OSHandle directory, char *newPath, size_t newP
 }
 
 void OSExecuteProgram(const char *name, size_t nameBytes) {
-	OSSyscall(OS_SYSCALL_EXECUTE_PROGRAM, (uintptr_t) name, nameBytes, 0, 0);
+	OSSyscall(OS_SYSCALL_OPEN_INSTANCE, (uintptr_t) name, nameBytes, OS_FLAGS_DEFAULT, OS_INVALID_HANDLE);
 }
 
 void OSReadConstantBuffer(OSHandle buffer, void *output) {
@@ -317,13 +317,18 @@ OSHandle OSShareInstance(OSHandle instance, OSHandle targetProcess) {
 }
 
 #ifndef KERNEL
-void OSIssueForeignCommand(OSInstance *instance, const char *parameters, size_t parameterCount) {
-	size_t bytes = 0;
+void OSIssueForeignCommand(OSInstance *instance, const char *name, size_t nameBytes) {
+	OSSyscall(OS_SYSCALL_ISSUE_FOREIGN_COMMAND, instance->handle, (uintptr_t) name, nameBytes, 0);
+}
 
-	for (uintptr_t i = 0; i < parameterCount; i++) {
-		bytes += OSCStringLength(parameters + bytes) + 1;
+OSHandle OSIssueRequest(OSInstance *instance, const char *request, size_t requestBytes, uintptr_t timeout, size_t *responseBytes) {
+	OSSyscall(OS_SYSCALL_ISSUE_FOREIGN_COMMAND, instance->handle, (uintptr_t) request, requestBytes, 1);
+
+	if (OSWait(&instance->handle, 1, timeout)) {
+		// Timeout.
+		return OS_INVALID_HANDLE;
 	}
 
-	OSSyscall(OS_SYSCALL_ISSUE_FOREIGN_COMMAND, instance->handle, (uintptr_t) parameters, parameterCount, bytes);
+	return OSSyscall(OS_SYSCALL_GET_REQUEST_RESPONSE, instance->handle, (uintptr_t) responseBytes, 0, 0);
 }
 #endif

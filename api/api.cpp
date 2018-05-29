@@ -118,6 +118,25 @@ void OSProcessMessages() {
 			} else if (message.type == OS_MESSAGE_ISSUE_COMMAND) {
 				IssueCommand(&message);
 				goto done;
+			} else if (message.type == OS_MESSAGE_ISSUE_REQUEST) {
+				OSInstance *instance = (OSInstance *) message.context;
+				OSHandle handle = message.issueRequest.requestBuffer;
+				size_t s = message.issueRequest.requestBytes;
+				char *data = (char *) OSHeapAllocate(s, false);
+				OSReadConstantBuffer(handle, data);
+				message.type = OS_MESSAGE_PROCESS_REQUEST;
+				message.processRequest.request = data;
+				message.processRequest.requestBytes = s;
+				message.processRequest.instance = instance;
+				message.processRequest.response = nullptr;
+				message.processRequest.responseBytes = 0;
+				OSPrint("Request: %s\n", message.processRequest.requestBytes, message.processRequest.request);
+				OSSendMessage(osSystemMessages, &message);
+				OSPrint("Response: %s\n", message.processRequest.responseBytes, message.processRequest.response);
+				OSSyscall(OS_SYSCALL_SET_REQUEST_RESPONSE, instance->handle, (uintptr_t) message.processRequest.response, message.processRequest.responseBytes, 0);
+				OSHeapFree(data);
+				OSCloseHandle(handle);
+				goto done;
 			}
 
 			if (message.context) {

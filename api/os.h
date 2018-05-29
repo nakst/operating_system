@@ -229,10 +229,12 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_INVALID_STRING_LENGTH,
 	OS_FATAL_ERROR_SPINLOCK_NOT_ACQUIRED,
 	OS_FATAL_ERROR_UNKNOWN_SNAPSHOT_TYPE,
-	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_INVALID_INSTANCE,
 	OS_FATAL_ERROR_PROCESS_ALREADY_ATTACHED,
 	OS_FATAL_ERROR_INSTANCE_NOT_READY,
+	OS_FATAL_ERROR_PARENT_INSTANCE_PROCESS_MISMATCH,
+	OS_FATAL_ERROR_COUNT,
+	OS_FATAL_ERROR_NO_INSTANCE_PARENT,
 } OSFatalError;
 
 // These must be negative.
@@ -333,7 +335,6 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_PASTE_TEXT,
 	OS_SYSCALL_DELETE_NODE,
 	OS_SYSCALL_MOVE_NODE,
-	OS_SYSCALL_EXECUTE_PROGRAM,
 	OS_SYSCALL_READ_CONSTANT_BUFFER,
 	OS_SYSCALL_GET_PROCESS_STATE,
 	OS_SYSCALL_SHUTDOWN,
@@ -348,6 +349,8 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_ATTACH_INSTANCE_TO_PROCESS,
 	OS_SYSCALL_SHARE_INSTANCE,
 	OS_SYSCALL_ISSUE_FOREIGN_COMMAND,
+	OS_SYSCALL_GET_REQUEST_RESPONSE,
+	OS_SYSCALL_SET_REQUEST_RESPONSE,
 } OSSyscallType;
 
 #define OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND (0)
@@ -736,6 +739,8 @@ typedef enum OSMessageType {
 	OS_MESSAGE_CREATE_INSTANCE		= 0x4A00,
 	OS_MESSAGE_PROCESS_STARTED		= 0x4A01,
 	OS_MESSAGE_ISSUE_COMMAND		= 0x4A02,
+	OS_MESSAGE_ISSUE_REQUEST		= 0x4A03,
+	OS_MESSAGE_PROCESS_REQUEST		= 0x4A04,
 
 	// Debugger messages:
 	OS_MESSAGE_PROGRAM_CRASH		= 0x4C00,
@@ -877,10 +882,22 @@ typedef struct OSMessage {
 		} systemConstantUpdated;
 
 		struct {
-			OSHandle parametersBuffer;
-			size_t parametersBytes;
-			size_t parameterCount;
+			OSHandle nameBuffer;
+			size_t nameBytes;
 		} issueCommand;
+
+		struct {
+			OSHandle requestBuffer;
+			size_t requestBytes;
+		} issueRequest;
+
+		struct {
+			char *request;
+			size_t requestBytes;
+			OSInstance *instance;
+			void *response;
+			size_t responseBytes;
+		} processRequest;
 	};
 } OSMessage;
 
@@ -1142,6 +1159,7 @@ OS_EXTERN_C OSHandle OSCreateEvent(bool autoReset);
 OS_EXTERN_C void OSExecuteProgram(const char *name, size_t nameBytes);
 OS_EXTERN_C OSError OSOpenInstance(OSInstance *instance, OSInstance *parent, const char *programName, size_t programNameBytes, unsigned flags);
 OS_EXTERN_C OSHandle OSShareInstance(OSHandle instanceHandle, OSHandle targetProcess);
+OS_EXTERN_C OSHandle OSIssueRequest(OSInstance *instance, const char *request, size_t requestBytes, uintptr_t timeoutMs, size_t *responseBytes); 
 
 OS_EXTERN_C void OSReadConstantBuffer(OSHandle constantBuffer, void *output);
 
@@ -1254,7 +1272,7 @@ OS_EXTERN_C void OSSetCommandNotificationCallback(OSInstance *instance, OSComman
 OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSNotificationCallback callback);
 OS_EXTERN_C void OSSetControlCommand(OSObject control, OSCommand *command);
 OS_EXTERN_C void OSIssueCommand(OSInstance *instance, OSCommand *command);
-OS_EXTERN_C void OSIssueForeignCommand(OSInstance *instance, const char *parameters /*Zero-terminated, e.g. parameters = "one\0two\0three\0", parameterCount = 3*/, size_t parameterCount);
+OS_EXTERN_C void OSIssueForeignCommand(OSInstance *instance, const char *name, size_t nameBytes);
 
 OS_EXTERN_C void OSSetInstance(OSObject window, OSInstance *instance);
 OS_EXTERN_C OSInstance *OSGetInstance(OSObject guiObject);
@@ -1338,12 +1356,12 @@ OS_EXTERN_C int OSGetScrollbarPosition(OSObject _scrollbar);
 OS_EXTERN_C void *OSHeapAllocate(size_t size, bool zeroMemory);
 OS_EXTERN_C void OSHeapFree(void *address);
 
-OS_EXTERN_C size_t OSCStringLength(char *string);
+OS_EXTERN_C size_t OSCStringLength(const char *string);
 OS_EXTERN_C void OSCopyMemory(void *destination, void *source, size_t bytes);
 OS_EXTERN_C void OSMoveMemory(void *_start, void *_end, intptr_t amount, bool zeroEmptySpace);
 OS_EXTERN_C void OSCopyMemoryReverse(void *_destination, void *_source, size_t bytes);
 OS_EXTERN_C void OSZeroMemory(void *destination, size_t bytes);
-OS_EXTERN_C int OSCompareBytes(void *a, void *b, size_t bytes);
+OS_EXTERN_C int OSCompareBytes(const void *a, const void *b, size_t bytes);
 OS_EXTERN_C uint8_t OSSumBytes(uint8_t *data, size_t bytes);
 OS_EXTERN_C void OSPrint(const char *format, ...);
 OS_EXTERN_C void OSPrintDirect(char *string, size_t stringLength);
