@@ -52,12 +52,15 @@ void Compile(bool enableOptimisations) {
 	setenv("LinkFlags", LinkFlags, 1);
 	setenv("Optimise", Optimise, 1);
 
+	system("cp `x86_64-elf-gcc -print-file-name=\"crtbegin.o\"` crtbegin.o");
+	system("cp `x86_64-elf-gcc -print-file-name=\"crtend.o\"` crtend.o");
+
 	printf("-> Building " ColorBlue "API" ColorNormal "...\n");
 
 	system("./manifest_parser api/empty.manifest bin/OS/standard.manifest.h");
 	system("nasm -felf64 api/api.s -o bin/OS/api1.o -Fdwarf");
-	system("nasm -felf64 api/crti.s -o bin/OS/crti.o -Fdwarf");
-	system("nasm -felf64 api/crtn.s -o bin/OS/crtn.o -Fdwarf");
+	system("nasm -felf64 api/crti.s -o crti.o -Fdwarf");
+	system("nasm -felf64 api/crtn.s -o crtn.o -Fdwarf");
 	sprintf(buffer, "x86_64-elf-g++ -c api/api.cpp -o bin/OS/api2.o " BuildFlags " -Wno-unused-function " "%s" " -fPIC", Optimise);
 	system(buffer);
 	system("x86_64-elf-ar -rcs bin/OS/libapi.a bin/OS/api1.o bin/OS/api2.o ");

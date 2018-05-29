@@ -1,31 +1,25 @@
+# Vim swap files
 *.swp
 *.swo
-*.o
-drive
-drive2
-mount/
-bx_enh_dbg.ini
-vbox.vdi
-bin/
-bochs-config
-drive.7z
-log.txt
+
+# Executables 
 esfs
 build
 tags
-start.sh
 manifest_parser
-AcceptedLicense
-build_system_config.dat
-out.txt
-out2.txt
-out3.txt
-out4.txt
 analyse_mutex_log
-Nebula 2.jpg
-Test Image.png
+
+# Build things...
+*.o
+bin/
+build_system_config.dat
+cross/
+
+# Ports we don't need to upload
 ports/lua/
-test.c
 ports/acpica/files
 ports/nasm
-hello_world
+
+# Output drives
+drive
+vbox.vdi

@@ -602,9 +602,7 @@ int main(int argc, char **argv) {
 				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
 				autoBuild.output.bytes, autoBuild.output.text, getenv("BuildFlags"), getenv("Optimise"));
 		system(buffer);
-		system("cp `x86_64-elf-gcc -print-file-name=\"crtbegin.o\"` bin/OS/crtbegin.o");
-		system("cp `x86_64-elf-gcc -print-file-name=\"crtend.o\"` bin/OS/crtend.o");
-		sprintf(buffer, "x86_64-elf-gcc -o bin%.*s%.*s bin/OS/crti.o bin/OS/crtbegin.o bin%.*s%.*s.o bin/OS/crtend.o bin/OS/crtn.o %s", 
+		sprintf(buffer, "x86_64-elf-gcc -o bin%.*s%.*s crti.o crtbegin.o bin%.*s%.*s.o crtend.o crtn.o %s", 
 				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
 				autoBuild.output.bytes, autoBuild.output.text, 
 				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
