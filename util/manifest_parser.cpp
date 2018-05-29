@@ -235,6 +235,19 @@ bool ParseManifest(char *text, ParseCallback callback) {
 	return true;
 }
 
+Token RemoveQuotes(Token token) {
+	if (*token.text == '"') {
+		token.text++;
+		token.bytes--;
+	}
+
+	if (token.text[token.bytes - 1] == '"') {
+		token.bytes--;
+	}
+
+	return token;
+}
+
 #ifndef MANIFEST_PARSER_LIBRARY
 
 FILE *output;

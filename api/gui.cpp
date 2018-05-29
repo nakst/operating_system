@@ -42,6 +42,14 @@ uint32_t TEXTBOX_SELECTED_COLOR_2 = 0xFFDDDDDD;
 
 uint32_t DISABLE_TEXT_SHADOWS = 1;
 
+// TODO Instancing.
+// 	- Change OSCommand to OSAction.
+// 	- Use OSCommand for IPC interfaces.
+// 	- Introduce standard IPC interfaces, e.g. for scripting languages.
+// 	- Switching the instance of the current window.
+// 	- Global action state.
+// 	- Single instance programs.
+
 // TODO Loading GUI layouts from manifests.
 // 	- GUI editor.
 // TODO Keyboard controls.

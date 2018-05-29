@@ -1,6 +1,7 @@
 [program]
 name = "System Monitor";
 shortName = "systemMonitor";
+singleInstance;
 
 [build]
 output = "System Monitor.esx";

@@ -1,7 +1,7 @@
 #include "../api/os.h"
 
 // #define WALLPAPER ("/OS/Sample Images/Flower.jpg")
-#define FIRST_PROGRAM ("/OS/Test.esx")
+#define FIRST_PROGRAM ("file manager")
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"
@@ -355,19 +355,6 @@ void InitialiseGUI() {
 
 	OSInitialiseGUI();
 	OSRedrawAll();
-}
-
-Token RemoveQuotes(Token token) {
-	if (*token.text == '"') {
-		token.text++;
-		token.bytes--;
-	}
-
-	if (token.text[token.bytes - 1] == '"') {
-		token.bytes--;
-	}
-
-	return token;
 }
 
 void LoadInstalledPrograms(Token attribute, Token section, Token name, Token value, int event) {

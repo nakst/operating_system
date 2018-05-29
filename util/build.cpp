@@ -1,3 +1,8 @@
+// TODO Download and build ports.
+// TODO Switch to shared libraries for the API.
+// TODO Port musl fully to get a working libc.
+// TODO Merge the manifest header generator into this program.
+
 #include <stdio.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -15,6 +20,107 @@ bool acceptedLicense;
 char compilerPath[4096];
 
 char buffer[4096];
+char buffer2[2048];
+
+#define ColorBlue "\033[0;36m"
+#define ColorNormal "\033[0m"
+
+void FindInstallationFolder(Token attribute, Token section, Token name, Token value, int event) {
+	if (event == EVENT_ATTRIBUTE && CompareTokens(section, "build") && CompareTokens(name, "installationFolder")) {
+		value = RemoveQuotes(value);
+		memcpy(buffer2, value.text, value.bytes);
+		buffer2[value.bytes] = 0;
+	} else if (event == EVENT_ATTRIBUTE && CompareTokens(section, "program") && CompareTokens(name, "name")) {
+		value = RemoveQuotes(value);
+		sprintf(buffer, "-> Building " ColorBlue "%.*s" ColorNormal "...\n", value.bytes, value.text);
+		printf(buffer);
+	}
+}
+
+void Compile(bool enableOptimisations) {
+	const char *Optimise = enableOptimisations ? "-O2" : "";
+	const char *OptimiseKernel = enableOptimisations ? "-O2 -DDEBUG_BUILD" : "-DDEBUG_BUILD";
+
+#define BuildFlags "-ffreestanding -Wall -Wextra -Wno-missing-field-initializers -fno-exceptions -mcmodel=large -fno-rtti -g -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address -Iports/freetype"
+#define LinkFlags "-T util/linker_userland64.ld -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Lbin/OS -lapi -lfreetype -lm -Lports/freetype -Lports/musl"
+#define KernelLinkFlags "-ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000"
+
+	setenv("BuildFlags", BuildFlags, 1);
+	setenv("LinkFlags", LinkFlags, 1);
+	setenv("Optimise", Optimise, 1);
+
+	printf("-> Building " ColorBlue "API" ColorNormal "...\n");
+
+	system("./manifest_parser api/empty.manifest bin/OS/standard.manifest.h");
+	system("nasm -felf64 api/api.s -o bin/OS/api1.o -Fdwarf");
+	system("nasm -felf64 api/crti.s -o bin/OS/crti.o -Fdwarf");
+	system("nasm -felf64 api/crtn.s -o bin/OS/crtn.o -Fdwarf");
+	sprintf(buffer, "x86_64-elf-g++ -c api/api.cpp -o bin/OS/api2.o " BuildFlags " -Wno-unused-function " "%s" " -fPIC", Optimise);
+	system(buffer);
+	system("x86_64-elf-ar -rcs bin/OS/libapi.a bin/OS/api1.o bin/OS/api2.o ");
+	sprintf(buffer, "x86_64-elf-g++ -c api/glue.cpp -o bin/OS/glue.o " BuildFlags " -Wno-unused-function " "%s", Optimise);
+	system(buffer);
+	system("x86_64-elf-ar -rcs bin/OS/libglue.a bin/OS/glue.o ");
+	system("x86_64-elf-gcc -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Wl,-shared -o bin/OS/libapis.so bin/OS/api1.o bin/OS/api2.o -lms -Lports/musl");
+
+	const char *programs[] = {
+		"desktop", "desktop/desktop.manifest",
+		"calculator", "",
+		"file_manager", "",
+		"image_viewer", "",
+		"system_monitor", "",
+		"test", "api/test.manifest",
+	};
+
+	for (uintptr_t i = 0; i < sizeof(programs) / sizeof(char *); i += 2) {
+		if (strlen(programs[i + 1])) {
+			sprintf(buffer, programs[i + 1]);
+		} else {
+			sprintf(buffer, "%s/%s.manifest", programs[i], programs[i]);
+		}
+				
+		FILE *file = fopen(buffer, "r");
+		fseek(file, 0, SEEK_END);
+		size_t fileSize = ftell(file);
+		fseek(file, 0, SEEK_SET);
+		char *b = (char *) malloc(fileSize + 1);
+		b[fileSize] = 0;
+		fread(b, 1, fileSize, file);
+		fclose(file);
+		buffer2[0] = 0;
+		ParseManifest(b, FindInstallationFolder);
+		free(b);
+
+		if (strlen(programs[i + 1])) {
+			sprintf(buffer, "./manifest_parser %s \"bin%s%s%smanifest.h\"", programs[i + 1], buffer2, strlen(programs[i + 1]) ? programs[i] : "", strlen(programs[i + 1]) ? "." : "");
+		} else {
+			sprintf(buffer, "./manifest_parser %s/%s.manifest \"bin%s%s%smanifest.h\"", programs[i], programs[i], buffer2, strlen(programs[i + 1]) ? programs[i] : "", strlen(programs[i + 1]) ? "." : "");
+		}
+
+		system(buffer);
+
+		if (!strlen(programs[i + 1])) {
+			sprintf(buffer, "rm \"bin%s\"*.o", buffer2);
+			system(buffer);
+			sprintf(buffer, "rm \"bin%s\"*.h", buffer2);
+			system(buffer);
+		}
+	}
+
+	printf("-> Building " ColorBlue "Kernel" ColorNormal "...\n");
+
+	system("nasm -felf64 kernel/x86_64.s -o bin/OS/kernel_x86_64.o -Fdwarf");
+	sprintf(buffer, "x86_64-elf-g++ -c kernel/main.cpp -o bin/OS/kernel.o -mno-red-zone " BuildFlags "%s" " -DUSE_ACPICA -Wno-unused-function", OptimiseKernel);
+	system(buffer);
+	system("x86_64-elf-gcc -T util/linker64.ld -o bin/OS/Kernel.esx bin/OS/kernel_x86_64.o bin/OS/kernel.o -mno-red-zone " KernelLinkFlags " -lacpica -Lports/acpica");
+	system("cp bin/OS/Kernel.esx bin/OS/Kernel.esx_symbols");
+	system("x86_64-elf-strip --strip-all bin/OS/Kernel.esx");
+
+	printf("Removing object files...\n");
+
+	sprintf(buffer, "rm \"bin/OS/\"*.o");
+	system(buffer);
+}
 
 void Build(bool enableOptimisations, bool compile = true) {
 	srand(time(NULL));
@@ -63,11 +169,7 @@ void Build(bool enableOptimisations, bool compile = true) {
 	printf("Compiling the kernel and userspace programs...\n");
 
 	if (compile) {
-		if (enableOptimisations) {
-			system("./compile.sh \"-O2\" \"-O2 -DDEBUG_BUILD\"");
-		} else {
-			system("./compile.sh \"\" \"-DDEBUG_BUILD\"");
-		}
+		Compile(enableOptimisations);
 	}
 
 	printf("Removing temporary files...\n");
@@ -442,7 +544,7 @@ int main(int argc, char **argv) {
 			printf("Please restart the build system.\n");
 			break;
 		} else if (0 == strcmp(l, "compile") || 0 == strcmp(l, "c")) {
-			system("./compile.sh");
+			Compile(false);
 		} else if (0 == memcmp(l, "lua ", 4) || 0 == memcmp(l, "l ", 2)) {
 			sprintf(buffer, "lua -e \"print(%s)\"", 1 + strchr(l, ' '));
 			system(buffer);

@@ -1,5 +1,6 @@
 [program]
 name = "Desktop";
+singleInstance;
 
 [build]
 output = "Desktop.esx";
