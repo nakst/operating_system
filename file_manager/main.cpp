@@ -44,7 +44,7 @@ struct Instance : OSInstance {
 	uintptr_t sortColumn;
 	bool sortDescending;
 
-	void Initialise(OSHandle instanceHandle);
+	void Initialise(OSMessage *message);
 
 #define LOAD_FOLDER_BACKWARDS (1)
 #define LOAD_FOLDER_FORWARDS (2)
@@ -860,10 +860,10 @@ OSCallbackResponse DestroyInstance(OSNotification *notification) {
 	return OS_CALLBACK_HANDLED;
 }
 
-void Instance::Initialise(OSHandle instanceHandle) {
+void Instance::Initialise(OSMessage *message) {
 	thisItem.thisItem = this;
 	global.instances.InsertEnd(&thisItem);
-	OSInitialiseInstance(this, instanceHandle);
+	OSInitialiseInstance(this, message);
 
 	OSStartGUIAllocationBlock(32768);
 
@@ -925,7 +925,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	(void) _object;
 
 	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
-		((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise(message->createInstance.instanceHandle);
+		((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise(message);
 		return OS_CALLBACK_HANDLED;
 	} 
 

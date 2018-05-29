@@ -884,13 +884,15 @@ void OSPackWindow(OSObject object) {
 	int newWidth = message.measure.preferredWidth + 16;
 	int newHeight = message.measure.preferredHeight + 16;
 
-	OSRectangle bounds;
-	OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
+	if (!(window->flags & OS_CREATE_WINDOW_HEADLESS)) {
+		OSRectangle bounds;
+		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
 
-	bounds.right = bounds.left + newWidth;
-	bounds.bottom = bounds.top + newHeight;
+		bounds.right = bounds.left + newWidth;
+		bounds.bottom = bounds.top + newHeight;
 
-	OSSyscall(OS_SYSCALL_MOVE_WINDOW, window->window, (uintptr_t) &bounds, 0, 0);
+		OSSyscall(OS_SYSCALL_MOVE_WINDOW, window->window, (uintptr_t) &bounds, 0, 0);
+	}
 
 	window->width = newWidth;
 	window->height = newHeight;
@@ -907,6 +909,7 @@ void OSPackWindow(OSObject object) {
 
 void OSSetFocusedWindow(OSObject object) {
 	Window *window = (Window *) object;
+	if (window->flags & OS_CREATE_WINDOW_HEADLESS) return;
 	OSSyscall(OS_SYSCALL_SET_FOCUSED_WINDOW, window->window, 0, 0, 0);
 }
 
@@ -1483,6 +1486,9 @@ static OSCallbackResponse ProcessWindowResizeHandleMessage(OSObject _object, OSM
 
 	if (message->type == OS_MESSAGE_MOUSE_DRAGGED && control->direction != RESIZE_NONE) {
 		Window *window = control->window;
+
+		if (window->flags & OS_CREATE_WINDOW_HEADLESS) return OS_CALLBACK_REJECTED;
+
 		OSRectangle bounds, bounds2;
 		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
 
@@ -2240,18 +2246,48 @@ static void IssueCommand(Control *control, OSCommand *command = nullptr, OSInsta
 
 void IssueCommand(OSMessage *message) {
 	OSInstance *instance = (OSInstance *) message->context;
-	char *name = (char *) OSHeapAllocate(message->issueCommand.nameBytes, false);
-	OSReadConstantBuffer(message->issueCommand.nameBuffer, name);
+	char *data = (char *) OSHeapAllocate(message->issueCommand.parametersBytes, false);
+	OSReadConstantBuffer(message->issueCommand.parametersBuffer, data);
 
-	for (uintptr_t i = 0; i < _commandCount; i++) {
-		if (0 == OSCompareStrings(_commands[i]->name, name, _commands[i]->nameBytes, message->issueCommand.nameBytes)) {
-			OSIssueCommand(instance, _commands[i]);
-			break;
+	{
+		for (uintptr_t i = 0, j = 0; i < message->issueCommand.parameterCount; i++) {
+			while (j < message->issueCommand.parametersBytes) {
+				if (data[j]) {
+					j++;
+				} else {
+					j++;
+					break;
+				}
+			}
+
+			if ((j == message->issueCommand.parametersBytes && i != message->issueCommand.parameterCount - 1)
+					|| (j != message->issueCommand.parametersBytes && i == message->issueCommand.parameterCount - 1)) {
+				goto error;
+			}
+		}
+
+		size_t nameBytes = OSCStringLength(data);
+
+		for (uintptr_t i = 0; i < _commandCount; i++) {
+			if (0 == OSCompareStrings(_commands[i]->name, data, _commands[i]->nameBytes, nameBytes)) {
+				OSPrint("Issuing command '%s' with arguments:\n", nameBytes, data);
+
+				uintptr_t j = nameBytes + 1;
+
+				for (uintptr_t i = 0; i < message->issueCommand.parameterCount - 1; i++) {
+					OSPrint("\t%d: '%s'\n", i, OSCStringLength(data + j), data + j);
+					j += OSCStringLength(data + j) + 1;
+				}
+
+				OSIssueCommand(instance, _commands[i]);
+				break;
+			}
 		}
 	}
 
-	OSHeapFree(name);
-	OSCloseHandle(message->issueCommand.nameBuffer);
+	error:;
+	OSHeapFree(data);
+	OSCloseHandle(message->issueCommand.parametersBuffer);
 }
 
 void OSIssueCommand(OSInstance *instance, OSCommand *command) {
@@ -4999,8 +5035,14 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			}
 
 			OSSendMessage(window->root, message);
-			OSCloseHandle(window->surface);
-			OSCloseHandle(window->window);
+
+			if (!(window->flags & OS_CREATE_WINDOW_HEADLESS)) {
+				OSCloseHandle(window->surface);
+				OSCloseHandle(window->window);
+			} else {
+				// TODO Destroy the window?
+			} 
+
 			window->destroyed = true;
 		} break;
 
@@ -5233,7 +5275,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 		return response;
 	}
 
-	{
+	if (!(window->flags & OS_CREATE_WINDOW_HEADLESS)) {
 		// TODO Only do this if the list or focus has changed.
 
 		LinkedItem<Control> *item = window->timerControls.firstItem;
@@ -5249,42 +5291,42 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 			window->timerHz = largestHz;
 			OSSyscall(OS_SYSCALL_NEED_WM_TIMER, window->window, largestHz, 0, 0);
 		}
-	}
 
-	if (window->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {
-		window->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
+		if (window->descendentInvalidationFlags & DESCENDENT_RELAYOUT) {
+			window->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
 
-		OSMessage message;
-		message.type = OS_MESSAGE_LAYOUT;
-		message.layout.clip = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
-		message.layout.left = 0;
-		message.layout.top = 0;
-		message.layout.right = window->width;
-		message.layout.bottom = window->height;
-		message.layout.force = false;
-		OSSendMessage(window->root, &message);
-	}
+			OSMessage message;
+			message.type = OS_MESSAGE_LAYOUT;
+			message.layout.clip = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
+			message.layout.left = 0;
+			message.layout.top = 0;
+			message.layout.right = window->width;
+			message.layout.bottom = window->height;
+			message.layout.force = false;
+			OSSendMessage(window->root, &message);
+		}
 
-	if (window->cursor != window->cursorOld) {
-		OSSyscall(OS_SYSCALL_SET_CURSOR_STYLE, window->window, window->cursor, 0, 0);
-		window->cursorOld = window->cursor;
-		updateWindow = true;
-	}
+		if (window->cursor != window->cursorOld) {
+			OSSyscall(OS_SYSCALL_SET_CURSOR_STYLE, window->window, window->cursor, 0, 0);
+			window->cursorOld = window->cursor;
+			updateWindow = true;
+		}
 
-	if (window->descendentInvalidationFlags & DESCENDENT_REPAINT) {
-		window->descendentInvalidationFlags &= ~DESCENDENT_REPAINT;
+		if (window->descendentInvalidationFlags & DESCENDENT_REPAINT) {
+			window->descendentInvalidationFlags &= ~DESCENDENT_REPAINT;
 
-		OSMessage message;
-		message.type = OS_MESSAGE_PAINT;
-		message.paint.clip = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
-		message.paint.surface = window->surface;
-		message.paint.force = false;
-		OSSendMessage(window->root, &message);
-		updateWindow = true;
-	}
+			OSMessage message;
+			message.type = OS_MESSAGE_PAINT;
+			message.paint.clip = OS_MAKE_RECTANGLE(0, window->width, 0, window->height);
+			message.paint.surface = window->surface;
+			message.paint.force = false;
+			OSSendMessage(window->root, &message);
+			updateWindow = true;
+		}
 
-	if (updateWindow) {
-		OSSyscall(OS_SYSCALL_UPDATE_WINDOW, window->window, 0, 0, 0);
+		if (updateWindow) {
+			OSSyscall(OS_SYSCALL_UPDATE_WINDOW, window->window, 0, 0, 0);
+		}
 	}
 
 	window->willUpdateAfterMessageProcessing = false;
@@ -5292,9 +5334,10 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	return response;
 }
 
-void OSInitialiseInstance(OSInstance *instance, OSHandle handle) {
+void OSInitialiseInstance(OSInstance *instance, OSMessage *message) {
 	instance->foreign = false;
-	instance->handle = handle;
+	instance->handle = message ? message->createInstance.instanceHandle : OS_INVALID_HANDLE;
+	instance->headless = message ? message->createInstance.headless : false;
 	instance->commands = GUIAllocate(sizeof(CommandInstance) * _commandCount, true);
 
 	for (uintptr_t i = 0; i < _commandCount; i++) {
@@ -5304,8 +5347,8 @@ void OSInitialiseInstance(OSInstance *instance, OSHandle handle) {
 		command->notificationCallback = _commands[i]->callback;
 	}
 
-	if (handle) {
-		OSSyscall(OS_SYSCALL_ATTACH_INSTANCE_TO_PROCESS, handle, (uintptr_t) instance, 0, 0);
+	if (instance->handle) {
+		OSSyscall(OS_SYSCALL_ATTACH_INSTANCE_TO_PROCESS, instance->handle, (uintptr_t) instance, 0, 0);
 	}
 }
 
@@ -5314,7 +5357,8 @@ void OSDestroyInstance(OSInstance *instance) {
 	if (!instance->foreign) GUIFree(instance->commands);
 }
 
-static Window *CreateWindow(OSWindowSpecification *specification, Window *menuParent, unsigned x = 0, unsigned y = 0, Window *modalParent = nullptr, OSInstance *instance = nullptr) {
+static Window *CreateWindow(OSWindowSpecification *specification, Window *menuParent, unsigned x = 0, unsigned y = 0, 
+		Window *modalParent = nullptr, OSInstance *instance = nullptr) {
 	unsigned flags = specification->flags;
 
 	if (!flags) {
@@ -5355,22 +5399,31 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 		OSInitialiseInstance(window->instance, OS_INVALID_HANDLE);
 	}
 
+	bool headless = window->instance->headless;
+
+	if (headless) {
+		flags |= OS_CREATE_WINDOW_HEADLESS;
+	}
+
 	if (!window->instance->commands) {
 		OSCrashProcess(OS_FATAL_ERROR_INVALID_INSTANCE);
 	}
 
-	OSRectangle bounds;
-	bounds.left = x;
-	bounds.right = x + width;
-	bounds.top = y;
-	bounds.bottom = y + height;
+	if (!headless) {
+		OSRectangle bounds;
+		bounds.left = x;
+		bounds.right = x + width;
+		bounds.top = y;
+		bounds.bottom = y + height;
 
-	window->window = modalParent ? modalParent->window : OS_INVALID_HANDLE;
-	OSSyscall(OS_SYSCALL_CREATE_WINDOW, (uintptr_t) &window->window, (uintptr_t) &bounds, (uintptr_t) window, menuParent ? (uintptr_t) menuParent->window : 0);
-	OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
+		window->window = modalParent ? modalParent->window : OS_INVALID_HANDLE;
+		OSSyscall(OS_SYSCALL_CREATE_WINDOW, (uintptr_t) &window->window, (uintptr_t) &bounds, (uintptr_t) window, menuParent ? (uintptr_t) menuParent->window : 0);
+		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
 
-	window->width = bounds.right - bounds.left;
-	window->height = bounds.bottom - bounds.top;
+		window->width = bounds.right - bounds.left;
+		window->height = bounds.bottom - bounds.top;
+	}
+
 	window->flags = flags;
 	window->cursor = OS_CURSOR_NORMAL;
 	window->minimumWidth = minimumWidth;
@@ -5710,8 +5763,11 @@ void OSGetMousePosition(OSObject relativeWindow, OSPoint *position) {
 	OSSyscall(OS_SYSCALL_GET_CURSOR_POSITION, (uintptr_t) position, 0, 0, 0);
 
 	if (relativeWindow) {
+		Window *window = (Window *) relativeWindow;
+		if (window->flags & OS_CREATE_WINDOW_HEADLESS) return;
+
 		OSRectangle bounds;
-		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, ((Window *) relativeWindow)->window, (uintptr_t) &bounds, 0, 0);
+		OSSyscall(OS_SYSCALL_GET_WINDOW_BOUNDS, window->window, (uintptr_t) &bounds, 0, 0);
 
 		position->x -= bounds.left;
 		position->y -= bounds.top;

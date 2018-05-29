@@ -220,6 +220,8 @@ OSCallbackResponse ProcessSystemMessage(OSObject, OSMessage *message) {
 						OSCloseHandle(message->executeProgram.instance);
 					}
 
+					m.createInstance.headless = message->executeProgram.flags & OS_OPEN_INSTANCE_HEADLESS;
+
 					OSPostMessageRemote(program->process, &m);
 				}
 			} else if (executable) {

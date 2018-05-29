@@ -361,7 +361,7 @@ void Delete(OSHandle handle) {
 
 OSCallbackResponse SendRemoteCommand(OSNotification *notification) {
 	if (notification->type != OS_NOTIFICATION_COMMAND) return OS_CALLBACK_NOT_HANDLED;
-	OSIssueForeignCommand(&calculator, OSLiteral("evaluate"));
+	OSIssueForeignCommand(&calculator, "evaluate\0" "3 + 5\0", 2);
 	return OS_CALLBACK_HANDLED;
 }
 
@@ -949,7 +949,7 @@ extern "C" void ProgramEntry() {
 #endif
 
 	{
-		OSError error = OSOpenInstance(&calculator, instance, OSLiteral("calculator"));
+		OSError error = OSOpenInstance(&calculator, instance, OSLiteral("calculator"), OS_OPEN_INSTANCE_HEADLESS);
 		OSPrint("error = %d\n", error);
 	}
 

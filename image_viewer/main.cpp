@@ -29,7 +29,7 @@ struct Instance : OSInstance {
 
 	LinkedItem<Instance> thisItem;
 
-	void Initialise(char *path, size_t pathBytes, OSHandle instanceHandle);
+	void Initialise(char *path, size_t pathBytes, OSMessage *message);
 
 #define ERROR_LOADING_IMAGE (1)
 #define ERROR_INTERNAL (2)
@@ -252,7 +252,7 @@ OSCallbackResponse ProcessImageDisplayMessage(OSObject object, OSMessage *messag
 	return response;
 }
 
-void Instance::Initialise(char *path, size_t pathBytes, OSHandle instanceHandle) {
+void Instance::Initialise(char *path, size_t pathBytes, OSMessage *message) {
 	{
 		size_t fileSize;
 		uint8_t *loadedFile = (uint8_t *) OSReadEntireFile(path, pathBytes, &fileSize);
@@ -310,7 +310,7 @@ void Instance::Initialise(char *path, size_t pathBytes, OSHandle instanceHandle)
 
 	thisItem.thisItem = this;
 	global.instances.InsertEnd(&thisItem);
-	OSInitialiseInstance(this, instanceHandle);
+	OSInitialiseInstance(this, message);
 
 	OSStartGUIAllocationBlock(8192);
 
@@ -343,7 +343,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	(void) _object;
 
 	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
-		((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise(OSLiteral("/OS/Sample Images/Flower.jpg"), message->createInstance.instanceHandle);
+		((Instance *) OSHeapAllocate(sizeof(Instance), true))->Initialise(OSLiteral("/OS/Sample Images/Flower.jpg"), message);
 		return OS_CALLBACK_HANDLED;
 	} 
 

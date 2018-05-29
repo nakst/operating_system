@@ -1222,19 +1222,20 @@ uintptr_t DoSyscall(OSSyscallType index,
 			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
 			Defer(currentProcess->handleTable.CompleteHandle(instance, argument0));
 
-			SYSCALL_BUFFER(argument1, argument2, 1);
+			SYSCALL_BUFFER(argument1, argument3, 1);
 
 			if (!instance->owner) {
 				OSCrashProcess(OS_FATAL_ERROR_INSTANCE_NOT_READY);
 			}
 
-			OSHandle handle = MakeConstantBuffer((void *) argument1, argument2, instance->owner);
+			OSHandle handle = MakeConstantBuffer((void *) argument1, argument3, instance->owner);
 
 			OSMessage m = {};
 			m.type = OS_MESSAGE_ISSUE_COMMAND;
 			m.context = instance->apiObject;
-			m.issueCommand.nameBuffer = handle;
-			m.issueCommand.nameBytes = argument2;
+			m.issueCommand.parametersBuffer = handle;
+			m.issueCommand.parameterCount = argument2;
+			m.issueCommand.parametersBytes = argument3;
 
 			if (!instance->owner->messageQueue.SendMessage(m)) {
 				// TODO Handle leak.
@@ -1260,6 +1261,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 			m.type = OS_MESSAGE_EXECUTE_PROGRAM;
 			m.executeProgram.nameBuffer = MakeConstantBufferForDesktop((void *) argument0, argument1);
 			m.executeProgram.nameBytes = argument1;
+			m.executeProgram.flags = argument2;
 
 			if (m.executeProgram.nameBuffer == OS_INVALID_HANDLE) {
 				SYSCALL_RETURN(OS_ERROR_UNKNOWN_OPERATION_FAILURE, false);

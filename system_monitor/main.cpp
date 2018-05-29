@@ -533,7 +533,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 		if (createdInstance) {
 			OSSetFocusedWindow(instance.window);
 		} else {
-			OSInitialiseInstance(&instance, message->createInstance.instanceHandle);
+			OSInitialiseInstance(&instance, message);
 			instance.Initialise();
 		}
 

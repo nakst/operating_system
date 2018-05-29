@@ -859,10 +859,12 @@ typedef struct OSMessage {
 		struct {
 			OSHandle nameBuffer, instance;
 			size_t nameBytes;
+			unsigned flags;
 		} executeProgram;
 
 		struct {
 			OSHandle instanceHandle;
+			bool headless;
 		} createInstance;
 
 		struct {
@@ -875,8 +877,9 @@ typedef struct OSMessage {
 		} systemConstantUpdated;
 
 		struct {
-			OSHandle nameBuffer;
-			size_t nameBytes;
+			OSHandle parametersBuffer;
+			size_t parametersBytes;
+			size_t parameterCount;
 		} issueCommand;
 	};
 } OSMessage;
@@ -1006,7 +1009,7 @@ typedef struct OSInstance {
 	// Internal use only:
 	void *commands;
 	OSHandle handle;
-	bool foreign;
+	uint8_t foreign : 1, headless : 1;
 	uintptr_t reserved;
 } OSInstance;
 
@@ -1020,6 +1023,7 @@ extern OSObject osSystemMessages;
 #define OS_CREATE_WINDOW_NORMAL (4)
 #define OS_CREATE_WINDOW_WITH_MENUBAR (8)
 #define OS_CREATE_WINDOW_DIALOG (16)
+#define OS_CREATE_WINDOW_HEADLESS (32)
 
 #define OS_ORIENTATION_HORIZONTAL (false)
 #define OS_ORIENTATION_VERTICAL   (true)
@@ -1123,6 +1127,8 @@ extern OSObject osSystemMessages;
 #define OS_BLANK_CONTROL_FOCUSABLE                (4)
 #define OS_BLANK_CONTROL_TAB_STOP                 (8)
 
+#define OS_OPEN_INSTANCE_HEADLESS (1)
+
 OS_EXTERN_C void OSInitialiseAPI();
 
 OS_EXTERN_C void OSBatch(OSBatchCall *calls, size_t count); 
@@ -1134,7 +1140,7 @@ OS_EXTERN_C OSHandle OSCreateEvent(bool autoReset);
 
 #define OS_MAX_PROGRAM_NAME_LENGTH (256)
 OS_EXTERN_C void OSExecuteProgram(const char *name, size_t nameBytes);
-OS_EXTERN_C OSError OSOpenInstance(OSInstance *instance, OSInstance *parent, const char *programName, size_t programNameBytes);
+OS_EXTERN_C OSError OSOpenInstance(OSInstance *instance, OSInstance *parent, const char *programName, size_t programNameBytes, unsigned flags);
 OS_EXTERN_C OSHandle OSShareInstance(OSHandle instanceHandle, OSHandle targetProcess);
 
 OS_EXTERN_C void OSReadConstantBuffer(OSHandle constantBuffer, void *output);
@@ -1248,14 +1254,14 @@ OS_EXTERN_C void OSSetCommandNotificationCallback(OSInstance *instance, OSComman
 OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSNotificationCallback callback);
 OS_EXTERN_C void OSSetControlCommand(OSObject control, OSCommand *command);
 OS_EXTERN_C void OSIssueCommand(OSInstance *instance, OSCommand *command);
-OS_EXTERN_C void OSIssueForeignCommand(OSInstance *instance, char *name, size_t nameBytes);
+OS_EXTERN_C void OSIssueForeignCommand(OSInstance *instance, const char *parameters /*Zero-terminated, e.g. parameters = "one\0two\0three\0", parameterCount = 3*/, size_t parameterCount);
 
 OS_EXTERN_C void OSSetInstance(OSObject window, OSInstance *instance);
 OS_EXTERN_C OSInstance *OSGetInstance(OSObject guiObject);
 
 OS_EXTERN_C void OSDebugGUIObject(OSObject guiObject);
 
-OS_EXTERN_C void OSInitialiseInstance(OSInstance *instance, OSHandle handle);
+OS_EXTERN_C void OSInitialiseInstance(OSInstance *instance, OSMessage *message);
 OS_EXTERN_C void OSDestroyInstance(OSInstance *instance);
 
 OS_EXTERN_C OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);
