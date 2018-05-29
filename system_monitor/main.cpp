@@ -40,13 +40,14 @@ struct ProcessInformation {
 	bool seenInNewSnapshot;
 };
 
-struct Instance : OSInstance {
+struct Instance {
 	OSObject window,
 		 statusLabel,
 		 taskListing,
 		 newTaskTextbox,
 		 endProcessConfirmDialog,
-		 optionsWindow;
+		 optionsWindow,
+		 instanceObject;
 
 	uintptr_t sortColumn;
 	bool sortDescending;
@@ -79,7 +80,7 @@ void TerminateProcess() {
 		OSShowDialogAlert(OSLiteral("Terminate Process"),
 				OSLiteral("The process could not be terminated."),
 				OSLiteral("You do not have permission to manage this process."),
-				&instance, OS_ICON_ERROR, instance.window);
+				instance.instanceObject, OS_ICON_ERROR, instance.window);
 		return;
 	}
 
@@ -91,7 +92,7 @@ OSCallbackResponse CloseOptionsWindow(OSNotification *notification) {
 	if (notification->context == (void *) 1) {
 		instance.updateSpeed = instance.originalUpdateSpeed;
 	} else if (notification->context == (void *) 2) {
-		instance.showEndProcessConfirmationDialog = OSGetCommandCheck(&instance, commandShowEndProcessConfirmationDialog);
+		instance.showEndProcessConfirmationDialog = OSGetCommandCheck(instance.instanceObject, commandShowEndProcessConfirmationDialog);
 	}
 
 	OSCloseWindow(instance.optionsWindow);
@@ -109,7 +110,7 @@ OSCallbackResponse Command(OSNotification *notification) {
 			if (!instance.optionsWindow) {
 				OSStartGUIAllocationBlock(16384);
 
-				instance.optionsWindow = OSCreateWindow(optionsWindow, &instance);
+				instance.optionsWindow = OSCreateWindow(optionsWindow, instance.instanceObject);
 				instance.originalUpdateSpeed = instance.updateSpeed;
 
 				OSObject rootLayout = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
@@ -141,16 +142,16 @@ OSCallbackResponse Command(OSNotification *notification) {
 				OSPackWindow(instance.optionsWindow);
 
 				switch (instance.updateSpeed) {
-					case 500:  OSCheckCommand(&instance, commandUpdateSpeedHigh,   true); break;
-					case 2000: OSCheckCommand(&instance, commandUpdateSpeedNormal, true); break;
-					case 5000: OSCheckCommand(&instance, commandUpdateSpeedLow,    true); break;
+					case 500:  OSCheckCommand(instance.instanceObject, commandUpdateSpeedHigh,   true); break;
+					case 2000: OSCheckCommand(instance.instanceObject, commandUpdateSpeedNormal, true); break;
+					case 5000: OSCheckCommand(instance.instanceObject, commandUpdateSpeedLow,    true); break;
 				}
 
-				OSCheckCommand(&instance, commandShowEndProcessConfirmationDialog, instance.showEndProcessConfirmationDialog);
+				OSCheckCommand(instance.instanceObject, commandShowEndProcessConfirmationDialog, instance.showEndProcessConfirmationDialog);
 				OSSetFocusedControl(okButton, false);
 
-				OSSetCommandNotificationCallback(&instance, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CloseOptionsWindow, (void *) 1));
-				OSSetCommandNotificationCallback(&instance, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CloseOptionsWindow, (void *) 2));
+				OSSetCommandNotificationCallback(instance.instanceObject, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CloseOptionsWindow, (void *) 1));
+				OSSetCommandNotificationCallback(instance.instanceObject, osDialogStandardOK, OS_MAKE_NOTIFICATION_CALLBACK(CloseOptionsWindow, (void *) 2));
 
 				OSEndGUIAllocationBlock();
 			} else {
@@ -173,7 +174,7 @@ OSCallbackResponse Command(OSNotification *notification) {
 		case COMMAND_NEW_TASK: {
 			OSShowDialogTextPrompt(OSLiteral("New Task"),
 				   OSLiteral("Enter the name of the program you want to start:"),
-				   &instance, OS_ICON_RUN, instance.window,
+				   instance.instanceObject, OS_ICON_RUN, instance.window,
 				   commandNewTaskConfirm, &instance.newTaskTextbox);
 		} break;
 
@@ -193,7 +194,7 @@ OSCallbackResponse Command(OSNotification *notification) {
 				instance.endProcessConfirmDialog = OSShowDialogConfirm(OSLiteral("Terminate Process"),
 						OSLiteral("Are you sure you want to terminate this process?"),
 						OSLiteral("Any unsaved data will be lost."),
-						&instance, OS_ICON_WARNING, instance.window,
+						instance.instanceObject, OS_ICON_WARNING, instance.window,
 						commandEndProcessConfirm);
 			} else {
 				TerminateProcess();
@@ -309,7 +310,7 @@ OSCallbackResponse ProcessTaskListingNotification(OSNotification *notification) 
 			process->state = (process->state & ~((uint16_t) notification->listViewItem.mask)) | (notification->listViewItem.state & notification->listViewItem.mask);
 
 			if (notification->listViewItem.mask & OS_LIST_VIEW_ITEM_SELECTED) {
-				OSEnableCommand(&instance, commandEndProcess, process->state & OS_LIST_VIEW_ITEM_SELECTED);
+				OSEnableCommand(instance.instanceObject, commandEndProcess, process->state & OS_LIST_VIEW_ITEM_SELECTED);
 			}
 
 			return OS_CALLBACK_HANDLED;
@@ -353,7 +354,7 @@ OSCallbackResponse DestroyInstance(OSNotification *notification) {
 		OSPrint("Warning: Could not save System Monitor configuration.");
 	}
 
-	OSDestroyInstance(&instance);
+	OSDestroyInstance(instance.instanceObject);
 	OSTerminateProcess(OS_CURRENT_PROCESS);
 	return OS_CALLBACK_HANDLED;
 }
@@ -445,7 +446,7 @@ void RefreshProcessesThread(void *argument) {
 			}
 		}
 
-		OSEnableCommand(&instance, commandEndProcess, foundSelection);
+		OSEnableCommand(instance.instanceObject, commandEndProcess, foundSelection);
 		OSSetText(instance.statusLabel, guiStringBuffer, OSFormatString(guiStringBuffer, GUI_STRING_BUFFER_LENGTH, 
 					"%d processes", currentCount), OS_RESIZE_MODE_GROW_ONLY);
 
@@ -492,7 +493,7 @@ void Instance::Initialise() {
 		}
 	}
 
-	window = OSCreateWindow(mainWindow, this);
+	window = OSCreateWindow(mainWindow, instanceObject);
 	OSSetObjectNotificationCallback(window, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, nullptr));
 
 	OSObject rootLayout = OSCreateGrid(1, 3, OS_GRID_STYLE_LAYOUT);
@@ -533,7 +534,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 		if (createdInstance) {
 			OSSetFocusedWindow(instance.window);
 		} else {
-			OSInitialiseInstance(&instance, message);
+			instance.instanceObject = OSCreateInstance(&instance, message);
 			instance.Initialise();
 		}
 

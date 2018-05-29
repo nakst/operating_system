@@ -3,7 +3,7 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/Programs/Calculator/manifest.h"
 
-struct Instance : OSInstance {
+struct Instance {
 	OSObject textbox;
 };
 
@@ -25,7 +25,7 @@ char buffer[1024];
 
 OSCallbackResponse Insert(OSNotification *notification) {
 	char c = (char) (uintptr_t) notification->context;
-	Instance *instance = (Instance *) notification->instance;
+	Instance *instance = (Instance *) notification->instanceContext;
 
 	OSString oldText;
 	OSGetText(instance->textbox, &oldText);
@@ -221,7 +221,7 @@ EvaluateResult Evaluate(char *&string, size_t &stringBytes, int precedence = 0) 
 }
 
 OSCallbackResponse Evaluate(OSNotification *notification) {
-	Instance *instance = (Instance *) notification->instance;
+	Instance *instance = (Instance *) notification->instanceContext;
 
 	OSString expression;
 	OSGetText(instance->textbox, &expression);
@@ -251,7 +251,7 @@ OSObject CreateKeypadButton(OSCommand *command) {
 OSCallbackResponse DestroyInstance(OSNotification *notification) {
 	if (notification->type != OS_NOTIFICATION_WINDOW_CLOSE) return OS_CALLBACK_NOT_HANDLED;
 	Instance *instance = (Instance *) notification->context;
-	OSDestroyInstance(instance);
+	OSDestroyInstance(notification->instance);
 	OSHeapFree(instance);
 	return OS_CALLBACK_HANDLED;
 }
@@ -261,11 +261,11 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 
 	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
 		Instance *instance = (Instance *) OSHeapAllocate(sizeof(Instance), true);
-		OSInitialiseInstance(instance, message);
+		OSObject instanceObject = OSCreateInstance(instance, message);
 
 		OSStartGUIAllocationBlock(16384);
 
-		OSObject window = OSCreateWindow(mainWindow, instance);
+		OSObject window = OSCreateWindow(mainWindow, instanceObject);
 		OSSetObjectNotificationCallback(window, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, instance));
 
 		OSObject grid = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER);

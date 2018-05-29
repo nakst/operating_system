@@ -294,7 +294,11 @@ OSHandle OSOpenProcess(uint64_t pid) {
 	return OSSyscall(OS_SYSCALL_OPEN_PROCESS, pid, 0, 0, 0);
 }
 
-OSError OSOpenInstance(OSInstance *instance, OSInstance *parent, const char *name, size_t nameBytes, unsigned flags) {
+#ifndef KERNEL
+OSError OSOpenInstance(OSObject _instance, OSObject _parent, const char *name, size_t nameBytes, unsigned flags) {
+	OSInstance *instance = (OSInstance *) _instance;
+	OSInstance *parent = (OSInstance *) _parent;
+
 	instance->foreign = true;
 	intptr_t handle = OSSyscall(OS_SYSCALL_OPEN_INSTANCE, (uintptr_t) name, nameBytes, flags, parent->handle);
 
@@ -316,12 +320,12 @@ OSHandle OSShareInstance(OSHandle instance, OSHandle targetProcess) {
 	return OSSyscall(OS_SYSCALL_SHARE_INSTANCE, instance, targetProcess, 0, 0);
 }
 
-#ifndef KERNEL
-void OSIssueForeignCommand(OSInstance *instance, const char *name, size_t nameBytes) {
-	OSSyscall(OS_SYSCALL_ISSUE_FOREIGN_COMMAND, instance->handle, (uintptr_t) name, nameBytes, 0);
+void OSIssueForeignCommand(OSObject instance, const char *name, size_t nameBytes) {
+	OSSyscall(OS_SYSCALL_ISSUE_FOREIGN_COMMAND, ((OSInstance *) instance)->handle, (uintptr_t) name, nameBytes, 0);
 }
 
-OSHandle OSIssueRequest(OSInstance *instance, const char *request, size_t requestBytes, uintptr_t timeout, size_t *responseBytes) {
+OSHandle OSIssueRequest(OSObject _instance, const char *request, size_t requestBytes, uintptr_t timeout, size_t *responseBytes) {
+	OSInstance *instance = (OSInstance *) _instance;
 	OSSyscall(OS_SYSCALL_ISSUE_FOREIGN_COMMAND, instance->handle, (uintptr_t) request, requestBytes, 1);
 
 	if (OSWait(&instance->handle, 1, timeout)) {

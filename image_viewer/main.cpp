@@ -15,9 +15,10 @@
 // TODO Clip the panning positions.
 // TODO Prevent zooming changing the pan?
 
-struct Instance : OSInstance {
+struct Instance {
 	OSObject window,
-		 imageDisplay;
+		 imageDisplay,
+		 instanceObject;
 
 	OSHandle imageSurface;
 	OSMessageCallback imageDisplayParentCallback;
@@ -47,7 +48,7 @@ Global global;
 
 OSCallbackResponse CommandZoom(OSNotification *notification) {
 	if (notification->type == OS_NOTIFICATION_COMMAND) {
-		Instance *instance = (Instance *) notification->instance;
+		Instance *instance = (Instance *) notification->instanceContext;
 
 		OSPoint position;
 		OSGetMousePosition(nullptr, &position);
@@ -83,7 +84,7 @@ OSCallbackResponse CommandRotate(OSNotification *notification) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
 
-	Instance *instance = (Instance *) notification->instance;
+	Instance *instance = (Instance *) notification->instanceContext;
 	instance->repaintImageDisplay = true;
 	OSRepaintControl(instance->imageDisplay);
 
@@ -158,14 +159,14 @@ void Instance::ReportError(unsigned where, OSError error) {
 	}
 
 	OSShowDialogAlert(OSLiteral("Error"), OSLiteral(message), OSLiteral(description), 
-			this, OS_ICON_ERROR, window);
+			instanceObject, OS_ICON_ERROR, window);
 }
 
 OSCallbackResponse DestroyInstance(OSNotification *notification) {
 	if (notification->type != OS_NOTIFICATION_WINDOW_CLOSE) return OS_CALLBACK_NOT_HANDLED;
 	Instance *instance = (Instance *) notification->context;
 	global.instances.Remove(&instance->thisItem);
-	OSDestroyInstance(instance);
+	OSDestroyInstance(notification->instance);
 	OSHeapFree(instance);
 	return OS_CALLBACK_HANDLED;
 }
@@ -310,11 +311,11 @@ void Instance::Initialise(char *path, size_t pathBytes, OSMessage *message) {
 
 	thisItem.thisItem = this;
 	global.instances.InsertEnd(&thisItem);
-	OSInitialiseInstance(this, message);
+	instanceObject = OSCreateInstance(this, message);
 
 	OSStartGUIAllocationBlock(8192);
 
-	window = OSCreateWindow(mainWindow, this);
+	window = OSCreateWindow(mainWindow, instanceObject);
 	OSSetObjectNotificationCallback(window, OS_MAKE_NOTIFICATION_CALLBACK(DestroyInstance, this));
 
 	OSObject rootLayout = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
@@ -332,9 +333,9 @@ void Instance::Initialise(char *path, size_t pathBytes, OSMessage *message) {
 							| OS_CELL_V_EXPAND | OS_CELL_V_PUSH);
 	imageDisplayParentCallback = OSSetMessageCallback(imageDisplay, OS_MAKE_MESSAGE_CALLBACK(ProcessImageDisplayMessage, this)); 
 
-	OSEnableCommand(this, commandRotateAntiClockwise, true);
-	OSEnableCommand(this, commandRotateClockwise, true);
-	OSEnableCommand(this, commandZoom, true);
+	OSEnableCommand(instanceObject, commandRotateAntiClockwise, true);
+	OSEnableCommand(instanceObject, commandRotateClockwise, true);
+	OSEnableCommand(instanceObject, commandZoom, true);
 
 	OSEndGUIAllocationBlock();
 }

@@ -31,7 +31,7 @@ Word words[50000];
 char buffer[1024];
 
 OSHandle mutexes[2];
-OSInstance calculator;
+OSObject calculator;
 
 void LocalMutexTest(void *argument) {
 	int i = (uintptr_t) argument;
@@ -361,10 +361,10 @@ void Delete(OSHandle handle) {
 
 OSCallbackResponse SendRemoteCommand(OSNotification *notification) {
 	if (notification->type != OS_NOTIFICATION_COMMAND) return OS_CALLBACK_NOT_HANDLED;
-	OSIssueForeignCommand(&calculator, OSLiteral("evaluate"));
+	OSIssueForeignCommand(calculator, OSLiteral("evaluate"));
 
 	size_t outputBytes;
-	OSHandle outputBuffer = OSIssueRequest(&calculator, OSLiteral("EVALUATE\f3 + 5\f"), OS_WAIT_NO_TIMEOUT, &outputBytes);
+	OSHandle outputBuffer = OSIssueRequest(calculator, OSLiteral("EVALUATE\f3 + 5\f"), OS_WAIT_NO_TIMEOUT, &outputBytes);
 	char *buffer = (char *) OSHeapAllocate(outputBytes, false);
 	OSReadConstantBuffer(outputBuffer, buffer);
 	OSCloseHandle(outputBuffer);
@@ -841,8 +841,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	ws.title = (char *) "Hello, world!";
 	ws.titleBytes = OSCStringLength(ws.title);
 	ws.menubar = myMenuBar;
-	OSInstance *instance = (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true);
-	OSInitialiseInstance(instance, message);
+	OSObject instance = OSCreateInstance(nullptr, message);
 	window = OSCreateWindow(&ws, instance);
 
 	OSObject b;
@@ -961,7 +960,9 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 #endif
 
 	{
-		OSError error = OSOpenInstance(&calculator, instance, OSLiteral("calculator"), OS_OPEN_INSTANCE_HEADLESS);
+		// TODO FIX!!!
+		calculator = OSCreateInstance(nullptr, nullptr);
+		OSError error = OSOpenInstance(calculator, instance, OSLiteral("calculator"), OS_OPEN_INSTANCE_HEADLESS);
 		OSPrint("error = %d\n", error);
 	}
 

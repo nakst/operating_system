@@ -597,9 +597,10 @@ typedef enum OSNotificationType {
 
 typedef struct OSNotification {
 	OSObject generator;
-	struct OSInstance *instance;
+	OSObject instance;
 	OSNotificationType type;
 	void *context;
+	void *instanceContext;
 
 	union {
 		struct {
@@ -894,7 +895,7 @@ typedef struct OSMessage {
 		struct {
 			char *request;
 			size_t requestBytes;
-			OSInstance *instance;
+			OSObject instance;
 			void *response;
 			size_t responseBytes;
 		} processRequest;
@@ -1019,16 +1020,6 @@ typedef struct OSSnapshotProcesses {
 	size_t count;
 	OSSnapshotProcessesItem processes[];
 } OSSnapshotProcesses;
-
-typedef struct OSInstance {
-	void *argument;
-
-	// Internal use only:
-	void *commands;
-	OSHandle handle;
-	uint8_t foreign : 1, headless : 1;
-	uintptr_t reserved;
-} OSInstance;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)
@@ -1157,9 +1148,9 @@ OS_EXTERN_C OSHandle OSCreateEvent(bool autoReset);
 
 #define OS_MAX_PROGRAM_NAME_LENGTH (256)
 OS_EXTERN_C void OSExecuteProgram(const char *name, size_t nameBytes);
-OS_EXTERN_C OSError OSOpenInstance(OSInstance *instance, OSInstance *parent, const char *programName, size_t programNameBytes, unsigned flags);
+OS_EXTERN_C OSError OSOpenInstance(OSObject instance, OSObject parent, const char *programName, size_t programNameBytes, unsigned flags);
 OS_EXTERN_C OSHandle OSShareInstance(OSHandle instanceHandle, OSHandle targetProcess);
-OS_EXTERN_C OSHandle OSIssueRequest(OSInstance *instance, const char *request, size_t requestBytes, uintptr_t timeoutMs, size_t *responseBytes); 
+OS_EXTERN_C OSHandle OSIssueRequest(OSObject instance, const char *request, size_t requestBytes, uintptr_t timeoutMs, size_t *responseBytes); 
 
 OS_EXTERN_C void OSReadConstantBuffer(OSHandle constantBuffer, void *output);
 
@@ -1251,7 +1242,7 @@ OS_EXTERN_C OSError OSPostMessageRemote(OSHandle process, OSMessage *message);
 OS_EXTERN_C OSCallbackResponse OSSendMessage(OSObject target, OSMessage *message);
 OS_EXTERN_C OSCallbackResponse OSForwardMessage(OSObject target, OSMessageCallback callback, OSMessage *message);
 OS_EXTERN_C OSMessageCallback OSSetMessageCallback(OSObject generator, OSMessageCallback callback); // Returns old callback.
-OS_EXTERN_C OSCallbackResponse OSSendNotification(OSObject generator, OSNotificationCallback callback, OSNotification *notification, OSInstance *instance);
+OS_EXTERN_C OSCallbackResponse OSSendNotification(OSObject generator, OSNotificationCallback callback, OSNotification *notification, OSObject instance);
 
 OS_EXTERN_C void OSProcessMessages();
 OS_EXTERN_C void OSSendIdleMessages(bool enabled);
@@ -1264,26 +1255,26 @@ OS_EXTERN_C void OSGetText(OSObject control, OSString *string);
 OS_EXTERN_C void OSSetText(OSObject control, char *text, size_t textBytes, unsigned resizeMode);
 OS_EXTERN_C void OSDisableControl(OSObject control, bool disabled);
 #define OSEnableControl(_control, _enabled) OSDisableControl((_control), !(_enabled))
-OS_EXTERN_C void OSDisableCommand(OSInstance *instance, OSCommand *command, bool disabled);
-OS_EXTERN_C void OSCheckCommand(OSInstance *instance, OSCommand *command, bool checked);
-OS_EXTERN_C bool OSGetCommandCheck(OSInstance *instance, OSCommand *command);
+OS_EXTERN_C void OSDisableCommand(OSObject instance, OSCommand *command, bool disabled);
+OS_EXTERN_C void OSCheckCommand(OSObject instance, OSCommand *command, bool checked);
+OS_EXTERN_C bool OSGetCommandCheck(OSObject instance, OSCommand *command);
 #define OSEnableCommand(_window, _command, _enabled) OSDisableCommand((_window), (_command), !(_enabled))
-OS_EXTERN_C void OSSetCommandNotificationCallback(OSInstance *instance, OSCommand *_command, OSNotificationCallback callback);
+OS_EXTERN_C void OSSetCommandNotificationCallback(OSObject instance, OSCommand *_command, OSNotificationCallback callback);
 OS_EXTERN_C void OSSetObjectNotificationCallback(OSObject object, OSNotificationCallback callback);
 OS_EXTERN_C void OSSetControlCommand(OSObject control, OSCommand *command);
-OS_EXTERN_C void OSIssueCommand(OSInstance *instance, OSCommand *command);
-OS_EXTERN_C void OSIssueForeignCommand(OSInstance *instance, const char *name, size_t nameBytes);
+OS_EXTERN_C void OSIssueCommand(OSObject instance, OSCommand *command);
+OS_EXTERN_C void OSIssueForeignCommand(OSObject instance, const char *name, size_t nameBytes);
 
-OS_EXTERN_C void OSSetInstance(OSObject window, OSInstance *instance);
-OS_EXTERN_C OSInstance *OSGetInstance(OSObject guiObject);
+OS_EXTERN_C void OSSetInstance(OSObject window, OSObject instance);
+OS_EXTERN_C OSObject OSGetInstance(OSObject guiObject);
 
 OS_EXTERN_C void OSDebugGUIObject(OSObject guiObject);
 
-OS_EXTERN_C void OSInitialiseInstance(OSInstance *instance, OSMessage *message);
-OS_EXTERN_C void OSDestroyInstance(OSInstance *instance);
+OS_EXTERN_C OSObject OSCreateInstance(void *instanceContext, OSMessage *message);
+OS_EXTERN_C void OSDestroyInstance(OSObject instance);
 
 OS_EXTERN_C OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);
-OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification, OSInstance *instance);
+OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification, OSObject instance);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style);
 OS_EXTERN_C OSObject OSCreateScrollPane(OSObject content, unsigned flags);
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
@@ -1296,17 +1287,17 @@ OS_EXTERN_C size_t OSEndGUIAllocationBlock();
 OS_EXTERN_C OSObject OSShowDialogAlert(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
-				   OSInstance *instance,
+				   OSObject instance,
 				   uint16_t iconID, OSObject modalParent);
 OS_EXTERN_C OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
-				   OSInstance *instance,
+				   OSObject instance,
 				   uint16_t iconID, OSObject modalParent,
 				   OSCommand *command);
 OS_EXTERN_C OSObject OSShowDialogTextPrompt(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
-				   OSInstance *instance,
+				   OSObject instance,
 				   uint16_t iconID, OSObject modalParent,
 				   OSCommand *command, OSObject *textbox);
 

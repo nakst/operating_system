@@ -161,7 +161,7 @@ OSMessageCallback OSSetMessageCallback(OSObject generator, OSMessageCallback cal
 	return old;
 }
 
-OSCallbackResponse OSSendNotification(OSObject generator, OSNotificationCallback callback, OSNotification *notification, OSInstance *instance) {
+OSCallbackResponse OSSendNotification(OSObject generator, OSNotificationCallback callback, OSNotification *notification, OSObject instance) {
 	if (!callback.function) {
 		return OS_CALLBACK_NOT_HANDLED;
 	}
@@ -169,6 +169,7 @@ OSCallbackResponse OSSendNotification(OSObject generator, OSNotificationCallback
 	notification->context = callback.context;
 	notification->generator = generator;
 	notification->instance = instance;
+	notification->instanceContext = ((OSInstance *) instance)->argument;
 
 	return callback.function(notification);
 }

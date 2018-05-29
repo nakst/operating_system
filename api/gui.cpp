@@ -493,6 +493,16 @@ struct GUIObject : APIObject {
 #define DESCENDENT_REPAINT  (1)
 #define DESCENDENT_RELAYOUT (2)
 
+struct OSInstance { // TODO Rename Instance.
+	void *argument;
+
+	// Internal use only:
+	void *commands;
+	OSHandle handle;
+	uint8_t foreign : 1, headless : 1;
+	uintptr_t reserved;
+};
+
 struct Control : GUIObject {
 	// Current size: ~290 bytes.
 	// Is this too big?
@@ -2271,8 +2281,8 @@ void IssueCommand(OSMessage *message) {
 	OSCloseHandle(message->issueCommand.nameBuffer);
 }
 
-void OSIssueCommand(OSInstance *instance, OSCommand *command) {
-	IssueCommand(nullptr, command, instance);
+void OSIssueCommand(OSObject instance, OSCommand *command) {
+	IssueCommand(nullptr, command, (OSInstance *) instance);
 }
 
 OSObject OSGetWindow(OSObject object) {
@@ -2756,7 +2766,7 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool sm
 	return control;
 }
 
-OSInstance *OSGetInstance(OSObject _object) {
+OSObject OSGetInstance(OSObject _object) {
 	APIObject *object = (APIObject *) _object;
 
 	if (object->type == API_OBJECT_WINDOW) {
@@ -4218,7 +4228,8 @@ void OSSetObjectNotificationCallback(OSObject _object, OSNotificationCallback ca
 	object->notificationCallback = callback;
 }
 
-void OSSetCommandNotificationCallback(OSInstance *instance, OSCommand *_command, OSNotificationCallback callback) {
+void OSSetCommandNotificationCallback(OSObject _instance, OSCommand *_command, OSNotificationCallback callback) {
+	OSInstance *instance = (OSInstance *) _instance;
 	CommandInstance *command = ((CommandInstance *) instance->commands) + _command->identifier;
 	command->notificationCallback = callback;
 
@@ -4231,7 +4242,8 @@ void OSSetCommandNotificationCallback(OSInstance *instance, OSCommand *_command,
 	}
 }
 
-void OSDisableCommand(OSInstance *instance, OSCommand *_command, bool disabled) {
+void OSDisableCommand(OSObject _instance, OSCommand *_command, bool disabled) {
+	OSInstance *instance = (OSInstance *) _instance;
 	CommandInstance *command = ((CommandInstance *) instance->commands) + _command->identifier;
 	if (command->disabled == disabled) return;
 	command->disabled = disabled;
@@ -4245,12 +4257,15 @@ void OSDisableCommand(OSInstance *instance, OSCommand *_command, bool disabled) 
 	}
 }
 
-bool OSGetCommandCheck(OSInstance *instance, OSCommand *_command) {
+bool OSGetCommandCheck(OSObject _instance, OSCommand *_command) {
+	OSInstance *instance = (OSInstance *) _instance;
 	CommandInstance *command = ((CommandInstance *) instance->commands) + _command->identifier;
 	return command->checked;
 }
 
-void OSCheckCommand(OSInstance *instance, OSCommand *_command, bool checked) {
+void OSCheckCommand(OSObject _instance, OSCommand *_command, bool checked) {
+	OSInstance *instance = (OSInstance *) _instance;
+
 	if (_command->radioCheck) {
 		for (uintptr_t i = 0; i < _commandCount; i++) {
 			if ((int) i == _command->identifier) {
@@ -4795,7 +4810,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 
 			if (window->temporaryInstance) {
 				OSDestroyInstance(window->instance);
-				OSHeapFree(window->instance);
 			}
 
 			window->windowItem.RemoveFromList();
@@ -5315,7 +5329,10 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 	return response;
 }
 
-void OSInitialiseInstance(OSInstance *instance, OSMessage *message) {
+OSObject OSCreateInstance(void *instanceContext, OSMessage *message) {
+	OSInstance *instance = (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true);
+
+	instance->argument = instanceContext;
 	instance->foreign = false;
 	instance->handle = message ? message->createInstance.instanceHandle : OS_INVALID_HANDLE;
 	instance->headless = message ? message->createInstance.headless : false;
@@ -5331,11 +5348,15 @@ void OSInitialiseInstance(OSInstance *instance, OSMessage *message) {
 	if (instance->handle) {
 		OSSyscall(OS_SYSCALL_ATTACH_INSTANCE_TO_PROCESS, instance->handle, (uintptr_t) instance, 0, 0);
 	}
+
+	return instance;
 }
 
-void OSDestroyInstance(OSInstance *instance) {
+void OSDestroyInstance(OSObject _instance) {
+	OSInstance *instance = (OSInstance *) _instance;
 	if (instance->handle) OSCloseHandle(instance->handle);
 	if (!instance->foreign) GUIFree(instance->commands);
+	OSHeapFree(instance);
 }
 
 static Window *CreateWindow(OSWindowSpecification *specification, Window *menuParent, unsigned x = 0, unsigned y = 0, 
@@ -5376,8 +5397,7 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 		window->instance = modalParent->instance;
 	} else {
 		window->temporaryInstance = true;
-		window->instance = (OSInstance *) OSHeapAllocate(sizeof(OSInstance), true);
-		OSInitialiseInstance(window->instance, OS_INVALID_HANDLE);
+		window->instance = (OSInstance *) OSCreateInstance(nullptr, nullptr);
 	}
 
 	bool headless = window->instance->headless;
@@ -5464,8 +5484,8 @@ static Window *CreateWindow(OSWindowSpecification *specification, Window *menuPa
 	return window;
 }
 
-OSObject OSCreateWindow(OSWindowSpecification *specification, OSInstance *instance) {
-	return CreateWindow(specification, nullptr, 0, 0, nullptr, instance);
+OSObject OSCreateWindow(OSWindowSpecification *specification, OSObject instance) {
+	return CreateWindow(specification, nullptr, 0, 0, nullptr, (OSInstance *) instance);
 }
 
 static OSCallbackResponse CommandDialogAlertOK(OSNotification *notification) {
@@ -5495,12 +5515,12 @@ void OSCloseWindow(OSObject window) {
 static OSObject CreateDialog(char *title, size_t titleBytes,
 				char *message, size_t messageBytes,
 				uint16_t iconID, OSObject modalParent,
-				OSObject *layouts, OSWindowSpecification *_specification, OSInstance *instance) {
+				OSObject *layouts, OSWindowSpecification *_specification, OSObject instance) {
 	OSWindowSpecification specification = *_specification;
 	specification.title = title;
 	specification.titleBytes = titleBytes;
 
-	OSObject dialog = CreateWindow(&specification, nullptr, 0, 0, (Window *) modalParent, instance);
+	OSObject dialog = CreateWindow(&specification, nullptr, 0, 0, (Window *) modalParent, (OSInstance *) instance);
 
 	OSObject layout1 = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
 	OSObject layout2 = OSCreateGrid(3, 1, OS_GRID_STYLE_CONTAINER);
@@ -5532,7 +5552,7 @@ static OSObject CreateDialog(char *title, size_t titleBytes,
 
 OSObject OSShowDialogTextPrompt(char *title, size_t titleBytes,
 		char *message, size_t messageBytes,
-		OSInstance *instance, uint16_t iconID, OSObject modalParent, OSCommand *command, OSObject *textbox) {
+		OSObject instance, uint16_t iconID, OSObject modalParent, OSCommand *command, OSObject *textbox) {
 	OSObject layouts[6];
 	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogTextPrompt, instance);
 
@@ -5555,7 +5575,7 @@ OSObject OSShowDialogTextPrompt(char *title, size_t titleBytes,
 OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
-				   OSInstance *instance, uint16_t iconID, OSObject modalParent, OSCommand *command) {
+				   OSObject instance, uint16_t iconID, OSObject modalParent, OSCommand *command) {
 	OSObject layouts[6];
 	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogStandard, instance);
 
@@ -5576,7 +5596,7 @@ OSObject OSShowDialogConfirm(char *title, size_t titleBytes,
 OSObject OSShowDialogAlert(char *title, size_t titleBytes,
 				   char *message, size_t messageBytes,
 				   char *description, size_t descriptionBytes,
-				   OSInstance *instance, uint16_t iconID, OSObject modalParent) {
+				   OSObject instance, uint16_t iconID, OSObject modalParent) {
 	OSObject layouts[6];
 	OSObject dialog = CreateDialog(title, titleBytes, message, messageBytes, iconID, modalParent, layouts, osDialogStandard, instance);
 
