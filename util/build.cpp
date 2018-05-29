@@ -2,6 +2,9 @@
 // TODO Switch to shared libraries for the API.
 // TODO Port musl fully to get a working libc.
 // TODO Merge the manifest header generator into this program.
+// TODO Managing the list of programs.
+// TODO Incremental builds.
+// TODO First program selection.
 
 #include <stdio.h>
 #include <sys/stat.h>

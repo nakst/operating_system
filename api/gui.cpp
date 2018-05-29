@@ -49,6 +49,7 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Switching the instance of the current window.
 // 	- Global action state.
 // 	- Single instance programs.
+// 	- Let the API own the OSInstance.
 
 // TODO Loading GUI layouts from manifests.
 // 	- GUI editor.
