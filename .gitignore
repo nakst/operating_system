@@ -11,6 +11,7 @@ analyse_mutex_log
 
 # Build things...
 *.o
+*.manifest.h
 bin/
 build_system_config.dat
 cross/
