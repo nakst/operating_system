@@ -47,6 +47,8 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Switching the instance of the current window.
 // 	- Global action state.
 // 	- Single instance programs.
+// 	- Destroying headless instances.
+// 	- Instance request errors.
 
 // TODO Loading GUI layouts from manifests.
 // 	- GUI editor.
@@ -2454,7 +2456,7 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 			OSAnimateControl(navigateMenuItem, false);
 		}
 
-		bool openMenu = control->item.type == OSMenuItem::SUBMENU;
+		bool openMenu = control->item.type == OSMenuItem_SUBMENU;
 
 		if (message->type == OS_MESSAGE_START_HOVER && !openMenuCount) {
 			openMenu = false;
@@ -2487,7 +2489,7 @@ OSCallbackResponse ProcessMenuItemMessage(OSObject object, OSMessage *message) {
 		OSRectangle clip;
 		ClipRectangle(iconRegion, message->paint.clip, &clip);
 
-		if (control->item.type == OSMenuItem::SUBMENU) {
+		if (control->item.type == OSMenuItem_SUBMENU) {
 			OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, iconRegion, 
 					menuIconSub.region, menuIconSub.border, menuIconSub.drawMode, 0xFF, clip);
 		} else if (control->isChecked && control->radioCheck) {
@@ -2524,11 +2526,11 @@ static OSObject CreateMenuItem(OSMenuItem item, bool menubar) {
 	control->menubar = menubar;
 	// control->horizontalMargin = menubar ? 0 : 4;
 
-	if (item.type == OSMenuItem::COMMAND) {
+	if (item.type == OSMenuItem_COMMAND) {
 		OSCommand *command = (OSCommand *) item.value;
 		OSSetControlCommand(control, command);
 		OSSetText(control, command->label, command->labelBytes, OS_RESIZE_MODE_GROW_ONLY);
-	} else if (item.type == OSMenuItem::SUBMENU) {
+	} else if (item.type == OSMenuItem_SUBMENU) {
 		OSMenuSpecification *menu = (OSMenuSpecification *) item.value;
 		OSSetText(control, menu->name, menu->nameBytes, OS_RESIZE_MODE_GROW_ONLY);
 	}
@@ -2763,6 +2765,11 @@ OSObject OSCreateProgressBar(int minimum, int maximum, int initialValue, bool sm
 	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessProgressBarMessage, nullptr));
 
 	return control;
+}
+
+void *OSGetInstanceContext(OSObject _instance) {
+	OSInstance *instance = (OSInstance *) _instance;
+	return instance->argument;
 }
 
 OSObject OSGetInstance(OSObject _object) {
@@ -4883,7 +4890,7 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 						OSSendMessage(window, &m);
 					}
 				} else if (message->keyboard.scancode == OS_SCANCODE_RIGHT_ARROW) {
-					if (navigateMenuItem && navigateMenuItem->item.type == OSMenuItem::SUBMENU) {
+					if (navigateMenuItem && navigateMenuItem->item.type == OSMenuItem_SUBMENU) {
 						OSCreateMenu((OSMenuSpecification *) navigateMenuItem->item.value, navigateMenuItem, OS_CREATE_MENU_AT_SOURCE, OS_CREATE_SUBMENU);
 					} else if (openMenuCount == 1 && ((GUIObject *) openMenus[0].source->parent)->isMenubar) {
 						Grid *parent = (Grid *) openMenus[0].source->parent;
@@ -5627,12 +5634,12 @@ OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject _source, 
 
 	for (uintptr_t i = 0; i < itemCount; i++) {
 		switch (menuSpecification->items[i].type) {
-			case OSMenuItem::SEPARATOR: {
+			case OSMenuItem_SEPARATOR: {
 				items[i] = (Control *) CreateMenuSeparator();
 			} break;
 
-			case OSMenuItem::SUBMENU:
-			case OSMenuItem::COMMAND: {
+			case OSMenuItem_SUBMENU:
+			case OSMenuItem_COMMAND: {
 				items[i] = (Control *) CreateMenuItem(menuSpecification->items[i], menubar);
 				if (!firstMenuItem) firstMenuItem = (MenuItem *) items[i];
 			} break;

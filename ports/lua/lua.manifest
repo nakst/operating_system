@@ -1,0 +1,11 @@
+[program]
+name = "Lua";
+shortName = "lua";
+description = "A lightweight scripting language.";
+
+[build]
+step = "ports/lua/build.sh";
+download = "ports/lua/download_src.sh";
+output = "Lua.esx";
+installationFolder = "/Programs/Lua/";
+Install;

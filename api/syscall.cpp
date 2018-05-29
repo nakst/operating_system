@@ -333,6 +333,9 @@ OSHandle OSIssueRequest(OSObject _instance, const char *request, size_t requestB
 		return OS_INVALID_HANDLE;
 	}
 
-	return OSSyscall(OS_SYSCALL_GET_REQUEST_RESPONSE, instance->handle, (uintptr_t) responseBytes, 0, 0);
+	uintptr_t rb;
+	OSHandle r = OSSyscall(OS_SYSCALL_GET_REQUEST_RESPONSE, instance->handle, (uintptr_t) &rb, 0, 0);
+	if (responseBytes) *responseBytes = rb;
+	return r;
 }
 #endif

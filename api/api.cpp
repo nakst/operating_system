@@ -130,9 +130,8 @@ void OSProcessMessages() {
 				message.processRequest.instance = instance;
 				message.processRequest.response = nullptr;
 				message.processRequest.responseBytes = 0;
-				OSPrint("Request: %s\n", message.processRequest.requestBytes, message.processRequest.request);
 				OSSendMessage(osSystemMessages, &message);
-				OSPrint("Response: %s\n", message.processRequest.responseBytes, message.processRequest.response);
+				// OSPrint("Response: %s\n", message.processRequest.responseBytes, message.processRequest.response);
 				OSSyscall(OS_SYSCALL_SET_REQUEST_RESPONSE, instance->handle, (uintptr_t) message.processRequest.response, message.processRequest.responseBytes, 0);
 				OSHeapFree(data);
 				OSCloseHandle(handle);

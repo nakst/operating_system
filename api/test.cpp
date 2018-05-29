@@ -960,10 +960,16 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 #endif
 
 	{
-		// TODO FIX!!!
 		calculator = OSCreateInstance(nullptr, nullptr);
 		OSError error = OSOpenInstance(calculator, instance, OSLiteral("calculator"), OS_OPEN_INSTANCE_HEADLESS);
 		OSPrint("error = %d\n", error);
+	}
+
+	{
+		OSObject lua = OSCreateInstance(nullptr, nullptr);
+		OSOpenInstance(lua, instance, OSLiteral("Lua"), OS_OPEN_INSTANCE_HEADLESS);
+		OSCloseHandle(OSIssueRequest(lua, OSLiteral("Execute\fio.write(string.format(\"Hello from %s\\n\", _VERSION))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
+		OSCloseHandle(OSIssueRequest(lua, OSLiteral("Execute\fio.write(string.format(\"Another message!\\n\"))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
 	}
 
 	return OS_CALLBACK_HANDLED;

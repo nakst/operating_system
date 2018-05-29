@@ -23,6 +23,9 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OSDefer(code)   OS_Defer(code)
 
 #else
+#ifndef nullptr
+#define nullptr (0)
+#endif
 #define OS_EXTERN_C extern
 #define OS_CONSTRUCTOR(x)
 #endif
@@ -931,9 +934,10 @@ typedef struct OSNotificationCallback {
 } OSNotificationCallback;
 
 typedef struct OSMenuItem {
-	enum {
-		COMMAND, SUBMENU, SEPARATOR,
-	} type;
+#define OSMenuItem_COMMAND (1)
+#define OSMenuItem_SUBMENU (2)
+#define OSMenuItem_SEPARATOR (3)
+	int type;
 
 	void *value;
 } OSMenuItem;
@@ -1267,6 +1271,7 @@ OS_EXTERN_C void OSIssueForeignCommand(OSObject instance, const char *name, size
 
 OS_EXTERN_C void OSSetInstance(OSObject window, OSObject instance);
 OS_EXTERN_C OSObject OSGetInstance(OSObject guiObject);
+OS_EXTERN_C void *OSGetInstanceContext(OSObject instance);
 
 OS_EXTERN_C void OSDebugGUIObject(OSObject guiObject);
 
@@ -1348,6 +1353,7 @@ OS_EXTERN_C void *OSHeapAllocate(size_t size, bool zeroMemory);
 OS_EXTERN_C void OSHeapFree(void *address);
 
 OS_EXTERN_C size_t OSCStringLength(const char *string);
+OS_EXTERN_C size_t OSStringLength(const char *string, uint8_t end);
 OS_EXTERN_C void OSCopyMemory(void *destination, void *source, size_t bytes);
 OS_EXTERN_C void OSMoveMemory(void *_start, void *_end, intptr_t amount, bool zeroEmptySpace);
 OS_EXTERN_C void OSCopyMemoryReverse(void *_destination, void *_source, size_t bytes);

@@ -286,13 +286,13 @@ void GenerateDeclarations(Token attribute, Token section, Token name, Token valu
 
 	if (CompareTokens(attribute, "command")) {
 		fprintf(output, "extern OSCommand _%.*s;\n", section.bytes, section.text);
-		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem::COMMAND\n", section.bytes, section.text);
+		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem_COMMAND\n", section.bytes, section.text);
 		fprintf(output, "#define %.*s (&_%.*s)\n", section.bytes, section.text, section.bytes, section.text);
 	} else if (CompareTokens(attribute, "window")) {
 		fprintf(output, "extern OSWindowSpecification *%.*s;\n", section.bytes, section.text);
 	} else if (CompareTokens(attribute, "menu")) {
 		fprintf(output, "extern OSMenuSpecification _%.*s;\n", section.bytes, section.text);
-		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem::SUBMENU\n", section.bytes, section.text);
+		fprintf(output, "#define _OS_MENU_ITEM_TYPE_FOR_%.*s OSMenuItem_SUBMENU\n", section.bytes, section.text);
 		fprintf(output, "#define %.*s (&_%.*s)\n", section.bytes, section.text, section.bytes, section.text);
 	}
 }
@@ -325,7 +325,7 @@ void GenerateDefinitions(Token attribute, Token section, Token name, Token value
 	if (event == EVENT_LISTING) {
 		if (CompareTokens(attribute, "menu")) {
 			if (CompareTokens(name, "Separator")) {
-				fprintf(output, "\t{ OSMenuItem::SEPARATOR, nullptr },\n");
+				fprintf(output, "\t{ OSMenuItem_SEPARATOR, nullptr },\n");
 			} else {
 				fprintf(output, "\t{ _OS_MENU_ITEM_TYPE_FOR_%.*s, &_%.*s },\n", name.bytes, name.text, name.bytes, name.text);
 			}
@@ -593,7 +593,7 @@ int main(int argc, char **argv) {
 
 	fclose(output);
 
-	if (autoBuild.found) {
+	if (autoBuild.found && autoBuild.source.bytes) {
 		char buffer[4096];
 		sprintf(buffer, "mkdir -p bin%.*s", autoBuild.installationFolder.bytes, autoBuild.installationFolder.text);
 		system(buffer);
@@ -618,22 +618,22 @@ int main(int argc, char **argv) {
 				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
 				autoBuild.output.bytes, autoBuild.output.text);
 		system(buffer);
+	}
 
-		if (autoBuild.install) {
-			sprintf(buffer, "echo \"\" >> \"bin/OS/Installed Programs.dat\"");
-			system(buffer);
-			sprintf(buffer, "echo \"[program %.*s]\" >> \"bin/OS/Installed Programs.dat\"", autoBuild.shortName.bytes, autoBuild.shortName.text);
-			system(buffer);
-			sprintf(buffer, "echo \"name = \\\"%.*s\\\";\" >> \"bin/OS/Installed Programs.dat\"", autoBuild.name.bytes, autoBuild.name.text);
-			system(buffer);
-			sprintf(buffer, "echo \"executablePath = \\\"%.*s%.*s\\\";\" >> \"bin/OS/Installed Programs.dat\"", 
-					autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
-					autoBuild.output.bytes, autoBuild.output.text);
-			system(buffer);
-			sprintf(buffer, "echo \"workingFolder = \\\"%.*s\\\";\" >> \"bin/OS/Installed Programs.dat\"", 
-					autoBuild.installationFolder.bytes, autoBuild.installationFolder.text);
-			system(buffer);
-		}
+	if (autoBuild.install) {
+		sprintf(buffer, "echo \"\" >> \"bin/OS/Installed Programs.dat\"");
+		system(buffer);
+		sprintf(buffer, "echo \"[program %.*s]\" >> \"bin/OS/Installed Programs.dat\"", autoBuild.shortName.bytes, autoBuild.shortName.text);
+		system(buffer);
+		sprintf(buffer, "echo \"name = \\\"%.*s\\\";\" >> \"bin/OS/Installed Programs.dat\"", autoBuild.name.bytes, autoBuild.name.text);
+		system(buffer);
+		sprintf(buffer, "echo \"executablePath = \\\"%.*s%.*s\\\";\" >> \"bin/OS/Installed Programs.dat\"", 
+				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text,
+				autoBuild.output.bytes, autoBuild.output.text);
+		system(buffer);
+		sprintf(buffer, "echo \"workingFolder = \\\"%.*s\\\";\" >> \"bin/OS/Installed Programs.dat\"", 
+				autoBuild.installationFolder.bytes, autoBuild.installationFolder.text);
+		system(buffer);
 	}
 
 	free(buffer);

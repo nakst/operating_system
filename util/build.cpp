@@ -25,18 +25,42 @@ char compilerPath[4096];
 char buffer[4096];
 char buffer2[2048];
 
-#define ColorBlue "\033[0;36m"
+#define Color1 "\033[0;36m"
+#define Color2 "\033[0;36m"
+#define Color3 "\033[0;36m"
 #define ColorNormal "\033[0m"
 
-void FindInstallationFolder(Token attribute, Token section, Token name, Token value, int event) {
+const char *programs[] = {
+	"desktop", "desktop/desktop.manifest",
+	"calculator", "",
+	"file_manager", "",
+	"image_viewer", "",
+	"system_monitor", "",
+	"lua", "ports/lua/lua.manifest",
+	"test", "api/test.manifest",
+};
+
+void DownloadSources(Token attribute, Token section, Token name, Token value, int event) {
+	if (event == EVENT_ATTRIBUTE && CompareTokens(section, "build") && CompareTokens(name, "download")) {
+		value = RemoveQuotes(value);
+		sprintf(buffer, "%.*s", value.bytes, value.text);
+		system(buffer);
+	}
+}
+
+void ParseProgramManifest(Token attribute, Token section, Token name, Token value, int event) {
 	if (event == EVENT_ATTRIBUTE && CompareTokens(section, "build") && CompareTokens(name, "installationFolder")) {
 		value = RemoveQuotes(value);
 		memcpy(buffer2, value.text, value.bytes);
 		buffer2[value.bytes] = 0;
 	} else if (event == EVENT_ATTRIBUTE && CompareTokens(section, "program") && CompareTokens(name, "name")) {
 		value = RemoveQuotes(value);
-		sprintf(buffer, "-> Building " ColorBlue "%.*s" ColorNormal "...\n", value.bytes, value.text);
+		sprintf(buffer, "-> Building " Color1 "%.*s" ColorNormal "...\n", value.bytes, value.text);
 		printf(buffer);
+	} else if (event == EVENT_ATTRIBUTE && CompareTokens(section, "build") && CompareTokens(name, "step")) {
+		value = RemoveQuotes(value);
+		sprintf(buffer, "%.*s > /dev/null", value.bytes, value.text);
+		system(buffer);
 	}
 }
 
@@ -55,7 +79,7 @@ void Compile(bool enableOptimisations) {
 	system("cp `x86_64-elf-gcc -print-file-name=\"crtbegin.o\"` crtbegin.o");
 	system("cp `x86_64-elf-gcc -print-file-name=\"crtend.o\"` crtend.o");
 
-	printf("-> Building " ColorBlue "API" ColorNormal "...\n");
+	printf("-> Building " Color3 "API" ColorNormal "...\n");
 
 	system("./manifest_parser api/empty.manifest bin/OS/standard.manifest.h");
 	system("nasm -felf64 api/api.s -o bin/OS/api1.o -Fdwarf");
@@ -69,17 +93,10 @@ void Compile(bool enableOptimisations) {
 	system("x86_64-elf-ar -rcs bin/OS/libglue.a bin/OS/glue.o ");
 	system("x86_64-elf-gcc -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Wl,-shared -o bin/OS/libapis.so bin/OS/api1.o bin/OS/api2.o -lms -Lports/musl");
 
-	const char *programs[] = {
-		"desktop", "desktop/desktop.manifest",
-		"calculator", "",
-		"file_manager", "",
-		"image_viewer", "",
-		"system_monitor", "",
-		"test", "api/test.manifest",
-	};
-
 	for (uintptr_t i = 0; i < sizeof(programs) / sizeof(char *); i += 2) {
-		if (strlen(programs[i + 1])) {
+		bool alt = strlen(programs[i + 1]);
+
+		if (alt) {
 			sprintf(buffer, programs[i + 1]);
 		} else {
 			sprintf(buffer, "%s/%s.manifest", programs[i], programs[i]);
@@ -94,26 +111,25 @@ void Compile(bool enableOptimisations) {
 		fread(b, 1, fileSize, file);
 		fclose(file);
 		buffer2[0] = 0;
-		ParseManifest(b, FindInstallationFolder);
+		ParseManifest(b, DownloadSources);
+		ParseManifest(b, ParseProgramManifest);
 		free(b);
 
-		if (strlen(programs[i + 1])) {
-			sprintf(buffer, "./manifest_parser %s \"bin%s%s%smanifest.h\"", programs[i + 1], buffer2, strlen(programs[i + 1]) ? programs[i] : "", strlen(programs[i + 1]) ? "." : "");
+		if (alt) {
+			sprintf(buffer, "./manifest_parser %s \"bin%s%s.manifest.h\"", programs[i + 1], buffer2, programs[i]);
 		} else {
-			sprintf(buffer, "./manifest_parser %s/%s.manifest \"bin%s%s%smanifest.h\"", programs[i], programs[i], buffer2, strlen(programs[i + 1]) ? programs[i] : "", strlen(programs[i + 1]) ? "." : "");
+			sprintf(buffer, "./manifest_parser %s/%s.manifest \"bin%smanifest.h\"", programs[i], programs[i], buffer2);
 		}
 
 		system(buffer);
 
-		if (!strlen(programs[i + 1])) {
-			sprintf(buffer, "rm \"bin%s\"*.o", buffer2);
-			system(buffer);
-			sprintf(buffer, "rm \"bin%s\"*.h", buffer2);
-			system(buffer);
-		}
+		sprintf(buffer, "rm -f \"bin%s\"*.o", buffer2);
+		system(buffer);
+		sprintf(buffer, "rm -f \"bin%s\"*.h", buffer2);
+		system(buffer);
 	}
 
-	printf("-> Building " ColorBlue "Kernel" ColorNormal "...\n");
+	printf("-> Building " Color3 "Kernel" ColorNormal "...\n");
 
 	system("nasm -felf64 kernel/x86_64.s -o bin/OS/kernel_x86_64.o -Fdwarf");
 	sprintf(buffer, "x86_64-elf-g++ -c kernel/main.cpp -o bin/OS/kernel.o -mno-red-zone " BuildFlags "%s" " -DUSE_ACPICA -Wno-unused-function", OptimiseKernel);
@@ -276,6 +292,11 @@ void BuildCrossCompiler(bool skipQuestions) {
 		printf("\t- curl\n");
 		printf("\t- nasm\n");
 		printf("\t- ctags\n");
+		printf("\t- xz\n");
+		printf("\t- gzip\n");
+		printf("\t- tar\n");
+		printf("\t- grep\n");
+		printf("\t- sed\n");
 
 		printf("\nMake sure you have at least 3GB of drive space available.\n");
 		printf("The final installation will take up ~1GB.\n");
@@ -283,12 +304,17 @@ void BuildCrossCompiler(bool skipQuestions) {
 		printf("The full build may take over an hour on slower systems; on most modern systems, it should only take ~15 minutes.\n");
 		printf("This does *not* require root permissions.\n");
 
-		printf("\nEnter the ABSOLUTE path of the folder which the cross compiler will be installed into:\n");
 		char installationFolder[4096];
+#if 0
+		printf("\nEnter the ABSOLUTE path of the folder which the cross compiler will be installed into:\n");
 		scanf("%s", installationFolder);
 		if (installationFolder[strlen(installationFolder) - 1] == '/') {
 			installationFolder[strlen(installationFolder) - 1] = 0;
 		}
+#else
+		getcwd(installationFolder, 4096);
+		strcat(installationFolder, "/cross");
+#endif
 		strcpy(compilerPath, installationFolder);
 		strcat(compilerPath, "/bin");
 		printf("\nType 'yes' to install the GCC compiler into '%s'.\n", installationFolder);

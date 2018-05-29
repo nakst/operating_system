@@ -16,10 +16,13 @@ build_system_config.dat
 cross/
 
 # Ports we don't need to upload
-ports/lua/
+ports/lua/src
 ports/acpica/files
 ports/nasm
 
 # Output drives
 drive
 vbox.vdi
+
+# Misc
+log.txt

@@ -1250,7 +1250,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				SYSCALL_RETURN(OS_SUCCESS, false);
 			}
 
-			SYSCALL_BUFFER(argument1, argument2, 1);
+			SYSCALL_BUFFER_ALLOW_NULL(argument1, argument2, 1);
 
 			OSHandle handle = MakeConstantBuffer((void *) argument1, argument2, instance->parent->owner);
 

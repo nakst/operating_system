@@ -21,6 +21,23 @@ size_t CF(CStringLength)(const char *string) {
 	}
 }
 
+size_t CF(StringLength)(const char *string, uint8_t end) {
+	if (!string) {
+		return (size_t) -1;
+	}
+
+	size_t size = 0;
+
+	while (true) {
+		if (*string != end) {
+			size++;
+			string++;
+		} else {
+			return size;
+		}
+	}
+}
+
 void CF(CopyMemory)(void *_destination, void *_source, size_t bytes) {
 	if (!bytes) {
 		return;
