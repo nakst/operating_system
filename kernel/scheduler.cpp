@@ -95,6 +95,8 @@ struct Thread {
 	uintptr_t kernelStack;
 	bool isKernelThread;
 
+	uintptr_t tlsAddress;
+
 	ThreadType type;
 
 	volatile size_t handles;
@@ -543,7 +545,12 @@ void NewProcess() {
 		thisProcess->executableState = OS_PROCESS_EXECUTABLE_FAILED_TO_LOAD;
 		OSMessage message = {};
 		message.type = OS_MESSAGE_PROGRAM_FAILED_TO_START;
-		desktopProcess->messageQueue.SendMessage(message);
+
+		if (!desktopProcess) {
+			KernelPanic("NewProcess - Desktop process failed to start.\n");
+		} else {
+			desktopProcess->messageQueue.SendMessage(message);
+		}
 	}
 
 	KernelLog(LOG_VERBOSE, "Created process %d %x, %s.\n", thisProcess->id, thisProcess, thisProcess->executablePathLength, thisProcess->executablePath);

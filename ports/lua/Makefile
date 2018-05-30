@@ -7,7 +7,7 @@
 PLAT= none
 
 CC= x86_64-elf-gcc -std=gnu99
-CFLAGS= -g -Wall -Wextra -DLUA_COMPAT_5_2 -ffreestanding -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON  -I../../../api/fake_c_headers $(SYSCFLAGS) $(MYCFLAGS)
+CFLAGS= -g -Wall -Wextra -DLUA_COMPAT_5_2 -ffreestanding -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON  -I../../musl/include -I../../musl/obj/include -I../../musl/arch/x86_64 -I../../musl/arch/generic $(SYSCFLAGS) $(MYCFLAGS)
 LDFLAGS= -T ../../../essence/util/linker_userland64.ld -g -ffreestanding -nostdlib -lgcc -z max-page-size=0x1000 -L../../../bin/OS -lapi -lfreetype -L../../../ports/freetype -L../../../ports/musl $(SYSLDFLAGS) $(MYLDFLAGS) ../../../crti.o ../../../crtbegin.o
 LIBS= -lm $(SYSLIBS) $(MYLIBS) ../../../crtend.o ../../../crtn.o
 

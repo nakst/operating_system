@@ -1,4 +1,7 @@
-#include <stdio.h>
+#define OS_NO_CSTDLIB
+#include "../../../api/os.h"
+
+#include <string.h>
 
 #define OS_MANIFEST_DEFINITIONS
 #include "lua.manifest.h"
@@ -13,8 +16,10 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	(void) _object;
 
 	if (message->type == OS_MESSAGE_CREATE_INSTANCE) {
+		// OSPrint("Create lua state...\n");
 		lua_State *state = luaL_newstate();
 		luaL_openlibs(state);
+		// OSPrint("Create lua state done.\n");
 		OSCreateInstance(state, message);
 		return OS_CALLBACK_HANDLED;
 	} else if (message->type == OS_MESSAGE_PROCESS_REQUEST) {

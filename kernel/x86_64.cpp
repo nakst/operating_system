@@ -434,6 +434,8 @@ extern "C" void PostContextSwitch(InterruptContext *context) {
 		KernelPanic("PostContextSwitch - Interrupts were enabled. (3)\n");
 	}
 
+	ProcessorSetThreadStorage(local->currentThread->tlsAddress);
+
 	// We can only free the scheduler's spinlock when we are no longer using the stack
 	// from the previous thread. See DoContextSwitch in x86_64.s.
 	scheduler.lock.Release(true);

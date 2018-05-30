@@ -970,6 +970,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 		OSOpenInstance(lua, instance, OSLiteral("Lua"), OS_OPEN_INSTANCE_HEADLESS);
 		OSCloseHandle(OSIssueRequest(lua, OSLiteral("Execute\fio.write(string.format(\"Hello from %s\\n\", _VERSION))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
 		OSCloseHandle(OSIssueRequest(lua, OSLiteral("Execute\fio.write(string.format(\"Another message!\\n\"))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
+		OSCloseHandle(OSIssueRequest(lua, OSLiteral("Execute\fio.write(string.format(\"Another message 2!\\n\"))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
 	}
 
 	return OS_CALLBACK_HANDLED;

@@ -354,6 +354,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_ISSUE_FOREIGN_COMMAND,
 	OS_SYSCALL_GET_REQUEST_RESPONSE,
 	OS_SYSCALL_SET_REQUEST_RESPONSE,
+	OS_SYSCALL_SET_TLS,
 } OSSyscallType;
 
 #define OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND (0)
@@ -1149,6 +1150,8 @@ OS_EXTERN_C OSError OSCreateProcess(const char *executablePath, size_t executabl
 OS_EXTERN_C OSError OSCreateThread(OSThreadEntryFunction entryFunction, OSThreadInformation *information, void *argument);
 OS_EXTERN_C OSHandle OSCreateSurface(size_t width, size_t height);
 OS_EXTERN_C OSHandle OSCreateEvent(bool autoReset);
+
+OS_EXTERN_C void OSSetThreadLocalStorageAddress(void *address);
 
 #define OS_MAX_PROGRAM_NAME_LENGTH (256)
 OS_EXTERN_C void OSExecuteProgram(const char *name, size_t nameBytes);

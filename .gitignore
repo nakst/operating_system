@@ -20,6 +20,9 @@ cross/
 ports/lua/src
 ports/acpica/files
 ports/nasm
+ports/vim
+ports/musl2
+ports/musl3
 
 # Output drives
 drive

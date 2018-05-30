@@ -7,7 +7,7 @@ cd ../..
 cd ports/lua
 
 cd src
-# make clean
+make clean
 make lua
 cd ..
 

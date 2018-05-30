@@ -1,5 +1,4 @@
-// TODO Possibly remove all of these?
-// 	Or move into a libc library?
+// TODO Sort out musl as the actual libc.
 
 typedef volatile int sig_atomic_t;
 typedef int64_t time_t;

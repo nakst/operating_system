@@ -65,6 +65,7 @@ extern "C" void ProcessorBreakpointHelper(...);
 extern "C" struct CPULocalStorage *GetLocalStorage();
 extern "C" struct Thread *GetCurrentThread();
 extern "C" void ProcessorSetLocalStorage(struct CPULocalStorage *cls);
+extern "C" void ProcessorSetThreadStorage(uintptr_t tls);
 extern "C" void ProcessorSendIPI(uintptr_t interrupt, bool nmi = false, int processorID = -1);
 extern "C" void ProcessorDebugOutputByte(uint8_t byte);
 extern "C" void ProcessorFakeTimerInterrupt();

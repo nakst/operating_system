@@ -1,3 +1,4 @@
+#if 0
 int errno; // TODO Thread-local storage.
 
 FILE *stdin;
@@ -1264,3 +1265,112 @@ static void InitialiseCStandardLibrary() {
 	stdout->virtualFile = true;
 	stderr->virtualFile = true;
 }
+#else
+#include "../ports/musl/obj/include/bits/syscall.h"
+
+#define __NEED_struct_iovec
+#include "../ports/musl/obj/include/bits/alltypes.h"
+
+extern "C" int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv);
+
+// TODO Proper values?
+static char *argv[] = {
+	(char *) "/ProgramName.esx",
+	(char *) "LANG=en_US.UTF-8",
+	(char *) "PWD=/__working_directory",
+	(char *) "HOME=/__user_storage",
+	(char *) "PATH=/__posix_bin",
+	(char *) nullptr,
+};
+
+static void InitialiseCStandardLibrary() {
+	// OSPrint("starting musl libc\n");
+	__libc_start_main(nullptr, 1, argv);
+}
+
+long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
+	switch (n) {
+		case SYS_mmap: {
+			if (a1 == 0 && a2 && a3 == 3 && a4 == 34 && a5 == -1 && !a6) {
+				return (long) OSHeapAllocate(a2, true);
+			} else {
+				OSPrint("Unsupported mmap [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
+			}
+		} break;
+
+		case SYS_munmap: {
+			// Warning: we free the whole block regardless of a2
+			OSHeapFree((void *) a1);
+			return 0;
+		} break;
+
+		case SYS_brk: {
+			return -1;
+		} break;
+
+		case SYS_mremap: {
+			void *old = (void *) a1;
+			size_t oldSize = a2;
+			size_t newSize = a3;
+
+			void *replacement = OSHeapAllocate(newSize, true);
+			OSCopyMemory(replacement, old, oldSize);
+			OSHeapFree(old);
+
+			return (long) replacement;
+		} break;
+
+		case SYS_clock_gettime: {
+			return -1;
+		} break;
+
+		case SYS_arch_prctl: {
+			if (a2 == 0x1002) {
+				OSSetThreadLocalStorageAddress((void *) a1);
+				return 0;
+			} else {
+				OSPrint("Unsupported arch_prctl [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
+			}
+		} break;
+
+		case SYS_set_tid_address: {
+			// Warning: we're also supposed to set some kernel variable??
+			return OSGetThreadID(OS_CURRENT_THREAD);
+		} break;
+
+		case SYS_ioctl: {
+			if (a1 == 1 && a2 == 21523) {
+				// TIOCGWINSZ - get terminal size
+				return 0;
+			}
+		} break;
+
+		case SYS_writev: {
+			if (a1 == 1) {
+				struct iovec *buffers = (struct iovec *) a2;
+
+				for (intptr_t i = 0; i < a3; i++) {
+					if (!buffers[i].iov_len) continue;
+					OSPrintDirect((char *) buffers[i].iov_base, buffers[i].iov_len);
+				}
+			}
+		} break;
+
+		default: {
+			OSPrint("Unknown linux syscall %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+			OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
+		} break;
+	}
+
+	return -1;
+}
+
+extern "C" long OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
+	// OSPrint("-> linux syscall %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+	long result = _OSMakeLinuxSystemCall(n, a1, a2, a3, a4, a5, a6);
+	// OSPrint("<- result %x\n", result);
+	return result;
+}
+#endif

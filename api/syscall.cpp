@@ -339,3 +339,7 @@ OSHandle OSIssueRequest(OSObject _instance, const char *request, size_t requestB
 	return r;
 }
 #endif
+
+void OSSetThreadLocalStorageAddress(void *address) {
+	OSSyscall(OS_SYSCALL_SET_TLS, (uintptr_t) address, 0, 0, 0);
+}

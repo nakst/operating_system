@@ -527,6 +527,19 @@ ProcessorSetLocalStorage:
 	mov	[fs:0],rdi
 	ret
 
+[global ProcessorSetThreadStorage]
+ProcessorSetThreadStorage:
+	push	rdx
+	push	rcx
+	mov	rcx,0xC0000101 ; set gs base
+	mov	rdx,rdi
+	mov	rax,rdi
+	shr	rdx,32
+	wrmsr		       ; to edx:eax (from rdi)
+	pop	rcx
+	pop	rdx
+	ret
+
 InstallInterruptHandler:
 	mov	word [rbx + 0],dx
 	mov	word [rbx + 2],0x48
