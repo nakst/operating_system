@@ -1,5 +1,9 @@
 #include "../api/os.h"
 
+#include <stdlib.h>
+#include <ctype.h>
+#include <setjmp.h>
+
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/test.manifest.h"
 

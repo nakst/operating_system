@@ -1343,6 +1343,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 		case SYS_ioctl: {
 			if (a1 == 1 && a2 == 21523) {
 				// TIOCGWINSZ - get terminal size
+				// Warning: this is handled fully.
 				return 0;
 			}
 		} break;

@@ -4,11 +4,16 @@
 
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_STATIC
+#include <stdlib.h>
+#include <assert.h>
+#include <string.h>
 #include "stb_image.h"
 
+#if 0
 #define STB_SPRINTF_IMPLEMENTATION
 #define STB_SPRINTF_STATIC
 #include "stb_sprintf.h"
+#endif
 
 #ifndef CF
 #define CF(x) OS ## x

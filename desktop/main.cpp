@@ -1,5 +1,9 @@
 #include "../api/os.h"
 
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
 // #define WALLPAPER ("/OS/Sample Images/Flower.jpg")
 #define FIRST_PROGRAM ("/OS/Test.esx")
 

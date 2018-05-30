@@ -1,5 +1,8 @@
 #include "../bin/OS/standard.manifest.h"
 
+#include <string.h>
+#include <ctype.h>
+
 static void EnterDebugger() {
 	asm volatile ("xchg %bx,%bx");
 }

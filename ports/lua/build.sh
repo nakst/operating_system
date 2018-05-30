@@ -11,4 +11,5 @@ cd src
 make lua
 cd ..
 
+mkdir -p ../../bin/Programs/Lua
 cp src/lua ../../bin/Programs/Lua/Lua.esx

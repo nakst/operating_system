@@ -1,6 +1,4 @@
-// TODO Download and build ports.
 // TODO Switch to shared libraries for the API.
-// TODO Port musl fully to get a working libc.
 // TODO Merge the manifest header generator into this program.
 // TODO Managing the list of programs.
 // TODO Incremental builds.
@@ -68,8 +66,9 @@ void Compile(bool enableOptimisations) {
 	const char *Optimise = enableOptimisations ? "-O2" : "";
 	const char *OptimiseKernel = enableOptimisations ? "-O2 -DDEBUG_BUILD" : "-DDEBUG_BUILD";
 
-#define BuildFlags "-ffreestanding -Wall -Wextra -Wno-missing-field-initializers -fno-exceptions -mcmodel=large -fno-rtti -g -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON -std=c++11 -Wno-frame-address -Iports/freetype"
-#define LinkFlags "-T util/linker_userland64.ld -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Lbin/OS -lapi -lfreetype -lm -Lports/freetype -Lports/musl"
+#define BuildFlags "-ffreestanding -Wall -Wextra -Wno-missing-field-initializers -fno-exceptions -mcmodel=large -fno-rtti -g -DARCH_64 -DARCH_X86_64 -DARCH_X86_COMMON " \
+	"-std=c++11 -Wno-frame-address -Iports/freetype -I\"bin/Programs/C Standard Library/Headers\""
+#define LinkFlags "-T util/linker_userland64.ld -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Lbin/OS -lapi -lfreetype -lc -Lports/freetype -L\"bin/Programs/C Standard Library\""
 #define KernelLinkFlags "-ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000"
 
 	setenv("BuildFlags", BuildFlags, 1);
@@ -468,7 +467,7 @@ int main(int argc, char **argv) {
 	(void) argv;
 
 	char *prev = nullptr;
-	printf("Essence Build System\nPress Ctrl-C to exit.\n");
+	printf(Color1 "Essence Build System" ColorNormal "\nPress Ctrl-C to exit.\n");
 
 	{
 		FILE *file = fopen("build_system_config.dat", "r");
@@ -588,12 +587,14 @@ int main(int argc, char **argv) {
 		} else if (0 == memcmp(l, "python ", 7) || 0 == memcmp(l, "p ", 2)) {
 			sprintf(buffer, "python -c \"print(%s)\"", 1 + strchr(l, ' '));
 			system(buffer);
-		} else if (0 == memcmp(l, "build-cross", 11)) {
+		} else if (0 == strcmp(l, "build-cross")) {
 			BuildCrossCompiler(true);
 			SaveConfig();
 			printf("Please restart the build system.\n");
 			return 0;
-		} else if (0 == strcmp(l, "help") || 0 == strcmp(l, "h")) {
+		} else if (0 == strcmp(l, "clean")) {
+			system("rm -rf ports/musl/obj ports/musl/lib bin ports/lua/*.o ports/lua/src/*.o");
+		} else if (0 == strcmp(l, "help") || 0 == strcmp(l, "h") || 0 == strcmp(l, "?")) {
 			printf("(b ) build - Unoptimised build\n");
 			printf("(o ) optimise - Optimised build\n");
 			printf("(t ) test - Qemu (SMP/AHCI/64MB)\n");
@@ -613,6 +614,7 @@ int main(int argc, char **argv) {
 			printf("(c ) compile - Compile the kernel and programs.\n");
 			printf("(  ) reset-config - Reset the build system's config file.\n");
 			printf("(  ) build-cross - Build a GCC cross compiler for building the OS.\n");
+			printf("(  ) clean - Remove all build files.\n");
 		} else {
 			printf("Unrecognised command '%s'. Enter 'help' to get a list of commands.\n", l);
 		}

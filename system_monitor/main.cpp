@@ -2,6 +2,9 @@
 
 #include "../api/os.h"
 
+#include <string.h>
+#include <ctype.h>
+
 #define MANIFEST_PARSER_LIBRARY
 #include "../util/manifest_parser.cpp"
 

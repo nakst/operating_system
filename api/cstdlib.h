@@ -1,5 +1,4 @@
-// TODO Sort out musl as the actual libc.
-
+#if 0
 typedef volatile int sig_atomic_t;
 typedef int64_t time_t;
 typedef int64_t clock_t;
@@ -262,3 +261,4 @@ OS_EXTERN_C int _setjmp(jmp_buf *env);
 OS_EXTERN_C __attribute__((noreturn)) void _longjmp(jmp_buf *env, int val);
 #define setjmp(x) _setjmp(&(x))
 #define longjmp(x, y) _longjmp(&(x), (y))
+#endif
