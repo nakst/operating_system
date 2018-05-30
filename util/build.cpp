@@ -79,6 +79,11 @@ void Compile(bool enableOptimisations) {
 	system("cp `x86_64-elf-gcc -print-file-name=\"crtbegin.o\"` crtbegin.o");
 	system("cp `x86_64-elf-gcc -print-file-name=\"crtend.o\"` crtend.o");
 
+	printf("-> Building " Color3 "Musl-libc" ColorNormal "...\n");
+
+	system("ports/musl/download_src.sh");
+	system("ports/musl/build.sh > /dev/null");
+
 	printf("-> Building " Color3 "API" ColorNormal "...\n");
 
 	system("./manifest_parser api/empty.manifest bin/OS/standard.manifest.h");
@@ -91,7 +96,7 @@ void Compile(bool enableOptimisations) {
 	sprintf(buffer, "x86_64-elf-g++ -c api/glue.cpp -o bin/OS/glue.o " BuildFlags " -Wno-unused-function " "%s", Optimise);
 	system(buffer);
 	system("x86_64-elf-ar -rcs bin/OS/libglue.a bin/OS/glue.o ");
-	system("x86_64-elf-gcc -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Wl,-shared -o bin/OS/libapis.so bin/OS/api1.o bin/OS/api2.o -lms -Lports/musl");
+	// system("x86_64-elf-gcc -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Wl,-shared -o bin/OS/libapis.so bin/OS/api1.o bin/OS/api2.o -lms -Lports/musl");
 
 	for (uintptr_t i = 0; i < sizeof(programs) / sizeof(char *); i += 2) {
 		bool alt = strlen(programs[i + 1]);

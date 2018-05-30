@@ -280,7 +280,7 @@ typedef enum OSFatalError {
 typedef intptr_t OSError;
 
 typedef enum OSSyscallType {
-	OS_SYSCALL_PRINT,
+	OS_SYSCALL_PRINT = 0x1000,
 	OS_SYSCALL_ALLOCATE,
 	OS_SYSCALL_FREE,
 	OS_SYSCALL_CREATE_PROCESS,

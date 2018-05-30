@@ -21,8 +21,23 @@ ports/lua/src
 ports/acpica/files
 ports/nasm
 ports/vim
-ports/musl2
-ports/musl3
+ports/musl/arch
+ports/musl/crt
+ports/musl/dist
+ports/musl/include
+ports/musl/ldso
+ports/musl/lib
+ports/musl/obj
+ports/musl/src
+ports/musl/tools
+ports/musl/configure
+ports/musl/INSTALL
+ports/musl/Makefile
+ports/musl/README
+ports/musl/VERSION
+ports/musl/WHATSNEW
+ports/musl/config.mak
+ports/musl/libm.a
 
 # Output drives
 drive
