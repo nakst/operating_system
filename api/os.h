@@ -758,6 +758,12 @@ typedef enum OSMessageType {
 	OS_MESSAGE_IDLE				= 0x5003,
 	OS_MESSAGE_SYSTEM_CONSTANT_UPDATED	= 0x5004,
 
+	// Terminal emulator messages: (not sent with message mutex acquired)
+	OS_MESSAGE_PRINT_OUTPUT			= 0x5100,
+	OS_MESSAGE_GET_TERMINAL_DIMENSIONS	= 0x5101,
+	OS_MESSAGE_WAIT_STDIN			= 0x5102,
+	OS_MESSAGE_GET_STDIN_BUFFER		= 0x5103,
+
 	// User messages:
 	OS_MESSAGE_USER_START			= 0x8000,
 	OS_MESSAGE_USER_END			= 0xBFFF,
@@ -904,6 +910,24 @@ typedef struct OSMessage {
 			void *response;
 			size_t responseBytes;
 		} processRequest;
+
+		struct {
+			const char *string;
+			size_t length;
+		} printOutput;
+
+		struct {
+			const char *string;
+			size_t length;
+		} getStdinBuffer;
+
+		struct {
+			int rows, columns;
+		} getTerminalDimensions;
+
+		struct {
+			int timeoutMs;
+		} waitStdin;
 	};
 } OSMessage;
 
@@ -1031,6 +1055,12 @@ typedef struct OSSnapshotProcesses {
 	size_t count;
 	OSSnapshotProcessesItem processes[];
 } OSSnapshotProcesses;
+
+typedef enum OSStandardFont {
+	OS_STANDARD_FONT_REGULAR,
+	OS_STANDARD_FONT_BOLD,
+	OS_STANDARD_FONT_MONOSPACED,
+} OSStandardFont;
 
 #define OS_CALLBACK_NOT_HANDLED (-1)
 #define OS_CALLBACK_HANDLED (0)
@@ -1234,10 +1264,12 @@ OS_EXTERN_C void OSCopySurface(OSHandle destination, OSHandle source, OSPoint de
 OS_EXTERN_C OSError OSDrawSurface(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha);
 OS_EXTERN_C OSError OSDrawSurfaceClipped(OSHandle destination, OSHandle source, OSRectangle destinationRegion, OSRectangle sourceRegion, OSRectangle borderRegion, OSDrawMode mode, uint8_t alpha, OSRectangle clipRegion);
 OS_EXTERN_C void OSClearModifiedRegion(OSHandle surface);
-OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion, int blur);
+OS_EXTERN_C OSError OSDrawString(OSHandle surface, OSRectangle region, OSString *string, int fontSize, unsigned flags, uint32_t color, int32_t backgroundColor, OSStandardFont font, OSRectangle clipRegion, int blur);
 OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize, int scrollX);
 OS_EXTERN_C void OSDrawProgressBar(OSHandle surface, OSRectangle bounds, float progress, OSRectangle clip, bool blue);
 OS_EXTERN_C bool OSClipRectangle(OSRectangle parent, OSRectangle rectangle, OSRectangle *output); // Returns false if the rectangles did not overlap.
+OS_EXTERN_C int OSGetLineHeight(OSStandardFont font, int fontSize);
+OS_EXTERN_C int OSMeasureStringWidth(OSStandardFont font, int fontSize, const char *string, size_t stringBytes);
 
 // You shouldn't need to call either of these...
 OS_EXTERN_C void OSRedrawAll();

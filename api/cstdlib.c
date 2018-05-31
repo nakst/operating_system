@@ -1270,6 +1270,8 @@ static void InitialiseCStandardLibrary() {
 #else
 #define __NEED_struct_iovec
 #define __NEED_sigset_t
+#define __NEED_struct_timespec
+#define __NEED_time_t
 #define _POSIX_SOURCE
 #define _GNU_SOURCE
 #include "../ports/musl/obj/include/bits/syscall.h"
@@ -1283,7 +1285,9 @@ static void InitialiseCStandardLibrary() {
 #include <fcntl.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <poll.h>
 #include <sys/utsname.h>
+#include <errno.h>
 
 // TODO Actually use the CWD.
 char currentWorkingDirectory[4096];
@@ -1331,6 +1335,26 @@ static char *FixFilename(char *filename) {
 	}
 }
 
+void PrintOutput(char *string, size_t length) {
+#if 0
+	OSPrint("Print output (%d):\n", length);
+
+	for (uintptr_t i = 0; i < length; i++) {
+		OSPrint("\t%d: %X, %c\n", i, string[i], string[i]);
+	}
+#else
+#if 0
+	OSPrintDirect(string, length);
+#else
+	OSMessage m;
+	m.type = OS_MESSAGE_PRINT_OUTPUT;
+	m.printOutput.string = string;
+	m.printOutput.length = length;
+	OSSendMessage(osSystemMessages, &m);
+#endif
+#endif
+}
+
 long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
 	switch (n) {
 		case SYS_mmap: {
@@ -1365,7 +1389,11 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 		} break;
 
 		case SYS_clock_gettime: {
-			return -1;
+			struct timespec *tp = (struct timespec *) a2;
+			uint64_t microseconds = OSProcessorReadTimeStamp() / osSystemConstants[OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND];
+			tp->tv_sec = microseconds / 1000;
+			tp->tv_nsec = (microseconds * 1000) % 1000000000;
+			return 0;
 		} break;
 
 		case SYS_arch_prctl: {
@@ -1387,18 +1415,72 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			if ((a1 == 0 || a1 == 1 || a1 == 2) && a2 == 21523) {
 				// TIOCGWINSZ - get terminal size
 				struct winsize *size = (struct winsize *) a3;
-				size->ws_row = 80;
-				size->ws_col = 25;
-				size->ws_xpixel = 80 * 10;
-				size->ws_ypixel = 25 * 10;
+
+				OSMessage m;
+				m.type = OS_MESSAGE_GET_TERMINAL_DIMENSIONS;
+				OSSendMessage(osSystemMessages, &m);
+
+				size->ws_row = m.getTerminalDimensions.rows;
+				size->ws_col = m.getTerminalDimensions.columns;
+				size->ws_xpixel = 800;
+				size->ws_ypixel = 800;
 				return 0;
 			}
 		} break;
 
+		case SYS_read: {
+			if (a1 == 0) {
+				// OSPrint("read stdin, max %d\n", a3);
+				OSMessage m;
+				m.type = OS_MESSAGE_GET_STDIN_BUFFER;
+				OSSendMessage(osSystemMessages, &m);
+				memcpy((void *) a2, m.getStdinBuffer.string, m.getStdinBuffer.length);
+				// OSPrint("\tread %d\n", m.getStdinBuffer.length);
+				// for (uintptr_t i = 0; i < m.getStdinBuffer.length; i++) OSPrint("\t%X\n", m.getStdinBuffer.string[i]);
+				return m.getStdinBuffer.length;
+			} else if (a1 > 2) {
+				PosixFile *file = GET_POSIX_FILE(a1);
+				uint64_t read = 0;
+
+				intptr_t x = OSReadFileSync(file->handle, file->offset, a3, (void *) a2); 
+				if (x >= 0) read += x;
+				file->offset += a3;
+
+				return read;
+			} else {
+				OSPrint("Unsupported read %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
+			}
+		} break;
+
+		case SYS_access: {
+			char *filename = FixFilename((char *) a1);
+			OSNodeInformation node;
+			OSError error = OSOpenNode(filename, strlen(filename), OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &node);
+			if (error == OS_SUCCESS) OSCloseHandle(node.handle);
+			return error == OS_SUCCESS ? 0 : -1;
+		} break;
+
 		case SYS_write: {
 			if (a1 == 1 || a1 == 2) {
-				OSPrintDirect((char *) a2, a3);
+				PrintOutput((char *) a2, a3);
 				return a3;
+			} else if (a1 > 2) {
+				PosixFile *file = GET_POSIX_FILE(a1);
+				uint64_t written = 0;
+
+				if (file->seekToEndBeforeWrite) {
+					OSNodeInformation node;
+					node.handle = file->handle;
+					OSRefreshNodeInformation(&node);
+					file->offset = node.fileSize;
+				}
+
+				intptr_t x = OSWriteFileSync(file->handle, file->offset, a3, (void *) a2); 
+				if (x >= 0) written += x;
+				file->offset += a3;
+
+				return written;
 			} else {
 				OSPrint("Unsupported write %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
 				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
@@ -1412,7 +1494,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 
 				for (intptr_t i = 0; i < a3; i++) {
 					if (!buffers[i].iov_len) continue;
-					OSPrintDirect((char *) buffers[i].iov_base, buffers[i].iov_len);
+					PrintOutput((char *) buffers[i].iov_base, buffers[i].iov_len);
 					s += buffers[i].iov_len;
 				}
 
@@ -1445,7 +1527,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 
 		case SYS_chdir: {
 			strcpy(currentWorkingDirectory, (char *) a1);
-			OSPrint("set cwd to %z\n", currentWorkingDirectory);
+			// OSPrint("set cwd to %z\n", currentWorkingDirectory);
 		} break;
 
 		case SYS_prlimit64: {
@@ -1488,6 +1570,32 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			return 0;
 		} break;
 
+		case SYS_fstat: {
+			PosixFile *file = GET_POSIX_FILE(a1);
+			struct stat *buffer = (struct stat *) a2;
+			OSNodeInformation node;
+			node.handle = file->handle;
+			OSRefreshNodeInformation(&node);
+
+			buffer->st_mode = node.type == OS_NODE_DIRECTORY ? S_IFDIR : S_IFREG;
+			buffer->st_dev = 0;
+			buffer->st_ino = 0;
+			buffer->st_nlink = 1;
+			buffer->st_mode |= S_IRWXU | S_IRWXG | S_IRWXO;
+			buffer->st_uid = 10;
+			buffer->st_gid = 10;
+			buffer->st_rdev = 0;
+			buffer->st_size = node.fileSize;
+			buffer->st_atime = 0;
+			buffer->st_mtime = 0;
+			buffer->st_ctime = 0;
+			buffer->st_blksize = 4096;
+			buffer->st_blocks = (node.fileSize + 4095) / 4096;
+
+			return 0;
+		} break;
+
+		case SYS_lstat:
 		case SYS_stat: {
 			char *filename = FixFilename((char *) a1);
 			struct stat *buffer = (struct stat *) a2;
@@ -1531,7 +1639,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 
 		case SYS_rt_sigaction:
 		case SYS_rt_sigprocmask: {
-			OSPrint("Warning, ignoring signal syscall %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+			// OSPrint("Warning, ignoring signal syscall %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
 			return 0;
 		} break;
 
@@ -1549,10 +1657,10 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			if (a2 & O_DIRECTORY) flags |= OS_OPEN_NODE_DIRECTORY;
 			if (a2 & O_TRUNC) flags |= OS_OPEN_NODE_RESIZE_ACCESS;
 
-			OSPrint("attempting to open %z with flags %x\n", filename, flags);
+			// OSPrint("attempting to open %z (%z) with flags %x\n", filename, (char *) a1, flags);
 			OSNodeInformation node;
 			OSError error = OSOpenNode(filename, OSCStringLength(filename), flags, &node);
-			OSPrint("\terror = %x\n", error);
+			// OSPrint("\terror = %x\n", error);
 
 			if (error != OS_SUCCESS) {
 				return -1;
@@ -1581,7 +1689,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 					OSResizeFile(file->handle, 0); 
 				}
 
-				OSPrint("\tsuccess!\n");
+				// OSPrint("\tsuccess!\n");
 
 				return fildes;
 			}
@@ -1589,7 +1697,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 
 		case SYS_fchdir: {
 			strcpy(currentWorkingDirectory, GET_POSIX_FILE(a1)->path);
-			OSPrint("set cwd to %z\n", currentWorkingDirectory);
+			// OSPrint("set cwd to %z\n", currentWorkingDirectory);
 			return 0;
 		} break;
 
@@ -1622,7 +1730,9 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 
 				for (intptr_t i = 0; i < a3; i++) {
 					if (!buffers[i].iov_len) continue;
-					read += OSReadFileSync(file->handle, file->offset, buffers[i].iov_len, buffers[i].iov_base); 
+					intptr_t x = OSReadFileSync(file->handle, file->offset, buffers[i].iov_len, buffers[i].iov_base); 
+					if (x < 0) break;
+					read += x;
 					file->offset += buffers[i].iov_len;
 				}
 
@@ -1709,16 +1819,49 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 		} break;
 
 		case SYS_poll: {
-			// Always timeout.
-			// TODO Implement.
-			if (a3 < 0) {
-				OSPrint("------> poll forever, terminating process\n");
-				OSTerminateProcess(OS_CURRENT_PROCESS);
-			} else {
-				OSPrint("------> poll stub\n");
-			}
+			struct pollfd *fds = (struct pollfd *) a1;
 
+			if (a2 == 1 && fds[0].fd == 0 /*stdin*/ && fds[0].events == POLL_IN) {
+				// OSPrint("poll stdin with timeout %d\n", a3);
+
+				// Wait until data on stdin is available.
+				OSMessage m;
+				m.type = OS_MESSAGE_WAIT_STDIN;
+				m.waitStdin.timeoutMs = a3 < 0 ? OS_WAIT_NO_TIMEOUT : a3;
+				OSSendMessage(osSystemMessages, &m);
+
+				if (m.waitStdin.timeoutMs) {
+					return 0;
+				} else {
+					fds[0].revents = POLL_IN;
+					return 1;
+				}
+			} else {
+				// TODO Support polling on other file descriptors.
+				return -1;
+			}
+		} break;
+
+		case SYS_exit_group: {
+			OSCrashProcess(a1 + 1000);
+		} break;
+
+		case SYS_nanosleep: {
+			const struct timespec *sleep = (const struct timespec *) a1;
+			uint64_t milliseconds = sleep->tv_sec * 1000 + sleep->tv_nsec / 1000000;
+			if (!milliseconds) milliseconds = 1;
+			OSSleep(milliseconds);
 			return 0;
+		} break;
+
+		case SYS_readlink: {
+			// We don't have symbolic links (yet)
+			return -EINVAL;
+		} break;
+
+		case SYS_unlink: {
+			// We don't have symbolic links (yet)
+			return -EACCES;
 		} break;
 
 		default: {
@@ -1731,9 +1874,9 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 }
 
 extern "C" long OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
-	OSPrint("-> linux syscall %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+	// OSPrint("-> linux syscall %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
 	long result = _OSMakeLinuxSystemCall(n, a1, a2, a3, a4, a5, a6);
-	OSPrint("<- result %x\n", result);
+	// OSPrint("<- result %x\n", result);
 	return result;
 }
 #endif

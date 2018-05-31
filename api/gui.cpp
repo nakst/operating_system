@@ -1354,12 +1354,12 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 						// bounds.left++; bounds.right++;
 
 						OSDrawString(message->paint.surface, bounds, &control->text, control->textSize,
-								control->textAlign, textShadowColor, -1, control->textBold, message->paint.clip, 
+								control->textAlign, textShadowColor, -1, control->textBold ? OS_STANDARD_FONT_BOLD : OS_STANDARD_FONT_REGULAR, message->paint.clip, 
 								control->textShadowBlur ? 3 : 0);
 					}
 
 					OSDrawString(message->paint.surface, textBounds, &control->text, control->textSize,
-							control->textAlign, textColor, -1, control->textBold, message->paint.clip, 0);
+							control->textAlign, textColor, -1, control->textBold ? OS_STANDARD_FONT_BOLD : OS_STANDARD_FONT_REGULAR, message->paint.clip, 0);
 				}
 
 				repaintCustom:;

@@ -4,11 +4,12 @@
 // TODO '...' when clipping text.
 
 #define DEBUG_ADDITIONAL_KERNING (0)
+#define FONT_SIZE (9)
 
 typedef FT_Face Font;
 
 static FT_Library freetypeLibrary;
-static Font fontRegular, fontBold;
+static Font fontRegular, fontBold, fontMonospaced;
 
 static bool fontRendererInitialised;
 
@@ -59,8 +60,15 @@ static void OSFontRendererInitialise() {
 	void *loadedFontBold = OSMapObject(nodeBold.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
 	if (!loadedFontBold) return;
 
+	OSNodeInformation nodeMonospaced;
+	error = OSOpenNode(OSLiteral("/OS/Fonts/Noto Sans Mono Regular.ttf"), OS_OPEN_NODE_RESIZE_BLOCK | OS_OPEN_NODE_READ_ACCESS, &nodeMonospaced);
+	if (error != OS_SUCCESS) return;
+	void *loadedFontMonospaced = OSMapObject(nodeMonospaced.handle, 0, OS_SHARED_MEMORY_MAP_ALL, OS_MAP_OBJECT_READ_ONLY);
+	if (!loadedFontMonospaced) return;
+
 	OSCloseHandle(nodeRegular.handle);
 	OSCloseHandle(nodeBold.handle);
+	OSCloseHandle(nodeMonospaced.handle);
 
 	{
 		FT_Error error;
@@ -80,6 +88,13 @@ static void OSFontRendererInitialise() {
 		}
 
 		error = FT_New_Memory_Face(freetypeLibrary, (uint8_t *) loadedFontBold, nodeBold.fileSize, 0, &fontBold);
+
+		if (error) {
+			OSPrint("Could not load the fonts into freetype.\n");
+			return;
+		}
+
+		error = FT_New_Memory_Face(freetypeLibrary, (uint8_t *) loadedFontMonospaced, nodeMonospaced.fileSize, 0, &fontMonospaced);
 
 		if (error) {
 			OSPrint("Could not load the fonts into freetype.\n");
@@ -118,6 +133,12 @@ static int _MeasureStringWidth(char *string, char *stringEnd, Font &font) {
 static int GetLineHeight(Font &font, int size) {
 	FT_Set_Char_Size(font, 0, size * 64, 100, 100);
 	return font->size->metrics.height >> 6; 
+}
+
+int OSGetLineHeight(OSStandardFont font, int fontSize) {
+	return GetLineHeight(font == OS_STANDARD_FONT_BOLD ? fontBold 
+			: (font == OS_STANDARD_FONT_MONOSPACED ? fontMonospaced : fontRegular), 
+			fontSize ? fontSize : FONT_SIZE);
 }
 
 static int MeasureString(char *string, size_t stringLength, int size, Font &font, int wrapX) {
@@ -175,11 +196,16 @@ static int MeasureString(char *string, size_t stringLength, int size, Font &font
 	return totalHeight;
 }
 
-static int MeasureStringWidth(char *string, size_t stringLength, int size, Font &font) {
+static int MeasureStringWidth(const char *string, size_t stringLength, int size, Font &font) {
 	OSFontRendererInitialise();
 	if (!fontRendererInitialised) return -1;
 	FT_Set_Char_Size(font, 0, size * 64, 100, 100);
-	return _MeasureStringWidth(string, string + stringLength, font);
+	return _MeasureStringWidth((char *) string, (char *) string + stringLength, font);
+}
+
+int OSMeasureStringWidth(OSStandardFont font, int fontSize, const char *string, size_t stringBytes) {
+	return MeasureStringWidth(string, stringBytes, fontSize ? fontSize : FONT_SIZE, font == OS_STANDARD_FONT_BOLD ? fontBold 
+			: (font == OS_STANDARD_FONT_MONOSPACED ? fontMonospaced : fontRegular));
 }
 
 static void DrawCaret(OSPoint &outputPosition, OSRectangle &region, OSRectangle &invalidatedRegion, OSLinearBuffer &linearBuffer, int lineHeight, void *bitmap, int descent) {
@@ -582,8 +608,6 @@ static OSError DrawString(OSHandle surface, OSRectangle region,
 	return actuallyDraw ? OS_SUCCESS : OS_ERROR_NO_CHARACTER_AT_COORDINATE;
 }
 
-#define FONT_SIZE (9)
-
 OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coordinate, OSString *string, unsigned flags, OSCaret *position, int fontSize, int scrollX) {
 	return DrawString(OS_INVALID_HANDLE, region, string,
 			flags, 0, 0, 0,
@@ -593,8 +617,9 @@ OS_EXTERN_C OSError OSFindCharacterAtCoordinate(OSRectangle region, OSPoint coor
 
 OSError OSDrawString(OSHandle surface, OSRectangle region, 
 		OSString *string, int fontSize,
-		unsigned alignment, uint32_t color, int32_t backgroundColor, bool bold, OSRectangle clipRegion, int blur) {
+		unsigned alignment, uint32_t color, int32_t backgroundColor, OSStandardFont font, OSRectangle clipRegion, int blur) {
 	return DrawString(surface, region, string,
 			alignment ? alignment : OS_DRAW_STRING_HALIGN_CENTER | OS_DRAW_STRING_VALIGN_CENTER, color, backgroundColor, 0,
-			OS_MAKE_POINT(0, 0), nullptr, -1, -1, false, fontSize ? fontSize : FONT_SIZE, bold ? fontBold : fontRegular, clipRegion, blur, 0);
+			OS_MAKE_POINT(0, 0), nullptr, -1, -1, false, fontSize ? fontSize : FONT_SIZE, font == OS_STANDARD_FONT_BOLD ? fontBold 
+			: (font == OS_STANDARD_FONT_MONOSPACED ? fontMonospaced : fontRegular), clipRegion, blur, 0);
 }

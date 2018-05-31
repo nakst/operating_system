@@ -620,7 +620,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 				path = p;
 				pathLength += currentProcess->installationPathLength;
 				freePath = true;
-				Print("opennode, replace path with %s\n", pathLength, p);
+				// Print("opennode, replace path with %s\n", pathLength, p);
 			}
 
 			OSError error;
