@@ -235,6 +235,10 @@ uintptr_t OSGetThreadID(OSHandle thread) {
 	return OSSyscall(OS_SYSCALL_GET_THREAD_ID, thread, 0, 0, 0);
 }
 
+uintptr_t OSGetProcessID(OSHandle process) {
+	return OSSyscall(OS_SYSCALL_GET_THREAD_ID, process, 0, 0, 0);
+}
+
 OSError OSEnumerateDirectoryChildren(OSHandle directory, OSDirectoryChild *buffer, size_t size) {
 	return OSSyscall(OS_SYSCALL_ENUMERATE_DIRECTORY_CHILDREN, directory, (uintptr_t) buffer, size, 0);
 }
@@ -342,4 +346,8 @@ OSHandle OSIssueRequest(OSObject _instance, const char *request, size_t requestB
 
 void OSSetThreadLocalStorageAddress(void *address) {
 	OSSyscall(OS_SYSCALL_SET_TLS, (uintptr_t) address, 0, 0, 0);
+}
+
+void OSGetSystemInformation(OSSystemInformation *information) {
+	OSSyscall(OS_SYSCALL_GET_SYSTEM_INFORMATION, (uintptr_t) information, 0, 0, 0);
 }

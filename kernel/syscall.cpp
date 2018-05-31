@@ -611,9 +611,22 @@ uintptr_t DoSyscall(OSSyscallType index,
 			char *path = (char *) argument0;
 			size_t pathLength = (size_t) argument1;
 			uint64_t flags = (uint64_t) argument2;
+			bool freePath = false;
+
+			if (!pathLength || *path != '/') {
+				char *p = (char *) OSHeapAllocate(currentProcess->installationPathLength + pathLength, false);
+				CopyMemory(p, currentProcess->installationPath, currentProcess->installationPathLength);
+				CopyMemory(p + currentProcess->installationPathLength, path, pathLength);
+				path = p;
+				pathLength += currentProcess->installationPathLength;
+				freePath = true;
+				Print("opennode, replace path with %s\n", pathLength, p);
+			}
 
 			OSError error;
 			Node *node = vfs.OpenNode(path, pathLength, flags, &error);
+
+			if (freePath) OSHeapFree(path);
 
 			if (!node) {
 				SYSCALL_RETURN(error, false);
@@ -1067,12 +1080,16 @@ uintptr_t DoSyscall(OSSyscallType index,
 		} break;
 
 		case OS_SYSCALL_GET_THREAD_ID: {
-			KernelObjectType type = KERNEL_OBJECT_THREAD;
-			Thread *thread = (Thread *) currentProcess->handleTable.ResolveHandle(argument0, type);
+			KernelObjectType type = KERNEL_OBJECT_THREAD | KERNEL_OBJECT_PROCESS;
+			void *object = currentProcess->handleTable.ResolveHandle(argument0, type);
 			if (!type) SYSCALL_RETURN(OS_FATAL_ERROR_INVALID_HANDLE, true);
-			Defer(currentProcess->handleTable.CompleteHandle(thread, argument0));
+			Defer(currentProcess->handleTable.CompleteHandle(object, argument0));
 
-			SYSCALL_RETURN(thread->id, false);
+			if (type == KERNEL_OBJECT_THREAD) {
+				SYSCALL_RETURN(((Thread *) object)->id, false);
+			} else if (type == KERNEL_OBJECT_PROCESS) {
+				SYSCALL_RETURN(((Process *) object)->id, false);
+			}
 		} break;
 
 		case OS_SYSCALL_ENUMERATE_DIRECTORY_CHILDREN: {
@@ -1526,6 +1543,15 @@ uintptr_t DoSyscall(OSSyscallType index,
 			ProcessorSetThreadStorage(argument0);
 			SYSCALL_RETURN(OS_SUCCESS, false);
 		} break;
+
+		case OS_SYSCALL_GET_SYSTEM_INFORMATION: {
+			SYSCALL_BUFFER(argument0, sizeof(OSSystemInformation), 1);
+			OSSystemInformation *information = (OSSystemInformation *) argument0;
+			information->totalMemory = pmm.startPageCount * PAGE_SIZE;
+			information->freeMemory = (pmm.startPageCount - pmm.pagesAllocated) * PAGE_SIZE;
+			information->processCount = scheduler.allProcesses.count;
+			SYSCALL_RETURN(OS_SUCCESS, false);
+		} break;
 	}
 
 	end:;
@@ -1538,7 +1564,7 @@ uintptr_t DoSyscall(OSSyscallType index,
 		} else {
 			OSCrashReason reason;
 			reason.errorCode = returnValue;
-			KernelLog(LOG_WARNING, "Process crashed during system call\n");
+			KernelLog(LOG_WARNING, "Process crashed during system call [%x, %x, %x, %x, %x]\n", index, argument0, argument1, argument2, argument3);
 			scheduler.CrashProcess(currentProcess, reason);
 		}
 	}

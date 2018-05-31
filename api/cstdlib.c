@@ -1,3 +1,5 @@
+// TODO Separate this into another library from the API.
+
 #if 0
 int errno; // TODO Thread-local storage.
 
@@ -1266,26 +1268,67 @@ static void InitialiseCStandardLibrary() {
 	stderr->virtualFile = true;
 }
 #else
-#include "../ports/musl/obj/include/bits/syscall.h"
-
 #define __NEED_struct_iovec
+#define __NEED_sigset_t
+#define _POSIX_SOURCE
+#define _GNU_SOURCE
+#include "../ports/musl/obj/include/bits/syscall.h"
 #include "../ports/musl/obj/include/bits/alltypes.h"
+
+#include <signal.h>
+#include <sys/sysinfo.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <bits/ioctl.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <sys/utsname.h>
+
+// TODO Actually use the CWD.
+char currentWorkingDirectory[4096];
+
+struct sigaltstack signalHandlerStack;
 
 extern "C" int __libc_start_main(int (*main)(int,char **,char **), int argc, char **argv);
 
 // TODO Proper values?
 static char *argv[] = {
-	(char *) "/ProgramName.esx",
+	(char *) "/__prefix/ProgramName.esx",
 	(char *) "LANG=en_US.UTF-8",
-	(char *) "PWD=/__working_directory",
+	(char *) "PWD=/__prefix",
 	(char *) "HOME=/__user_storage",
 	(char *) "PATH=/__posix_bin",
 	(char *) nullptr,
 };
 
+// HACK HACK HACK HACK
+#define GET_POSIX_FILE(fildes) ((PosixFile *) ((intptr_t) fildes | 0x100000000000))
+
+struct PosixFile {
+	OSHandle handle;
+	uint64_t offset;
+	bool seekToEndBeforeWrite;
+	char path[4096];
+	long flags;
+	OSDirectoryChild *children;
+	size_t childCount;
+};
+
 static void InitialiseCStandardLibrary() {
 	// OSPrint("starting musl libc\n");
+	strcpy(currentWorkingDirectory, "/__prefix");
 	__libc_start_main(nullptr, 1, argv);
+}
+
+static char *FixFilename(char *filename) {
+	if (0 == memcmp(filename, OSLiteral("/__prefix/"))) {
+		return filename + OSCStringLength("/__prefix/");
+	} else if (0 == memcmp(filename, OSLiteral("."))) {
+		return filename + OSCStringLength(".");
+	} else {
+		return filename;
+	}
 }
 
 long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
@@ -1341,22 +1384,341 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 		} break;
 
 		case SYS_ioctl: {
-			if (a1 == 1 && a2 == 21523) {
+			if ((a1 == 0 || a1 == 1 || a1 == 2) && a2 == 21523) {
 				// TIOCGWINSZ - get terminal size
-				// Warning: this is handled fully.
+				struct winsize *size = (struct winsize *) a3;
+				size->ws_row = 80;
+				size->ws_col = 25;
+				size->ws_xpixel = 80 * 10;
+				size->ws_ypixel = 25 * 10;
 				return 0;
 			}
 		} break;
 
+		case SYS_write: {
+			if (a1 == 1 || a1 == 2) {
+				OSPrintDirect((char *) a2, a3);
+				return a3;
+			} else {
+				OSPrint("Unsupported write %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
+			}
+		} break;
+
 		case SYS_writev: {
-			if (a1 == 1) {
+			if (a1 == 1 || a1 == 2) {
 				struct iovec *buffers = (struct iovec *) a2;
+				size_t s = 0;
 
 				for (intptr_t i = 0; i < a3; i++) {
 					if (!buffers[i].iov_len) continue;
 					OSPrintDirect((char *) buffers[i].iov_base, buffers[i].iov_len);
+					s += buffers[i].iov_len;
+				}
+
+				return s;
+			} else {
+				OSPrint("Unsupported writev %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
+			}
+		} break;
+
+		case SYS_sigaltstack: {
+			if (a1 && !a2) {
+				struct sigaltstack *ss = (struct sigaltstack *) a1;
+				signalHandlerStack = *ss;
+				return 0;
+			} else {
+				OSPrint("Unsupported sigaltstack [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
+			}
+		} break;
+
+		case SYS_getcwd: {
+			if (strlen(currentWorkingDirectory) + 1 > (size_t) a2) {
+				return NULL;
+			} else {
+				strcpy((char *) a1, currentWorkingDirectory);
+				return a1;
+			}
+		} break;
+
+		case SYS_chdir: {
+			strcpy(currentWorkingDirectory, (char *) a1);
+			OSPrint("set cwd to %z\n", currentWorkingDirectory);
+		} break;
+
+		case SYS_prlimit64: {
+			if (!a1 && a2 == RLIMIT_DATA && !a3 && a4) {
+				struct rlimit *limit = (struct rlimit *) a4;
+				limit->rlim_cur = limit->rlim_max = RLIM_INFINITY;
+				return 0;
+			} else {
+				OSPrint("Unsupported prlimit64 [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
+			}
+		} break;
+
+		case SYS_getuid: {
+			return 10;
+		} break;
+
+		case SYS_sysinfo: {
+			struct sysinfo *info = (struct sysinfo *) a1;
+
+			OSSystemInformation systemInformation;
+			OSGetSystemInformation(&systemInformation);
+
+			// Warning: this is mostly made up
+			info->uptime = 1;
+			info->loads[0] = 1;
+			info->loads[1] = 1;
+			info->loads[2] = 1;
+			info->totalram = systemInformation.totalMemory;
+			info->freeram = systemInformation.freeMemory;
+			info->sharedram = 0;
+			info->bufferram = 0;
+			info->totalswap = 0;
+			info->freeswap = 0;
+			info->procs = systemInformation.processCount;
+			info->totalhigh = info->totalram;
+			info->freehigh = info->freeram;
+			info->mem_unit = 1;
+
+			return 0;
+		} break;
+
+		case SYS_stat: {
+			char *filename = FixFilename((char *) a1);
+			struct stat *buffer = (struct stat *) a2;
+
+			OSZeroMemory(buffer, sizeof(struct stat));
+
+			OSError error;
+			OSNodeInformation node;
+
+			error = OSOpenNode(filename, strlen(filename), OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &node);
+
+			if (error == OS_ERROR_INCORRECT_NODE_TYPE) {
+				error = OSOpenNode(filename, strlen(filename), OS_OPEN_NODE_FAIL_IF_NOT_FOUND | OS_OPEN_NODE_DIRECTORY, &node);
+				buffer->st_mode = S_IFDIR;
+			} else {
+				buffer->st_mode = node.type == OS_NODE_DIRECTORY ? S_IFDIR : S_IFREG;
+			}
+
+			if (error == OS_SUCCESS) {
+				OSCloseHandle(node.handle);
+
+				buffer->st_dev = 0;
+				buffer->st_ino = 0;
+				buffer->st_nlink = 1;
+				buffer->st_mode |= S_IRWXU | S_IRWXG | S_IRWXO;
+				buffer->st_uid = 10;
+				buffer->st_gid = 10;
+				buffer->st_rdev = 0;
+				buffer->st_size = node.fileSize;
+				buffer->st_atime = 0;
+				buffer->st_mtime = 0;
+				buffer->st_ctime = 0;
+				buffer->st_blksize = 4096;
+				buffer->st_blocks = (node.fileSize + 4095) / 4096;
+
+				return 0;
+			} else {
+				return -1;
+			}
+		} break;
+
+		case SYS_rt_sigaction:
+		case SYS_rt_sigprocmask: {
+			OSPrint("Warning, ignoring signal syscall %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+			return 0;
+		} break;
+
+		case SYS_open: {
+			char *filename = FixFilename((char *) a1);
+			unsigned flags = 0;
+
+			if ((a2 & O_ACCMODE) == O_RDONLY) flags |= OS_OPEN_NODE_READ_ACCESS;
+			if ((a2 & O_ACCMODE) == O_RDWR) flags |= OS_OPEN_NODE_READ_ACCESS | OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS;
+			if ((a2 & O_ACCMODE) == O_WRONLY) flags |= OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS;
+
+			if ((a2 & O_CREAT) && (a2 & O_EXCL)) flags |= OS_OPEN_NODE_FAIL_IF_FOUND;
+			if (!(a2 & O_CREAT)) flags |= OS_OPEN_NODE_FAIL_IF_NOT_FOUND;
+
+			if (a2 & O_DIRECTORY) flags |= OS_OPEN_NODE_DIRECTORY;
+			if (a2 & O_TRUNC) flags |= OS_OPEN_NODE_RESIZE_ACCESS;
+
+			OSPrint("attempting to open %z with flags %x\n", filename, flags);
+			OSNodeInformation node;
+			OSError error = OSOpenNode(filename, OSCStringLength(filename), flags, &node);
+			OSPrint("\terror = %x\n", error);
+
+			if (error != OS_SUCCESS) {
+				return -1;
+			} else {
+				PosixFile *file = (PosixFile *) OSHeapAllocate(sizeof(PosixFile), true);
+
+				// HACK HACK HACK HACK
+				int fildes = (int) ((intptr_t) file & ~0x100000000000);
+
+				if ((void *) ((intptr_t) fildes | 0x100000000000) != file) {
+					// *sigh*
+					OSHeapFree(file);
+					OSCloseHandle(node.handle);
+					OSPrint("\tcan't represent as posix file\n");
+					return -1;
+				}
+
+				file->handle = node.handle;
+				file->seekToEndBeforeWrite = a2 & O_APPEND;
+				file->offset = 0;
+				file->flags = a2;
+				strcpy(file->path, filename);
+				file->childCount = node.directoryChildren;
+
+				if (a2 & O_TRUNC) {
+					OSResizeFile(file->handle, 0); 
+				}
+
+				OSPrint("\tsuccess!\n");
+
+				return fildes;
+			}
+		} break;
+
+		case SYS_fchdir: {
+			strcpy(currentWorkingDirectory, GET_POSIX_FILE(a1)->path);
+			OSPrint("set cwd to %z\n", currentWorkingDirectory);
+			return 0;
+		} break;
+
+		case SYS_close: {
+			PosixFile *file = GET_POSIX_FILE(a1);
+			OSCloseHandle(file->handle);
+			OSHeapFree(file->children);
+			OSHeapFree(file);
+		} break;
+
+		case SYS_fcntl: {
+			PosixFile *file = GET_POSIX_FILE(a1);
+
+			if (a2 == F_GETFD) {
+				return file->flags;
+			} else if (a2 == F_SETFD && a3 == FD_CLOEXEC) {
+				// ignore.
+				return 0;
+			} else {
+				OSPrint("Unsupported fcntl [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
+			}
+		} break;
+
+		case SYS_readv: {
+			if (a1 > 2) {
+				PosixFile *file = GET_POSIX_FILE(a1);
+				struct iovec *buffers = (struct iovec *) a2;
+				uint64_t read = 0;
+
+				for (intptr_t i = 0; i < a3; i++) {
+					if (!buffers[i].iov_len) continue;
+					read += OSReadFileSync(file->handle, file->offset, buffers[i].iov_len, buffers[i].iov_base); 
+					file->offset += buffers[i].iov_len;
+				}
+
+				return read;
+			} else {
+				OSPrint("Unsupported readv [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
+			}
+		} break;
+
+		case SYS_madvise: {
+			// Ignore.
+			// It's only "advice" after all, right?
+			return 0;
+		} break;
+
+		case SYS_getdents64: {
+			PosixFile *file = GET_POSIX_FILE(a1);
+
+			if (!file->children) {
+				file->children = (OSDirectoryChild *) OSHeapAllocate(sizeof(OSDirectoryChild) * (file->childCount + 32), true);
+
+				if (OS_SUCCESS != OSEnumerateDirectoryChildren(file->handle, file->children, file->childCount + 32)) {
+					return -1;
 				}
 			}
+
+			struct dirent *buffer = (struct dirent *) a2;
+			size_t spaceLeft = a3;
+			
+			while (true) {
+				OSDirectoryChild *child = file->children + file->offset;
+
+				if (!child->information.present) {
+					return a3 - spaceLeft;
+				}
+
+				size_t s = sizeof(struct dirent) + child->nameLengthBytes;
+
+				if (spaceLeft <= s) {
+					return a3 - spaceLeft;
+				}
+
+				spaceLeft -= s;
+				file->offset++;
+
+				buffer->d_ino = 0;
+				buffer->d_off = buffer->d_reclen = s;
+				buffer->d_type = child->information.type == OS_NODE_DIRECTORY ? DT_DIR : DT_REG;
+				memcpy(buffer->d_name, child->name, child->nameLengthBytes);
+
+				buffer = (struct dirent *) ((char *) buffer + s);
+			}
+		} break;
+
+		case SYS_lseek: {
+			PosixFile *file = GET_POSIX_FILE(a1);
+
+			if (a3 == SEEK_SET) {
+				file->offset = a2;
+			} else if (a3 == SEEK_CUR) {
+				file->offset += a2;
+			} else if (a3 == SEEK_END) {
+				OSNodeInformation node;
+				node.handle = file->handle;
+				OSRefreshNodeInformation(&node);
+				file->offset = node.fileSize + a2;
+			}
+
+			return 0;
+		} break;
+
+		case SYS_uname: {
+			struct utsname *name = (struct utsname *) a1;
+			strcpy(name->sysname, "essence");
+			strcpy(name->nodename, "node");
+			strcpy(name->release, "indev");
+			strcpy(name->machine, "machine");
+			return 0;
+		} break;
+
+		case SYS_getpid: {
+			return OSGetProcessID(OS_CURRENT_PROCESS);
+		} break;
+
+		case SYS_poll: {
+			// Always timeout.
+			// TODO Implement.
+			if (a3 < 0) {
+				OSPrint("------> poll forever, terminating process\n");
+				OSTerminateProcess(OS_CURRENT_PROCESS);
+			} else {
+				OSPrint("------> poll stub\n");
+			}
+
+			return 0;
 		} break;
 
 		default: {
@@ -1369,9 +1731,9 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 }
 
 extern "C" long OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
-	// OSPrint("-> linux syscall %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+	OSPrint("-> linux syscall %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
 	long result = _OSMakeLinuxSystemCall(n, a1, a2, a3, a4, a5, a6);
-	// OSPrint("<- result %x\n", result);
+	OSPrint("<- result %x\n", result);
 	return result;
 }
 #endif

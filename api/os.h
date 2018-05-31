@@ -355,6 +355,7 @@ typedef enum OSSyscallType {
 	OS_SYSCALL_GET_REQUEST_RESPONSE,
 	OS_SYSCALL_SET_REQUEST_RESPONSE,
 	OS_SYSCALL_SET_TLS,
+	OS_SYSCALL_GET_SYSTEM_INFORMATION,
 } OSSyscallType;
 
 #define OS_SYSTEM_CONSTANT_TIME_STAMP_UNITS_PER_MICROSECOND (0)
@@ -1020,6 +1021,11 @@ typedef struct OSSnapshotProcessesItem {
 	uint64_t internal;
 } OSSnapshotProcessesItem;
 
+typedef struct OSSystemInformation {
+	uintptr_t processCount;
+	uintptr_t totalMemory, freeMemory;
+} OSSystemInformation;
+ 
 #define OS_SYSTEM_SNAPSHOT_PROCESSES (1)
 typedef struct OSSnapshotProcesses {
 	size_t count;
@@ -1164,6 +1170,7 @@ OS_EXTERN_C void OSReadConstantBuffer(OSHandle constantBuffer, void *output);
 OS_EXTERN_C OSHandle OSOpenProcess(uint64_t pid);
 OS_EXTERN_C OSError OSCloseHandle(OSHandle handle);
 OS_EXTERN_C OSHandle OSTakeSystemSnapshot(int type, size_t *bufferSize); // Read the data using OSReadConstantBuffer.
+OS_EXTERN_C void OSGetSystemInformation(OSSystemInformation *systemInformation);
 
 OS_EXTERN_C OSError OSOpenNode(char *path, size_t pathLength, uint64_t flags, OSNodeInformation *information);
 OS_EXTERN_C void *OSReadEntireFile(const char *filePath, size_t filePathLength, size_t *fileSize); 
@@ -1188,6 +1195,7 @@ OS_EXTERN_C void OSPauseProcess(OSHandle process, bool resume);
 OS_EXTERN_C void OSCrashProcess(OSError error);
 
 OS_EXTERN_C uintptr_t OSGetThreadID(OSHandle thread);
+OS_EXTERN_C uintptr_t OSGetProcessID(OSHandle process);
 
 OS_EXTERN_C void OSReleaseSpinlock(OSSpinlock *spinlock);
 OS_EXTERN_C void OSAcquireSpinlock(OSSpinlock *spinlock);

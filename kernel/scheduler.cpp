@@ -139,6 +139,9 @@ struct Process {
 
 	OSCrashReason crashReason;
 
+	char *installationPath;
+	size_t installationPathLength;
+
 	char *executablePath;
 	size_t executablePathLength;
 	void *creationArgument;
@@ -560,8 +563,6 @@ void NewProcess() {
 }
 
 Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool kernelProcess, void *argument) {
-	// Print("Creating process, %s...\n", imagePathLength, imagePath);
-
 	// Process initilisation.
 	Process *process = (Process *) processPool.Add();
 	process->allItem.thisItem = process;
@@ -574,7 +575,18 @@ Process *Scheduler::SpawnProcess(char *imagePath, size_t imagePathLength, bool k
 	}
 
 	CopyMemory((process->executablePath = (char *) OSHeapAllocate(imagePathLength, false)), imagePath, imagePathLength);
+	CopyMemory((process->installationPath = (char *) OSHeapAllocate(imagePathLength, false)), imagePath, imagePathLength);
 	process->executablePathLength = imagePathLength;
+	process->installationPathLength = imagePathLength;
+
+	for (intptr_t i = imagePathLength - 1; i >= 0; i--) {
+		if (process->installationPath[i] == '/') {
+			process->installationPathLength = i + 1;
+			break;
+		}
+	}
+
+	Print("Creating process, %s [%s]...\n", imagePathLength, imagePath, process->installationPathLength, process->installationPath);
 
 	process->handleTable.process = process;
 

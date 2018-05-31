@@ -10,6 +10,7 @@ if [ ! -d "ports/musl/src" ]; then
 	cp ports/musl/changes/config.mak                                ports/musl/config.mak
 	cp ports/musl/changes/dist_config.mak                           ports/musl/dist/config.mak
 	cp ports/musl/changes/src_ldso_x86_64_tlsdesc.s                 ports/musl/src/ldso/x86_64/tlsdesc.s
+	cp ports/musl/changes/src_internal_x86_64_syscall.s             ports/musl/src/internal/x86_64/syscall.s
 	cp ports/musl/changes/src_process_x86_64_vfork.s                ports/musl/src/process/x86_64/vfork.s
 	cp ports/musl/changes/src_signal_x86_64_restore.s               ports/musl/src/signal/x86_64/restore.s
 	cp ports/musl/changes/src_thread_x86_64___set_thread_area.s     ports/musl/src/thread/x86_64/__set_thread_area.s

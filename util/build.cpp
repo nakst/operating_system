@@ -35,6 +35,7 @@ const char *programs[] = {
 	"image_viewer", "",
 	"system_monitor", "",
 	"lua", "ports/lua/lua.manifest",
+	"vim", "ports/vim/vim.manifest",
 	"test", "api/test.manifest",
 };
 
@@ -67,7 +68,7 @@ uint8_t partitionTable[] = {
 	0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 
 	0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 
 	0x90, 0x90, 0x90, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x20, 
-	0x21, 0x00, 0x83, 0x28, 0x20, 0x08, 0x00, 0x08, 0x00, 0x00, 0x00, 0xF8, 0x01, 0x00, 0x00, 0x00, 
+	0x21, 0x00, 0x83, 0x28, 0x20, 0x08, 0x00, 0x08, 0x00, 0x00, 0x00, 0xF8, 0x03, 0x00, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x55, 0xAA,
@@ -98,6 +99,9 @@ void ParseProgramManifest(Token attribute, Token section, Token name, Token valu
 }
 
 void Compile(bool enableOptimisations) {
+	printf("Clearing program installation data...\n");
+	system("echo \"# Do not modify!\" > \"bin/OS/Installed Programs.dat\"");
+
 	const char *Optimise = enableOptimisations ? "-O2" : "";
 	const char *OptimiseKernel = enableOptimisations ? "-O2 -DDEBUG_BUILD" : "-DDEBUG_BUILD";
 
@@ -213,9 +217,6 @@ void Build(bool enableOptimisations, bool compile = true) {
 	system("mkdir -p bin/OS");
 	system("mkdir -p bin/Programs");
 
-	printf("Clearing program installation data...\n");
-	system("echo \"# Do not modify!\" > \"bin/OS/Installed Programs.dat\"");
-
 	printf("Creating MBR...\n");
 	system("nasm -fbin boot/x86/mbr.s -obin/mbr");
 	system("dd if=partition_table of=drive bs=512 count=1 conv=notrunc status=none");
@@ -239,7 +240,7 @@ void Build(bool enableOptimisations, bool compile = true) {
 	system("rm bin/stage2");
 
 	printf("Formatting drive...\n");
-	system("./esfs drive 2048 format 66060288 \"Essence HD\" bin/OS/Kernel.esx");
+	system("./esfs drive 2048 format 133169152 \"Essence HD\" bin/OS/Kernel.esx");
 	sprintf(buffer, "./esfs drive 2048 set-installation %s", installationIdentifier);
 	system(buffer);
 
@@ -602,6 +603,9 @@ int main(int argc, char **argv) {
 		} else if (0 == strcmp(l, "debug") || 0 == strcmp(l, "d")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, true);
+		} else if (0 == strcmp(l, "debug-without-compiling") || 0 == strcmp(l, "d2")) {
+			Build(false, false);
+			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, true);
 		} else if (0 == strcmp(l, "debug-smp")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 4, LOG_NORMAL, true);
@@ -645,6 +649,7 @@ int main(int argc, char **argv) {
 			printf("(  ) bochs - Bochs\n");
 			printf("(  ) low-memory - Qemu (SMP/AHCI/32MB)\n");
 			printf("(d ) debug - Qemu (AHCI/64MB/GDB)\n");
+			printf("(d2) debug-without-compiling - Qemu (AHCI/64MB/GDB)\n");
 			printf("(  ) debug-smp - Qemu (AHCI/64MB/GDB/SMP)\n");
 			printf("(v ) vbox - VirtualBox (optimised)\n");
 			printf("(  ) vbox-without-opt - VirtualBox (unoptimised)\n");
