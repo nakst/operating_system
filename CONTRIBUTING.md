@@ -22,25 +22,25 @@
   - `syscall.cpp` System call stubs that call into `OSSyscall` from in `api.s`.
   - `test.cpp, test.manifest` A test program.
   - `utf8.h` UTF-8 functions.
-- `boot` Contains files for booting the operating system.
-  - `x86` ...on x86.
+- `boot/` Contains files for booting the operating system.
+  - `x86/` ...on x86.
     - `esfs-stage1.s` Loads `loader.s` from the start of a EsFS volume and passes control to it.
     - `esfs-stage2.s` Provides basic read-only EsFS functions for `loader.s`.
     - `loader.s` Loads the kernel and passes control to it.
     - `mbr.s` Finds and loads a bootable partition.
-- `calculator` A calculator program.
+- `calculator/` A calculator program.
   - `calculator.manifest` The program's manifest.
   - `main.cpp` The program's implementation.
-- `desktop` The desktop environment. Acts as a package manager and fallback debugger.
+- `desktop/` The desktop environment. Acts as a package manager and fallback debugger.
   - `desktop.manifest` The program's manifest.
   - `main.cpp` The program's implementation.
-- `file_manager` A file manager program.
+- `file_manager/` A file manager program.
   - `file_manager.manifest` The program's manifest.
   - `main.cpp` The program's implementation.
-- `image_viewer` A image viewer program.
+- `image_viewer/` A image viewer program.
   - `image_viewer.manifest` The program's manifest.
   - `main.cpp` The program's implementation.
-- `kernel` The kernel and its drivers.
+- `kernel/` The kernel and its drivers.
   - `acpi.cpp` A layer between the kernel and ACPICA. Also starts application processors on SMP systems.
   - `ahci.cpp` A (currently broken) AHCI/SATA driver.
   - `ata.cpp` A ATA/IDE driver.
@@ -62,16 +62,16 @@
   - `window_manager.cpp` The window manager. Passes messages from the PS/2 driver to programs.
   - `x86_64.cpp` Code for the x64 architecture.
   - `x86_64.s` Assembly code for the x64 architecture.
-- `ports` A mess of ported programs. Enter with caution.
-- `res` Resources, such as fonts and visual styles.
-  - `Fonts` Fonts used by the GUI.
+- `ports/` A mess of ported programs. Enter with caution.
+- `res/` Resources, such as fonts and visual styles.
+  - `Fonts/` Fonts used by the GUI.
   - `Icons` Icon packs used by the GUI.
   - `Sample Images` Wallpapers loadable in `desktop`.
   - `Visual Styles` GUI visual styles.
-- `system_monitor` A system monitor program.
+- `system_monitor/` A system monitor program.
   - `system_monitor.manifest` The program's manifest.
   - `main.cpp` The program's implementation.
-- `util` Utilities for building the operating system.
+- `util/` Utilities for building the operating system.
   - `build.cpp` The build system.
   - `esfs.cpp` A version of EssenceFS for use on linux from the command line.
   - `linker.ld, linker64.ld, linker_userland.ld, linker_userland64.ld` Linker scripts.
