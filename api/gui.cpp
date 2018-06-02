@@ -4962,16 +4962,6 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 					m.type = OS_MESSAGE_DESTROY;
 					OSSendMessage(window, &m);
 				}
-			} else if (message->keyboard.scancode == OS_SCANCODE_ESCAPE) {
-				if (window->flags & OS_CREATE_WINDOW_DIALOG) {
-					IssueCommand(nullptr, osDialogStandardCancel, window->instance);
-				} else if (window->hasMenuParent) {
-					OSMessage m;
-					m.type = OS_MESSAGE_DESTROY;
-					OSSendMessage(window, &m);
-				} else {
-					OSRemoveFocusedControl(window, true);
-				}
 			} else {
 				OSCallbackResponse response = OS_CALLBACK_NOT_HANDLED;
 
@@ -5005,6 +4995,16 @@ static OSCallbackResponse ProcessWindowMessage(OSObject _object, OSMessage *mess
 							&& !message->keyboard.ctrl && !message->keyboard.alt) {
 						message->keyboard.notHandledBy = nullptr;
 						OSSendMessage(window->root, message);
+					} else if (message->keyboard.scancode == OS_SCANCODE_ESCAPE) {
+						if (window->flags & OS_CREATE_WINDOW_DIALOG) {
+							IssueCommand(nullptr, osDialogStandardCancel, window->instance);
+						} else if (window->hasMenuParent) {
+							OSMessage m;
+							m.type = OS_MESSAGE_DESTROY;
+							OSSendMessage(window, &m);
+						} else {
+							OSRemoveFocusedControl(window, true);
+						}
 					} else if (message->keyboard.scancode == OS_SCANCODE_ENTER
 							&& !message->keyboard.ctrl && !message->keyboard.alt && !message->keyboard.shift
 							&& window->buttonFocus) {

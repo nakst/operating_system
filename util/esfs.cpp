@@ -1474,7 +1474,7 @@ void Import(char *target, char *source) {
 
 	if (d) {
 		while ((dir = readdir(d))) {
-			if (dir->d_name[0] != '.') {
+			if (dir->d_name[0] != '.' || (dir->d_name[1] != 0 && dir->d_name[1] != '.')) {
 				size_t length = strlen(dir->d_name);
 
 				if (length > 12) {

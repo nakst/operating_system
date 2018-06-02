@@ -1,5 +1,42 @@
 // TODO Separate this into another library from the API.
 
+int rename(const char *oldPath, const char *newPath) {
+	size_t oldPathBytes = OSCStringLength(oldPath);
+	const char *newFileName = newPath + OSCStringLength(newPath);
+
+	while (true) {
+		newFileName--;
+		if (*newFileName == '/') {
+			newFileName++;
+			break;
+		}
+	}
+
+	size_t newFileNameBytes = OSCStringLength(newFileName);
+	size_t newPathBytes = OSCStringLength(newPath) - newFileNameBytes;
+
+	OSNodeInformation oldNode, newDirectory;
+
+	if (OSOpenNode((char *) oldPath, oldPathBytes, OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &oldNode) != OS_SUCCESS) {
+		return -1;
+	}
+
+	if (OSOpenNode((char *) newPath, newPathBytes, OS_OPEN_NODE_FAIL_IF_NOT_FOUND | OS_OPEN_NODE_DIRECTORY, &newDirectory) != OS_SUCCESS) {
+		OSCloseHandle(oldNode.handle);
+		return -1;
+	}
+
+	if (OSMoveNode(oldNode.handle, newDirectory.handle, (char *) newFileName, newFileNameBytes) != OS_SUCCESS) {
+		OSCloseHandle(oldNode.handle);
+		OSCloseHandle(newDirectory.handle);
+		return -1;
+	}
+
+	OSCloseHandle(oldNode.handle);
+	OSCloseHandle(newDirectory.handle);
+	return 0;
+}
+
 #if 0
 int errno; // TODO Thread-local storage.
 
@@ -1091,43 +1128,6 @@ char *tmpnam(char *s) {
 	return nullptr;
 }
 
-int rename(const char *oldPath, const char *newPath) {
-	size_t oldPathBytes = OSCStringLength(oldPath);
-	const char *newFileName = newPath + OSCStringLength(newPath);
-
-	while (true) {
-		newFileName--;
-		if (*newFileName == '/') {
-			newFileName++;
-			break;
-		}
-	}
-
-	size_t newFileNameBytes = OSCStringLength(newFileName);
-	size_t newPathBytes = OSCStringLength(newPath) - newFileNameBytes;
-
-	OSNodeInformation oldNode, newDirectory;
-
-	if (OSOpenNode((char *) oldPath, oldPathBytes, OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &oldNode) != OS_SUCCESS) {
-		return -1;
-	}
-
-	if (OSOpenNode((char *) newPath, newPathBytes, OS_OPEN_NODE_FAIL_IF_NOT_FOUND | OS_OPEN_NODE_DIRECTORY, &newDirectory) != OS_SUCCESS) {
-		OSCloseHandle(oldNode.handle);
-		return -1;
-	}
-
-	if (OSMoveNode(oldNode.handle, newDirectory.handle, (char *) newFileName, newFileNameBytes) != OS_SUCCESS) {
-		OSCloseHandle(oldNode.handle);
-		OSCloseHandle(newDirectory.handle);
-		return -1;
-	}
-
-	OSCloseHandle(oldNode.handle);
-	OSCloseHandle(newDirectory.handle);
-	return 0;
-}
-
 double strtod(const char *nptr, char **endptr) {
 	// TODO errno
 	double result = 0;
@@ -1289,7 +1289,6 @@ static void InitialiseCStandardLibrary() {
 #include <sys/utsname.h>
 #include <errno.h>
 
-// TODO Actually use the CWD.
 char currentWorkingDirectory[4096];
 
 struct sigaltstack signalHandlerStack;
@@ -1326,13 +1325,39 @@ static void InitialiseCStandardLibrary() {
 }
 
 static char *FixFilename(char *filename) {
+	// TODO Thread safety.
+	static char fixedFilename[4096];
+
+	char *result;
+
 	if (0 == memcmp(filename, OSLiteral("/__prefix/"))) {
-		return filename + OSCStringLength("/__prefix/");
-	} else if (0 == memcmp(filename, OSLiteral("."))) {
-		return filename + OSCStringLength(".");
+		result = filename + OSCStringLength("/__prefix/");
+	} else if (0 == memcmp(filename, OSLiteral("/__user_storage/"))) {
+		result = filename + OSCStringLength("/__user_storage/");
+	} else if (0 == strcmp(filename, "/__prefix")) {
+		result = (char *) "";
+	} else if (0 == strcmp(filename, "/__user_storage")) {
+		result = (char *) "";
+	} else if (0 == memcmp(filename, OSLiteral("./"))) {
+		strcpy(fixedFilename, currentWorkingDirectory);
+		int x = currentWorkingDirectory[strlen(currentWorkingDirectory) - 1] == '/' ? 1 : 0;
+		strcat(fixedFilename, filename + OSCStringLength(".") + x);
+		result = (fixedFilename);
+	} else if (0 == strcmp(filename, ".")) {
+		result = (currentWorkingDirectory);
+	} else if (filename[0] != '/') {
+		strcpy(fixedFilename, currentWorkingDirectory);
+		int x = currentWorkingDirectory[strlen(currentWorkingDirectory) - 1] == '/' ? 1 : 0;
+		if (!x) strcat(fixedFilename, "/");
+		strcat(fixedFilename, filename);
+		result = (fixedFilename);
 	} else {
-		return filename;
+		result = filename;
 	}
+
+	// OSPrint("~~~~~~~~FIX %z -> %z\n", filename, result);
+
+	return result;
 }
 
 void PrintOutput(char *string, size_t length) {
@@ -1517,16 +1542,22 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 		} break;
 
 		case SYS_getcwd: {
-			if (strlen(currentWorkingDirectory) + 1 > (size_t) a2) {
+			if (strlen(currentWorkingDirectory) + 32 > (size_t) a2) {
 				return NULL;
 			} else {
-				strcpy((char *) a1, currentWorkingDirectory);
+				if (currentWorkingDirectory[0] == '/') {
+					strcpy((char *) a1, "");
+				} else {
+					strcpy((char *) a1, "/__prefix/");
+				}
+
+				strcat((char *) a1, currentWorkingDirectory);
 				return a1;
 			}
 		} break;
 
 		case SYS_chdir: {
-			strcpy(currentWorkingDirectory, (char *) a1);
+			strcpy(currentWorkingDirectory, FixFilename((char *) a1));
 			// OSPrint("set cwd to %z\n", currentWorkingDirectory);
 		} break;
 
@@ -1631,8 +1662,11 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 				buffer->st_blksize = 4096;
 				buffer->st_blocks = (node.fileSize + 4095) / 4096;
 
+				// OSPrint("stat %z\n", a1);
+
 				return 0;
 			} else {
+				// OSPrint("couldn't stat %z (%z)\n", a1, filename);
 				return -1;
 			}
 		} break;
@@ -1640,6 +1674,14 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 		case SYS_rt_sigaction:
 		case SYS_rt_sigprocmask: {
 			// OSPrint("Warning, ignoring signal syscall %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
+			return 0;
+		} break;
+
+		case SYS_socket: {
+			return -1;
+		} break;
+
+		case SYS_chmod: {
 			return 0;
 		} break;
 
@@ -1663,6 +1705,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			// OSPrint("\terror = %x\n", error);
 
 			if (error != OS_SUCCESS) {
+				// OSPrint("couldn't open %z [%x; %z; %d]\n", (char *) a1, flags, filename, error);
 				return -1;
 			} else {
 				PosixFile *file = (PosixFile *) OSHeapAllocate(sizeof(PosixFile), true);
@@ -1690,6 +1733,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 				}
 
 				// OSPrint("\tsuccess!\n");
+				// OSPrint("opened %z [%x]\n", (char *) a1, flags);
 
 				return fildes;
 			}
@@ -1706,6 +1750,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			OSCloseHandle(file->handle);
 			OSHeapFree(file->children);
 			OSHeapFree(file);
+			return 0;
 		} break;
 
 		case SYS_fcntl: {
@@ -1772,6 +1817,8 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 
 				size_t s = sizeof(struct dirent) + child->nameLengthBytes;
 
+				// OSPrint("read dirent %s\n", child->nameLengthBytes, child->name);
+
 				if (spaceLeft <= s) {
 					return a3 - spaceLeft;
 				}
@@ -1788,6 +1835,17 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			}
 		} break;
 
+		case SYS_ftruncate: {
+			PosixFile *file = GET_POSIX_FILE(a1);
+
+			if (OS_SUCCESS == OSResizeFile(file->handle, a2)) return 0;
+			else return -1;
+		} break;
+
+		case SYS_fsync: {
+			return 0;
+		} break;
+
 		case SYS_lseek: {
 			PosixFile *file = GET_POSIX_FILE(a1);
 
@@ -1802,7 +1860,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 				file->offset = node.fileSize + a2;
 			}
 
-			return 0;
+			return file->offset;
 		} break;
 
 		case SYS_uname: {
@@ -1862,6 +1920,10 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 		case SYS_unlink: {
 			// We don't have symbolic links (yet)
 			return -EACCES;
+		} break;
+
+		case SYS_rename: {
+			return rename((char *) a1, (char *) a2);
 		} break;
 
 		default: {
