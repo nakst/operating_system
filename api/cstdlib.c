@@ -1,6 +1,6 @@
 // TODO Separate this into another library from the API.
 
-int rename(const char *oldPath, const char *newPath) {
+int _rename(const char *oldPath, const char *newPath) {
 	size_t oldPathBytes = OSCStringLength(oldPath);
 	const char *newFileName = newPath + OSCStringLength(newPath);
 
@@ -1923,7 +1923,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 		} break;
 
 		case SYS_rename: {
-			return rename((char *) a1, (char *) a2);
+			return _rename((char *) a1, (char *) a2);
 		} break;
 
 		default: {

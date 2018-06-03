@@ -35,7 +35,7 @@ const char *programs[] = {
 	"image_viewer", "",
 	"system_monitor", "",
 	"lua", "ports/lua/lua.manifest",
-	"vim", "ports/vim/vim.manifest",
+	// "vim", "ports/vim/vim.manifest",
 	"test", "api/test.manifest",
 };
 

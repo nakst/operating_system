@@ -1,40 +1,40 @@
 [command osCommandCopy]
-label = "\$Copy";
+label = "Copy";
 shortcut = "Ctrl+C";
 defaultDisabled = true;
 
 [command osCommandPaste]
-label = "\$Paste";
+label = "Paste";
 shortcut = "Ctrl+V";
 defaultDisabled = true;
 
 [command osCommandCut]
-label = "Cu\$t";
+label = "Cut";
 shortcut = "Ctrl+X";
 defaultDisabled = true;
 
 [command osCommandDelete]
-label = "\$Delete";
+label = "Delete";
 shortcut = "Del";
 defaultDisabled = true;
 
 [command osCommandUndo]
-label = "\$Undo";
+label = "Undo";
 shortcut = "Ctrl+Z";
 defaultDisabled = true;
 
 [command osCommandRedo]
-label = "\$Redo";
+label = "Redo";
 shortcut = "Ctrl+Y";
 defaultDisabled = true;
 
 [command osCommandRepeat]
-label = "R\$epeat";
+label = "Repeat";
 shortcut = "Ctrl+Shift+Z";
 defaultDisabled = true;
 
 [command osCommandSelectAll]
-label = "Select \$All";
+label = "Select All";
 shortcut = "Ctrl+A";
 defaultDisabled = true;
 
@@ -49,10 +49,10 @@ Separator;
 osCommandSelectAll;
 
 [command osDialogStandardOK]
-label = "\$OK";
+label = "OK";
 
 [command osDialogStandardCancel]
-label = "\$Cancel";
+label = "Cancel";
 
 [window osDialogStandard]
 width = 400;

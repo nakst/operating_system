@@ -23,7 +23,8 @@ struct Instance {
 		 statusLabel,
 		 window,
 		 bookmarkList,
-		 instanceObject;
+		 instanceObject,
+		 renameTextbox;
 
 	FolderChild *folderChildren;
 	size_t folderChildCount;
@@ -90,6 +91,9 @@ OSListViewColumn folderListingColumns[] = {
 
 #define GUI_STRING_BUFFER_LENGTH (1024)
 char guiStringBuffer[GUI_STRING_BUFFER_LENGTH];
+
+#define PATH_BUFFER_LENGTH (8192)
+char pathBuffer[PATH_BUFFER_LENGTH];
 
 int GetFileType(char *name, size_t bytes) {
 	int lastSeparator = 0;
@@ -162,6 +166,20 @@ const char *GetFileType(int index) {
 	} else {
 		return "File";
 	}
+}
+
+void SelectedChildCountUpdated(Instance *instance) {
+#define ONE (1)
+#define MANY (2)
+#define ENABLE_COMMAND(command, when) OSEnableCommand(instance->instanceObject, (command), (when) == ONE ? (instance->selectedChildCount == 1) : (instance->selectedChildCount));
+
+	ENABLE_COMMAND(commandOpenItem, ONE);
+	ENABLE_COMMAND(commandOpenItemProperties, MANY);
+	ENABLE_COMMAND(commandRenameItem, MANY);
+
+#undef ONE
+#undef MANY
+#undef ENABLE_COMMNAND
 }
 
 int SortFolder(const void *_a, const void *_b, void *argument) {
@@ -385,6 +403,127 @@ OSCallbackResponse CallbackBookmarkFolder(OSNotification *notification) {
 	return OS_CALLBACK_HANDLED;
 }
 
+OSCallbackResponse CallbackRenameItem(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	Instance *instance = (Instance *) notification->instanceContext;
+
+	if (instance->selectedChildCount == 1) {
+		// TODO.
+		return OS_CALLBACK_REJECTED;
+	} else if (instance->selectedChildCount) {
+		OSShowDialogTextPrompt(OSLiteral("Rename Multiple"),
+				OSLiteral("Enter a Lua expression for the new names."),
+				instance->instanceObject,
+				OS_ICON_RENAME, instance->window,
+				commandRenameItemConfirm, &instance->renameTextbox);
+		OSSetText(instance->renameTextbox, OSLiteral("name .. \".\" .. extension"), OS_RESIZE_MODE_IGNORE);
+		OSSetCommandNotificationCallback(notification->instance, osDialogStandardCancel, OS_MAKE_NOTIFICATION_CALLBACK(CallbackRenameItemConfirm, (void *) 1));
+	}
+
+	return OS_CALLBACK_HANDLED;
+}
+
+OSCallbackResponse CallbackRenameItemConfirm(OSNotification *notification) {
+	if (notification->type != OS_NOTIFICATION_COMMAND) {
+		return OS_CALLBACK_NOT_HANDLED;
+	}
+
+	Instance *instance = (Instance *) notification->instanceContext;
+
+	if (instance->selectedChildCount == 1) {
+		// TODO.
+		return OS_CALLBACK_REJECTED;
+	}
+
+	if (!notification->context) {
+		OSString expression;
+		OSGetText(instance->renameTextbox, &expression);
+
+		OSObject lua = OSCreateInstance(nullptr, nullptr);
+		OSOpenInstance(lua, instance->instanceObject, OSLiteral("lua"), OS_FLAGS_DEFAULT);
+
+		size_t bufferSize = 4096;
+		char *buffer = (char *) OSHeapAllocate(bufferSize, false);
+		bool stop = false;
+
+		for (uintptr_t i = 0; i < instance->folderChildCount && !stop; i++) {
+			if (!(instance->folderChildren[i].state & OS_LIST_VIEW_ITEM_SELECTED)) {
+				continue;
+			}
+
+			OSDirectoryChild *child = &instance->folderChildren[i].data;
+			size_t extensionSeparator = child->nameLengthBytes - 1;
+
+			for (intptr_t i = child->nameLengthBytes - 1; i >= 0; i--) {
+				if (child->name[i] == '.') {
+					extensionSeparator = i;
+					break;
+				}
+			}
+
+			size_t responseBytes;
+			OSHandle response = OSIssueRequest(lua, buffer, 
+					OSFormatString(buffer, bufferSize, 
+						"MAP\f" "%s\f" "full = \"%s\"\f" "name = \"%s\"\f" "extension = \"%s\"\f", 
+						expression.bytes, expression.buffer, 
+						child->nameLengthBytes, child->name,
+						extensionSeparator, child->name,
+						child->nameLengthBytes - extensionSeparator - 1, child->name + extensionSeparator + 1), 
+					1000 /*1 second timeout*/, &responseBytes); 
+
+			if (response && responseBytes) {
+				char *output = (char *) OSHeapAllocate(responseBytes, false);
+				OSReadConstantBuffer(response, output);
+
+				OSPrint("Output is '%s'.\n", responseBytes, output);
+
+				if (0 == OSCompareStrings(output, child->name, responseBytes, child->nameLengthBytes)) {
+					continue;
+				}
+
+				OSNodeInformation node;
+				OSError error;
+
+				error = OSOpenNode(pathBuffer, OSFormatString(pathBuffer, PATH_BUFFER_LENGTH, "%s/%s", 
+							instance->pathBytes, instance->path, child->nameLengthBytes, child->name), 
+						OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &node);
+				if (error == OS_SUCCESS) error = OSRenameNode(node.handle, output, responseBytes); 
+				if (error != OS_SUCCESS) stop = true;
+
+				OSHeapFree(output);
+			} else {
+				stop = true;
+			}
+
+			if (response) {
+				OSCloseHandle(response);
+			}
+		}
+
+		if (stop) {
+			// TODO This doesn't work correctly?
+			OSShowDialogAlert(OSLiteral("Error"),
+					OSLiteral("The operation failed."),
+					OSLiteral("TODO: write a proper error message!"),
+					notification->instance,
+					OS_ICON_ERROR, instance->window);
+		}
+
+		OSHeapFree(buffer);
+		OSDestroyInstance(lua);
+		// TODO Make this actually destroy the instance?
+
+		// TODO Better folder refreshing.
+		instance->LoadFolder(instance->path, instance->pathBytes, nullptr, 0, LOAD_FOLDER_NO_HISTORY);
+	}
+
+	OSCloseWindow(OSGetWindow(notification->generator));
+	return OS_CALLBACK_HANDLED;
+}
+
 OSCallbackResponse ProcessBookmarkListingNotification(OSNotification *notification) {
 	Instance *instance = (Instance *) notification->context;
 	
@@ -543,7 +682,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSNotification *notification
 				instance->selectedChildCount++;
 			}
 
-			OSEnableCommand(notification->instance, commandOpenItem, instance->selectedChildCount);
+			SelectedChildCountUpdated(instance);
 
 			return OS_CALLBACK_HANDLED;
 		} break;
@@ -575,7 +714,7 @@ OSCallbackResponse ProcessFolderListingNotification(OSNotification *notification
 				}
 			}
 
-			OSEnableCommand(notification->instance, commandOpenItem, instance->selectedChildCount);
+			SelectedChildCountUpdated(instance);
 
 			return OS_CALLBACK_HANDLED;
 		} break;
@@ -594,8 +733,10 @@ OSCallbackResponse ProcessFolderListingNotification(OSNotification *notification
 		} break;
 
 		case OS_NOTIFICATION_RIGHT_CLICK: {
-			if (instance->selectedChildCount) {
+			if (instance->selectedChildCount == 1) {
 				OSCreateMenu(menuItemContext, notification->generator, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
+			} else if (instance->selectedChildCount) {
+				OSCreateMenu(menuMultipleItemContext, notification->generator, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
 			} else {
 				OSCreateMenu(menuFolderListingContext, notification->generator, OS_CREATE_MENU_AT_CURSOR, OS_FLAGS_DEFAULT);
 			}
@@ -796,7 +937,7 @@ bool Instance::LoadFolder(char *path1, size_t pathBytes1, char *path2, size_t pa
 	OSListViewInvalidate(bookmarkList, 0, global.bookmarkCount);
 
 	selectedChildCount = 0;
-	OSEnableCommand(instanceObject, commandOpenItem, false);
+	SelectedChildCountUpdated(this);
 
 	{
 		bool found = false;

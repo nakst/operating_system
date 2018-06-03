@@ -183,6 +183,7 @@ template <typename F> OSprivDefer<F> OSdefer_func(F f) { return OSprivDefer<F>(f
 #define OS_ICON_SHUTDOWN		(11)
 #define OS_ICON_RUN			(12)
 #define OS_ICON_WARNING			(13)
+#define OS_ICON_RENAME			(14)
 
 #define OS_FLAGS_DEFAULT (0)
 

@@ -69,6 +69,23 @@ commandNewFolder;
 label = "Open";
 callback = CallbackOpenItem;
 defaultDisabled = true;
+callbackArgument = "OPEN";
+
+[command commandOpenItemProperties]
+label = "Properties";
+callback = CallbackOpenItem;
+defaultDisabled = true;
+callbackArgument = "PROPERTIES";
+
+[command commandRenameItem]
+label = "Rename";
+shortcut = "F2";
+defaultDisabled = true;
+callback = CallbackRenameItem;
+
+[command commandRenameItemConfirm]
+label = "Rename";
+callback = CallbackRenameItemConfirm;
 
 [menu menuItemContext]
 commandOpenItem;
@@ -77,3 +94,15 @@ osCommandCut;
 osCommandCopy;
 Separator;
 osCommandDelete;
+commandRenameItem;
+Separator;
+commandOpenItemProperties;
+
+[menu menuMultipleItemContext]
+osCommandCut;
+osCommandCopy;
+Separator;
+osCommandDelete;
+commandRenameItem;
+Separator;
+commandOpenItemProperties;

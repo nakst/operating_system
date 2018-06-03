@@ -352,6 +352,7 @@ static UIImage icons32[] = {
 	ICON32(512 + 0, 480),
 	ICON32(512 + 32, 480),
 	ICON32(512 + 64, 480),
+	ICON32(512 + 96, 480),
 };
 
 static UIImage *scrollbarButtonHorizontalBackgrounds[] = {
