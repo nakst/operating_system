@@ -43,6 +43,7 @@ radio = "RadioGroup";
 [command commandDeleteEverything]
 label = "Delete Everything";
 dangerous = true;
+callback = DeleteEverythingButtonPressed;
 
 [command commandLaunchCalculator]
 label = "Calculator";

@@ -47,16 +47,14 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 
 			// TODO Error handling.
 
-			if (0 == strcmp(argv[0], "Execute") && argc == 2) {
-				int result = luaL_loadstring(state, argv[1]);
-				// OSPrint("load result = %d\n", result);
+			int result;
+			(void) result;
+
+			if (0 == strcmp(argv[0], "EXECUTE") && argc == 2) {
+				result = luaL_loadstring(state, argv[1]);
 				result = lua_pcall(state, 0, LUA_MULTRET, 0);
-				// OSPrint("execute result = %d\n", result);
-				(void) result;
 				return OS_CALLBACK_HANDLED;
 			} else if (0 == strcmp(argv[0], "MAP") && argc >= 2) {
-				int result;
-
 				for (uintptr_t i = 2; i < argc; i++) {
 					result = luaL_loadstring(state, argv[i]);
 					result = lua_pcall(state, 0, LUA_MULTRET, 0);

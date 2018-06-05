@@ -38,7 +38,7 @@ size_t CF(StringLength)(const char *string, uint8_t end) {
 	}
 }
 
-void CF(CopyMemory)(void *_destination, void *_source, size_t bytes) {
+void CF(CopyMemory)(void *_destination, const void *_source, size_t bytes) {
 	if (!bytes) {
 		return;
 	}

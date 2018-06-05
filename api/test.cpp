@@ -35,7 +35,7 @@ Word words[50000];
 char buffer[1024];
 
 OSHandle mutexes[2];
-OSObject calculator;
+OSObject calculator, deleteEverythingButton;
 
 void LocalMutexTest(void *argument) {
 	int i = (uintptr_t) argument;
@@ -375,6 +375,12 @@ OSCallbackResponse SendRemoteCommand(OSNotification *notification) {
 	OSPrint("Received response: %s\n", outputBytes, buffer);
 	OSHeapFree(buffer);
 
+	return OS_CALLBACK_HANDLED;
+}
+
+OSCallbackResponse DeleteEverythingButtonPressed(OSNotification *notification) {
+	(void) notification;
+	OSDestroyGUIObject(deleteEverythingButton);
 	return OS_CALLBACK_HANDLED;
 }
 
@@ -864,7 +870,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	OSAddControl(content, 1, 2, OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 
 	OSAddControl(content, 0, 0, progressBar = OSCreateProgressBar(0, 100, 20, false), 0);
-	OSAddControl(content, 0, 3, OSCreateButton(commandDeleteEverything, OS_BUTTON_STYLE_NORMAL), 0);
+	OSAddControl(content, 0, 3, deleteEverythingButton = OSCreateButton(commandDeleteEverything, OS_BUTTON_STYLE_NORMAL), 0);
 
 	OSObject sliderH, sliderV;
 	OSAddControl(content, 2, 4, sliderV = OSCreateSlider(0, 100, 50, 
@@ -972,9 +978,9 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	{
 		OSObject lua = OSCreateInstance(nullptr, nullptr);
 		OSOpenInstance(lua, instance, OSLiteral("Lua"), OS_OPEN_INSTANCE_HEADLESS);
-		OSCloseHandle(OSIssueRequest(lua, OSLiteral("Execute\fio.write(string.format(\"Hello from %s\\n\", _VERSION))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
-		OSCloseHandle(OSIssueRequest(lua, OSLiteral("Execute\fio.write(string.format(\"Another message!\\n\"))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
-		OSCloseHandle(OSIssueRequest(lua, OSLiteral("Execute\fio.write(string.format(\"Another message 2!\\n\"))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
+		OSCloseHandle(OSIssueRequest(lua, OSLiteral("EXECUTE\fio.write(string.format(\"Hello from %s\\n\", _VERSION))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
+		OSCloseHandle(OSIssueRequest(lua, OSLiteral("EXECUTE\fio.write(string.format(\"Another message!\\n\"))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
+		OSCloseHandle(OSIssueRequest(lua, OSLiteral("EXECUTE\fio.write(string.format(\"Another message 2!\\n\"))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
 	}
 
 	return OS_CALLBACK_HANDLED;

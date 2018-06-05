@@ -9,6 +9,11 @@ static void EnterDebugger() {
 
 #define DIMENSION_PUSH (65535)
 
+#define TAB_WIDTH (24)
+#define TAB_LARGE_WIDTH (224)
+#define TAB_BAND_LARGE_HEIGHT (32)
+#define TAB_BAND_HEIGHT (26)
+
 #define CARET_BLINK_HZ (1)
 #define CARET_BLINK_PAUSE (2)
 
@@ -48,7 +53,7 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // TODO Instancing.
 // 	- Introduce standard IPC interfaces, e.g. for scripting languages.
 // 	- Switching the instance of the current window.
-// 	- Global action state.
+// 	- Global/window-bound command state.
 // 	- Single instance programs.
 // 	- Destroying headless instances.
 // 	- Instance request errors.
@@ -254,6 +259,14 @@ static UIImage sliderHorizontalFocused = {{40 + 147, 40 + 167, 24 + 145, 24 + 15
 static UIImage sliderHorizontalPressed = {{40 + 147, 40 + 167, 36 + 145, 36 + 158}, {40 + 147, 40 + 147, 36 + 145, 36 + 145}};
 static UIImage sliderHorizontalDisabled = {{127, 148, 24 + 145, 24 + 158}, {127, 127, 24 + 145, 24 + 145}};
 
+static UIImage tabBand = {{174, 179, 35, 38}, {175, 176, 36, 37}};
+static UIImage tabContent = {{149, 179, 40, 56}, {150, 177, 41, 54}, OS_DRAW_MODE_STRECH};
+static UIImage tabOtherNormal = {{180, 183, 34, 56}, {181, 182, 44, 45}};
+static UIImage tabOtherHover = {{184, 187, 34, 56}, {185, 186, 44, 45}};
+static UIImage tabActiveNormal = {{188, 195, 34, 56}, {191, 192, 44, 45}};
+static UIImage tabPressed = {{145, 148, 34, 56}, {146, 147, 44, 45}};
+static UIImage tabNew = {{195, 205, 46, 56}, {196, 196, 47, 47}};
+
 static struct UIImage *sliderDown[] = {
 	&sliderDownNormal,
 	&sliderDownDisabled,
@@ -453,6 +466,14 @@ static UIImage *buttonDangerousDefaultBackgrounds[] = {
 	&buttonDangerousDefault,
 };
 
+struct UIImage *tabBandBackgrounds[] = {
+	&tabBand,
+	&tabBand,
+	&tabBand,
+	&tabBand,
+	&tabBand,
+};
+
 static UIImage *windowBorder11[] = {&activeWindowBorder11, &inactiveWindowBorder11, &activeWindowBorder11, &activeWindowBorder11, &activeWindowBorder11};
 static UIImage *windowBorder12[] = {&activeWindowBorder12, &inactiveWindowBorder12, &activeWindowBorder12, &activeWindowBorder12, &activeWindowBorder12};
 static UIImage *windowBorder13[] = {&activeWindowBorder13, &inactiveWindowBorder13, &activeWindowBorder13, &activeWindowBorder13, &activeWindowBorder13};
@@ -573,35 +594,21 @@ struct Control : GUIObject {
 	uint8_t current1, current2, current3, current4, current5;
 };
 
-#if 0
-struct ListView : Control {
-	unsigned flags;
-	size_t itemCount;
-	OSObject scrollbar;
-	int scrollY;
-	int32_t highlightRow, lastClickedRow;
-
-	OSPoint selectionBoxAnchor;
-	OSPoint selectionBoxPosition;
-	OSRectangle selectionBox;
-
-	OSListViewColumn *columns;
-	int32_t columnsCount;
-	int32_t rowWidth;
-
-	int repaintFirstRow, repaintLastRow;
-	int draggingColumnIndex, draggingColumnX;
-	bool repaintSelectionBox;
-	OSRectangle oldSelectionBox;
-	
-	enum {
-		DRAGGING_NONE,
-		DRAGGING_ITEMS,
-		DRAGGING_SELECTION,
-		DRAGGING_COLUMN,
-	} dragging;
+struct Tab {
+	OSString text;
+	uint8_t hoverAnimation;
+	int width, widthTarget;
+	bool newTabButton;
 };
-#endif
+
+struct TabBand : Control {
+	int activeTab, hoverTab;
+	bool newTabPressed;
+	unsigned flags;
+
+	Tab *tabs;
+	size_t tabCount;
+};
 
 struct MenuItem : Control {
 	OSMenuItem item;
@@ -724,6 +731,7 @@ struct OpenMenu {
 
 static OpenMenu openMenus[8];
 static unsigned openMenuCount;
+
 static bool navigateMenuMode;
 static bool navigateMenuUsedKey;
 static MenuItem *navigateMenuItem;
@@ -965,6 +973,16 @@ void OSSetControlCommand(OSObject _control, OSCommand *_command) {
 	}
 }
 
+static void ReceiveTimerMessages(Control *control) {
+	if (!control->timerControlItem.list && control->window) {
+		control->timerHz = 30; // TODO Make this 60?
+		control->window->timerControls.InsertStart(&control->timerControlItem);
+		control->timerControlItem.thisItem = control;
+	} else {
+		// TODO If there wasn't a window.
+	}
+}
+
 void OSAnimateControl(OSObject _control, bool fast) {
 	Control *control = (Control *) _control;
 
@@ -980,11 +998,7 @@ void OSAnimateControl(OSObject _control, bool fast) {
 		control->animationStep = 0;
 		control->finalAnimationStep = fast ? 4 : 16;
 
-		if (!control->timerControlItem.list) {
-			control->timerHz = 30; // TODO Make this 60?
-			control->window->timerControls.InsertStart(&control->timerControlItem);
-			control->timerControlItem.thisItem = control;
-		}
+		ReceiveTimerMessages(control);
 	} else {
 		control->animationStep = 16;
 		control->finalAnimationStep = 16;
@@ -1433,6 +1447,8 @@ static OSCallbackResponse ProcessControlMessage(OSObject _object, OSMessage *mes
 
 			if (!control->disabled || control->keepCustomCursorWhenDisabled) {
 				control->window->cursor = (OSCursorStyle) control->cursor;
+			} else {
+				control->window->cursor = OS_CURSOR_NORMAL;
 			}
 
 			if (control->window->hover != control) {
@@ -1485,7 +1501,7 @@ void OSSetCursor(OSObject object, OSCursorStyle cursor) {
 	window->cursor = cursor;
 }
 
-static void CreateString(char *text, size_t textBytes, OSString *string, size_t characterCount = 0) {
+static void CreateString(const char *text, size_t textBytes, OSString *string, size_t characterCount = 0) {
 	GUIFree(string->buffer);
 	string->buffer = (char *) GUIAllocate(textBytes, false);
 	string->bytes = textBytes;
@@ -2358,6 +2374,355 @@ OSObject OSCreateBlankControl(int width, int height, OSCursorStyle cursor, unsig
 	return control;
 }
 
+void OSRemoveGUIObjectFromParent(OSObject guiObject) {
+	GUIObject *object = (GUIObject *) guiObject;
+	OSMessage m;
+
+	if (object->parent) {
+		m.type = OS_MESSAGE_REMOVE_CHILD;
+		m.removeChild.child = object;
+		OSSendMessage(object->parent, &m);
+		object->parent = nullptr;
+	}
+}
+
+void OSDestroyGUIObject(OSObject guiObject) {
+	GUIObject *object = (GUIObject *) guiObject;
+	OSMessage m;
+	OSRemoveGUIObjectFromParent(object);
+	m.type = OS_MESSAGE_DESTROY;
+	m.context = object;
+	OSPostMessage(&m);
+}
+
+static int RoundUpToNearestInteger(float x) {
+	int truncate = (int) x;
+	return truncate + 1;
+}
+
+#define GET_TAB_BAND_FROM_TAB_PANE(tabPane) ((TabBand *) (((Grid *) tabPane)->objects[0]))
+#define SEND_TAB_PANE_NOTIFICATION(tabPane, n) OSSendNotification(tabPane, ((Grid *) tabPane)->notificationCallback, n, OSGetInstance(tabPane))
+
+OSCallbackResponse ProcessTabBandMessage(OSObject object, OSMessage *message) {
+	TabBand *control = (TabBand *) object;
+	OSCallbackResponse result = OS_CALLBACK_NOT_HANDLED;
+
+	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
+		OSRectangle bounds = control->bounds;
+
+		int position = 0;
+
+		for (intptr_t i = 0; i < (intptr_t) control->tabCount; i++) {
+			Tab *tab = control->tabs + i;
+
+			if (control->tabs[i].newTabButton) position += 2;
+			bounds.left = control->bounds.left + position;
+			bounds.right = bounds.left + tab->width;
+			position += control->tabs[i].width - 1;
+
+			if (control->activeTab == i) {
+				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
+						tabActiveNormal.region, tabActiveNormal.border, tabActiveNormal.drawMode, 0xFF, message->paint.clip);
+			} else if (tab->newTabButton && control->newTabPressed && control->hoverTab == i) {
+				if (control->hoverTab == i) {
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
+							tabPressed.region, tabPressed.border, tabPressed.drawMode, 0xFF, message->paint.clip);
+				} else {
+					OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
+							tabOtherHover.region, tabOtherHover.border, tabOtherHover.drawMode, 0xFF, message->paint.clip);
+				}
+			} else {
+				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
+						tabOtherNormal.region, tabOtherNormal.border, tabOtherNormal.drawMode, 0xFF, message->paint.clip);
+				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
+						tabOtherHover.region, tabOtherHover.border, tabOtherHover.drawMode, 0xFF * tab->hoverAnimation / 16, message->paint.clip);
+			}
+
+			{
+				OSRectangle textBounds = bounds;
+				textBounds.left += control->flags & OS_CREATE_TAB_PANE_LARGE ? 12 : 6;
+				textBounds.right -= control->flags & OS_CREATE_TAB_PANE_LARGE ? 12 : 6;
+				if (i != control->activeTab) textBounds.top += 2;
+
+				OSDrawString(message->paint.surface, textBounds, &tab->text, 0, 
+						OS_DRAW_STRING_VALIGN_CENTER 
+						| (control->flags & OS_CREATE_TAB_PANE_LARGE ? OS_DRAW_STRING_HALIGN_LEFT : OS_DRAW_STRING_HALIGN_CENTER), 
+						TEXT_COLOR_DEFAULT, -1, OS_STANDARD_FONT_REGULAR, message->paint.clip, 0);
+			}
+
+			if (tab->newTabButton) {
+				bounds.left += 7;
+				bounds.top += 9;
+				bounds.right -= 7;
+				bounds.bottom -= 7;
+
+				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, bounds, 
+						tabNew.region, tabNew.border, tabNew.drawMode, 0xFF, message->paint.clip);
+			}
+		}
+
+		result = OS_CALLBACK_HANDLED;
+	} else if (message->type == OS_MESSAGE_END_HOVER) {
+		ReceiveTimerMessages(control);
+		control->hoverTab = -1;
+	} else if (message->type == OS_MESSAGE_END_PRESS) {
+	} else if (message->type == OS_MESSAGE_MOUSE_MOVED || message->type == OS_MESSAGE_MOUSE_DRAGGED) {
+		OSRectangle bounds = control->bounds;
+		bool found = false;
+
+		int position = 0;
+
+		for (intptr_t i = 0; i < (intptr_t) control->tabCount; i++) {
+			Tab *tab = control->tabs + i;
+
+			if (control->tabs[i].newTabButton) position += 2;
+			bounds.left = control->bounds.left + position;
+			bounds.right = bounds.left + tab->width;
+			position += control->tabs[i].width - 1;
+
+			if (IsPointInRectangle(bounds, message->mouseMoved.newPositionX, message->mouseMoved.newPositionY)) {
+				if (control->hoverTab != i) {
+					ReceiveTimerMessages(control);
+				}
+					
+				control->hoverTab = i;
+				found = true;
+				break;
+			}
+		}
+
+		if (!found && control->hoverTab != -1) {
+			ReceiveTimerMessages(control);
+			control->hoverTab = -1;
+		}
+
+		RepaintControl(control);
+	} else if (message->type == OS_MESSAGE_WM_TIMER) {
+		bool stillNeeded = false;
+		bool preventSnap = false;
+
+		for (uintptr_t i = 0; i < control->tabCount; i++) {
+			Tab *tab = control->tabs + i;
+			int animationTarget = ((int) i == control->hoverTab) ? 16 : 0;
+
+			if (animationTarget != tab->hoverAnimation) {
+				stillNeeded = true;
+				if (tab->hoverAnimation < animationTarget) tab->hoverAnimation++;
+				else tab->hoverAnimation--;
+			}
+
+			if (tab->widthTarget != tab->width) {
+				stillNeeded = true;
+				int move = (float) (tab->widthTarget - tab->width) / 4;
+				tab->width += move;
+
+				if (!move && !preventSnap) {
+					tab->width = tab->widthTarget;
+					preventSnap = true;
+				}
+			}
+		}
+
+		if (!stillNeeded && control->timerControlItem.list) {
+			control->window->timerControls.Remove(&control->timerControlItem);
+		}
+
+		RepaintControl(control);
+
+		result = OS_CALLBACK_HANDLED;
+	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
+		if (control->hoverTab != -1) {
+			OSSetActiveTab(control->parent, control->hoverTab, false, true);
+		}
+	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_RELEASED) {
+		RepaintControl(control);
+
+		if (control->hoverTab != -1 && control->tabs[control->hoverTab].newTabButton && control->newTabPressed) {
+			OSNotification n;
+			n.type = OS_NOTIFICATION_NEW_TAB;
+			SEND_TAB_PANE_NOTIFICATION(control->parent, &n);
+		}
+
+		control->newTabPressed = false;
+	} else if (message->type == OS_MESSAGE_DESTROY) {
+		for (uintptr_t i = 0; i < control->tabCount; i++) {
+			GUIFree(control->tabs[i].text.buffer);
+		}
+
+		GUIFree(control->tabs);
+	} 
+	
+	if (result == OS_CALLBACK_NOT_HANDLED) {
+		result = OSForwardMessage(object, OS_MAKE_MESSAGE_CALLBACK(ProcessControlMessage, nullptr), message);
+	}
+
+	if (message->type == OS_MESSAGE_LAYOUT && (control->flags & OS_CREATE_TAB_PANE_LARGE)) {
+		int totalWidth = 0;
+
+		for (uintptr_t i = 0; i < control->tabCount; i++) {
+			int width;
+
+			if (!control->tabs[i].newTabButton) {
+				width = TAB_LARGE_WIDTH;
+			} else {
+				width = TAB_WIDTH;
+			}
+
+			control->tabs[i].widthTarget = width;
+			totalWidth += width;
+		}
+
+		if (totalWidth > control->bounds.right - control->bounds.left) {
+			// The tabs don't fit in the band.
+			// Evenly spread out their width.
+
+			int widthAvailable = control->bounds.right - control->bounds.left;
+			int spreadCount = 0;
+
+			for (uintptr_t i = 0; i < control->tabCount; i++) {
+				if (control->tabs[i].newTabButton) {
+					widthAvailable -= control->tabs[i].widthTarget + 5;
+				} else {
+					spreadCount++;
+				}
+			}
+
+			int widthPerTab = widthAvailable / spreadCount;
+			int remaining = widthAvailable % spreadCount;
+
+			for (uintptr_t i = 0; i < control->tabCount; i++) {
+				if (!control->tabs[i].newTabButton) {
+					int additional = remaining ? 2 : 1;
+					control->tabs[i].widthTarget = widthPerTab + additional;
+					if (remaining) remaining--;
+				}
+			}
+		}
+
+		RepaintControl(control);
+		ReceiveTimerMessages(control);
+	}
+
+	return result;
+}
+
+static OSObject CreateTabBand(unsigned flags) {
+	TabBand *control = (TabBand *) GUIAllocate(sizeof(TabBand), true);
+
+	control->type = API_OBJECT_CONTROL;
+	control->preferredHeight = TAB_BAND_HEIGHT;
+	control->drawParentBackground = true;
+	control->ignoreActivationClicks = false;
+	control->focusable = true;
+	control->tabStop = true;
+	control->noAnimations = true;
+	control->customTextRendering = true;
+	control->cursor = OS_CURSOR_NORMAL;
+	control->backgrounds = tabBandBackgrounds;
+	control->flags = flags;
+	control->animationStep = 0;
+	control->finalAnimationStep = 16;
+
+	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessTabBandMessage, nullptr));
+
+	return control;
+}
+
+void OSInsertTab(OSObject tabPane, bool end, const char *text, size_t textBytes) {
+	TabBand *band = GET_TAB_BAND_FROM_TAB_PANE(tabPane);
+	OSRepaintControl(tabPane);
+
+	int before = end ? band->tabCount - (band->flags & OS_CREATE_TAB_PANE_NEW_BUTTON ? 1 : 0) : 0;
+
+	Tab *newTabs = (Tab *) GUIAllocate((band->tabCount + 1) * sizeof(Tab), false);
+	OSCopyMemory(newTabs, band->tabs, band->tabCount * sizeof(Tab));
+	GUIFree(band->tabs);
+	band->tabs = newTabs;
+	OSMoveMemory(newTabs + before, newTabs + band->tabCount, sizeof(Tab), true);
+	band->tabCount++;
+
+	Tab *newTab = newTabs + before;
+	CreateString(text, textBytes, &newTab->text);
+
+	if (band->flags & OS_CREATE_TAB_PANE_LARGE) {
+		newTab->widthTarget = TAB_LARGE_WIDTH;
+
+		OSMessage m;
+		m.type = OS_MESSAGE_CHILD_UPDATED;
+		OSSendMessage(tabPane, &m);
+		band->relayout = true;
+	} else {
+		newTab->widthTarget = MeasureStringWidth(text, textBytes, FONT_SIZE, fontRegular) + 24;
+
+		if (newTab->widthTarget < TAB_WIDTH) {
+			newTab->widthTarget = TAB_WIDTH;
+		}
+	}
+
+	if (!(band->flags & OS_CREATE_TAB_PANE_ANIMATIONS)) {
+		newTab->width = newTab->widthTarget;
+	} else {
+		ReceiveTimerMessages(band);
+	}
+}
+
+void OSRemoveTab(OSObject tabPane, int index) {
+	TabBand *band = GET_TAB_BAND_FROM_TAB_PANE(tabPane);
+	OSRepaintControl(tabPane);
+	(void) index;
+	(void) band;
+	// TODO.
+}
+
+void OSSetActiveTab(OSObject tabPane, int index, bool relative, bool sendNotification) {
+	TabBand *band = GET_TAB_BAND_FROM_TAB_PANE(tabPane);
+
+	if (band->tabs[index].newTabButton) {
+		band->newTabPressed = true;
+		return;
+	}
+
+	// TODO Skip new tab button and removed tabs.
+
+	band->activeTab = (relative ? band->activeTab : 0) + index;
+	OSRepaintControl(tabPane);
+
+	if (sendNotification) {
+		OSNotification n;
+		n.type = OS_NOTIFICATION_ACTIVE_TAB_CHANGED;
+		n.activeTabChanged.newIndex = band->activeTab;
+		SEND_TAB_PANE_NOTIFICATION(tabPane, &n);
+	}
+}
+
+void OSChangeTabText(OSObject tabPane, int index, const char *text, size_t textBytes) {
+	TabBand *band = GET_TAB_BAND_FROM_TAB_PANE(tabPane);
+	OSRepaintControl(band);
+	CreateString(text, textBytes, &band->tabs[index].text);
+}
+
+OSObject OSCreateTabPane(unsigned flags) {
+	OSObject grid = OSCreateGrid(1, 2, OS_GRID_STYLE_LAYOUT);
+	OSObject tabBand = CreateTabBand(flags);
+	OSAddControl(grid, 0, 0, tabBand, OS_CELL_H_FILL);
+
+	if (flags & OS_CREATE_TAB_PANE_NEW_BUTTON) {
+		OSInsertTab(grid, 0, OSLiteral(""));
+
+		Tab *tab = ((TabBand *) tabBand)->tabs;
+		tab->newTabButton = true;
+		tab->widthTarget = tab->width = TAB_WIDTH;
+	}
+
+	return grid;
+}
+
+void OSSetTabPaneContent(OSObject tabPane, OSObject content) {
+	Grid *grid = (Grid *) tabPane;
+	if (grid->objects[1]) OSRemoveGUIObjectFromParent(grid->objects[1]);
+	OSAddControl(grid, 0, 1, content, OS_CELL_FILL);
+}
+
 OSObject OSCreateButton(OSCommand *command, OSButtonStyle style) {
 	Control *control = (Control *) GUIAllocate(sizeof(Control), true);
 	control->type = API_OBJECT_CONTROL;
@@ -2910,6 +3275,19 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 			}
 		} break;
 
+		case OS_MESSAGE_REMOVE_CHILD: {
+			uintptr_t index = FindObjectInGrid(grid, message->removeChild.child);
+
+			if (index == grid->columns * grid->rows) {
+				OSCrashProcess(OS_FATAL_ERROR_INCORRECT_OBJECT_PARENT);
+			}
+
+			grid->objects[index] = nullptr;
+
+			grid->relayout = true;
+			SetParentDescendentInvalidationFlags(grid, DESCENDENT_RELAYOUT);
+		} break;
+
 		case OS_MESSAGE_LAYOUT: {
 			if (grid->relayout || message->layout.force) {
 				grid->descendentInvalidationFlags &= ~DESCENDENT_RELAYOUT;
@@ -3148,11 +3526,17 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 		} break;
 
 		case OS_MESSAGE_PAINT_BACKGROUND: {
+			// What happens with overalapping children?
+
 			if (grid->background) {
 				OSDrawSurfaceClipped(message->paint.surface, OS_SURFACE_UI_SHEET, grid->bounds, grid->background->region,
 						grid->background->border, grid->background->drawMode, 0xFF, message->paintBackground.clip);
 			} else if (grid->backgroundColor) {
 				OSFillRectangle(message->paint.surface, message->paintBackground.clip, OSColor(grid->backgroundColor));
+			} else {
+				// We don't have a background.
+				// Propagate the message to our parent.
+				OSSendMessage(grid->parent, message);
 			}
 		} break;
 
@@ -3195,7 +3579,8 @@ static OSCallbackResponse ProcessGridMessage(OSObject _object, OSMessage *messag
 
 			grid->window->hoverGrid = grid;
 
-			for (uintptr_t i = 0; i < grid->columns * grid->rows; i++) {
+			// Process mouse events in reverse for grids with overlapping children.
+			for (intptr_t i = grid->columns * grid->rows - 1; i >= 0; i--) {
 				OSSendMessage(grid->objects[i], message);
 			}
 		} break;
@@ -3322,6 +3707,13 @@ OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style) {
 			grid->borderSize = OS_MAKE_RECTANGLE(8, 8, 6, 6);
 			grid->gapSize = 4;
 			grid->background = &gridBox;
+			grid->defaultLayout = OS_CELL_H_FILL;
+		} break;
+
+		case OS_GRID_STYLE_TAB_PANE_CONTENT: {
+			grid->borderSize = OS_MAKE_RECTANGLE(8, 8, 8, 8);
+			grid->gapSize = 4;
+			grid->background = &tabContent;
 			grid->defaultLayout = OS_CELL_H_FILL;
 		} break;
 

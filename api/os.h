@@ -239,6 +239,7 @@ typedef enum OSFatalError {
 	OS_FATAL_ERROR_PARENT_INSTANCE_PROCESS_MISMATCH,
 	OS_FATAL_ERROR_COUNT,
 	OS_FATAL_ERROR_NO_INSTANCE_PARENT,
+	OS_FATAL_ERROR_INCORRECT_OBJECT_PARENT,
 } OSFatalError;
 
 // These must be negative.
@@ -579,26 +580,36 @@ typedef enum OSGridStyle {
 	OS_GRID_STYLE_TOOLBAR,
 	OS_GRID_STYLE_TOOLBAR_ALT,
 	OS_GRID_STYLE_BLANK_MENU,
+	OS_GRID_STYLE_TAB_PANE_CONTENT,
 } OSGridStyle;
 
 typedef enum OSNotificationType {
+	// Common.
 	OS_NOTIFICATION_COMMAND			= 0x2000,
 	OS_NOTIFICATION_VALUE_CHANGED		= 0x2001,
-	OS_NOTIFICATION_GET_ITEM		= 0x2002,
-	OS_NOTIFICATION_SET_ITEM		= 0x2004,
-	OS_NOTIFICATION_START_EDIT		= 0x2005,
-	OS_NOTIFICATION_END_EDIT		= 0x2006,
-	OS_NOTIFICATION_CANCEL_EDIT		= 0x2007,
-	OS_NOTIFICATION_CONFIRM_EDIT		= 0x2008,
-	OS_NOTIFICATION_CHOOSE_ITEM		= 0x2009,
-	OS_NOTIFICATION_CONVERT_Y_TO_INDEX	= 0x200A,
-	OS_NOTIFICATION_MEASURE_HEIGHT		= 0x200B,
-	OS_NOTIFICATION_PAINT_ITEM		= 0x200C,
-	OS_NOTIFICATION_PAINT_CELL		= 0x200D,
-	OS_NOTIFICATION_SET_ITEM_RANGE		= 0x200E,
-	OS_NOTIFICATION_SORT_COLUMN		= 0x200F,
-	OS_NOTIFICATION_RIGHT_CLICK		= 0x2010,
-	OS_NOTIFICATION_WINDOW_CLOSE		= 0x2011,
+	OS_NOTIFICATION_RIGHT_CLICK		= 0x2002,
+	OS_NOTIFICATION_WINDOW_CLOSE		= 0x2003,
+
+	// Textboxes.
+	OS_NOTIFICATION_START_EDIT		= 0x2015,
+	OS_NOTIFICATION_END_EDIT		= 0x2016,
+	OS_NOTIFICATION_CANCEL_EDIT		= 0x2017,
+	OS_NOTIFICATION_CONFIRM_EDIT		= 0x2018,
+
+	// List views.
+	OS_NOTIFICATION_GET_ITEM		= 0x2022,
+	OS_NOTIFICATION_SET_ITEM		= 0x2024,
+	OS_NOTIFICATION_CHOOSE_ITEM		= 0x2029,
+	OS_NOTIFICATION_CONVERT_Y_TO_INDEX	= 0x202A,
+	OS_NOTIFICATION_MEASURE_HEIGHT		= 0x202B,
+	OS_NOTIFICATION_PAINT_ITEM		= 0x202C,
+	OS_NOTIFICATION_PAINT_CELL		= 0x202D,
+	OS_NOTIFICATION_SET_ITEM_RANGE		= 0x202E,
+	OS_NOTIFICATION_SORT_COLUMN		= 0x202F,
+
+	// Tab panes.
+	OS_NOTIFICATION_ACTIVE_TAB_CHANGED	= 0x2030,
+	OS_NOTIFICATION_NEW_TAB			= 0x2031,
 } OSNotificationType;
 
 typedef struct OSNotification {
@@ -683,6 +694,10 @@ typedef struct OSNotification {
 			uint8_t activationClick : 1;
 			uint8_t alt : 1, ctrl : 1, shift : 1;
 		} mousePressed;
+
+		struct {
+			int newIndex;
+		} activeTabChanged;
 	};
 } OSNotification;
 
@@ -703,6 +718,7 @@ typedef enum OSMessageType {
 	OS_MESSAGE_TEXT_UPDATED			= 0x0213,
 	OS_MESSAGE_HIT_TEST			= 0x0214,
 	OS_MESSAGE_CARET_BLINK			= 0x0215,
+	OS_MESSAGE_REMOVE_CHILD			= 0x0216,
 
 	OS_MESSAGE_CLICKED			= 0x0240,
 	OS_MESSAGE_START_HOVER			= 0x0241,
@@ -857,6 +873,10 @@ typedef struct OSMessage {
 		struct {
 			OSObject window;
 		} parentUpdated;
+
+		struct {
+			OSObject child;
+		} removeChild;
 
 		struct {
 			int positionX, positionY;
@@ -1179,6 +1199,14 @@ extern OSObject osSystemMessages;
 
 #define OS_OPEN_INSTANCE_HEADLESS (1)
 
+#define OS_CREATE_TAB_PANE_REORDERABLE (1)  // The tabs can be reordered.				TODO
+#define OS_CREATE_TAB_PANE_DETACHABLE  (2)  // The tabs can be removed (into their own window).		TODO
+#define OS_CREATE_TAB_PANE_CLOSABLE    (4)  // The tabs can be closed.					TODO
+#define OS_CREATE_TAB_PANE_NEW_BUTTON  (8)  // A new tab button is displayed.
+#define OS_CREATE_TAB_PANE_SELECTABLE  (16) // Multiple tabs can be selected with ctrl/shift+click.	TODO
+#define OS_CREATE_TAB_PANE_LARGE       (32) // Large tabs that shrink when the tab band fills up.
+#define OS_CREATE_TAB_PANE_ANIMATIONS  (64) // Tabs are animated.
+
 OS_EXTERN_C void OSInitialiseAPI();
 
 OS_EXTERN_C void OSBatch(OSBatchCall *calls, size_t count); 
@@ -1325,8 +1353,12 @@ OS_EXTERN_C void OSDestroyInstance(OSObject instance);
 OS_EXTERN_C OSObject OSCreateMenu(OSMenuSpecification *menuSpecification, OSObject sourceControl, OSPoint position, unsigned flags);
 OS_EXTERN_C OSObject OSCreateWindow(OSWindowSpecification *specification, OSObject instance);
 OS_EXTERN_C OSObject OSCreateGrid(unsigned columns, unsigned rows, OSGridStyle style);
+OS_EXTERN_C OSObject OSCreateTabPane(unsigned flags);
 OS_EXTERN_C OSObject OSCreateScrollPane(OSObject content, unsigned flags);
+
 OS_EXTERN_C void OSAddControl(OSObject grid, unsigned column, unsigned row, OSObject control, unsigned layout);
+OS_EXTERN_C void OSRemoveGUIObjectFromParent(OSObject object);
+
 #define OSAddGrid(_grid, _column, _row, _child, _layout) OSAddControl(_grid, _column, _row, _child, _layout)
 #define OSSetRootGrid(_window, _grid) OSAddControl(_window, 0, 0, _grid, OS_CELL_FILL)
 
@@ -1370,6 +1402,8 @@ OS_EXTERN_C OSObject OSCreateScrollbar(bool orientation, bool automaticallyUpdat
 OS_EXTERN_C OSObject OSCreateListView(unsigned flags, int constantHeight);
 OS_EXTERN_C OSObject OSCreateSlider(int minimum, int maximum, int initialValue, int mode, int minorTickSpacing, int majorTickSpacing);
 
+OS_EXTERN_C void OSDestroyGUIObject(OSObject guiObject);
+
 #define OSCreateIndeterminateProgressBar(small) OSCreateProgressBar(0, 0, 0, small)
 #define OSCreateSpacer(w, h) OSCreateBlankControl(0, 0, OS_CURSOR_NORMAL, OS_FLAGS_DEFAULT)
 
@@ -1388,6 +1422,12 @@ OS_EXTERN_C void OSListViewReset(OSObject listView);
 OS_EXTERN_C void OSListViewInvalidate(OSObject listView, uintptr_t index, size_t count);
 OS_EXTERN_C void OSListViewSetColumns(OSObject listView, OSListViewColumn *columns, size_t count);
 
+OS_EXTERN_C void OSSetTabPaneContent(OSObject tabPane, OSObject content);
+OS_EXTERN_C void OSInsertTab(OSObject tabPane, bool end, const char *text, size_t textBytes);
+OS_EXTERN_C void OSRemoveTab(OSObject tabPane, int index);
+OS_EXTERN_C void OSSetActiveTab(OSObject tabPane, int index, bool relative, bool setNotification);
+OS_EXTERN_C void OSChangeTabText(OSObject tabPane, int index, const char *text, size_t textBytes);
+
 OS_EXTERN_C void OSSetScrollbarMeasurements(OSObject _scrollbar, int contentSize, int viewportSize);
 OS_EXTERN_C void OSSetScrollbarPosition(OSObject _scrollbar, int position, bool sendValueChangedNotification);
 OS_EXTERN_C int OSGetScrollbarPosition(OSObject _scrollbar);
@@ -1398,7 +1438,7 @@ OS_EXTERN_C void OSHeapFree(void *address);
 
 OS_EXTERN_C size_t OSCStringLength(const char *string);
 OS_EXTERN_C size_t OSStringLength(const char *string, uint8_t end);
-OS_EXTERN_C void OSCopyMemory(void *destination, void *source, size_t bytes);
+OS_EXTERN_C void OSCopyMemory(void *destination, const void *source, size_t bytes);
 OS_EXTERN_C void OSMoveMemory(void *_start, void *_end, intptr_t amount, bool zeroEmptySpace);
 OS_EXTERN_C void OSCopyMemoryReverse(void *_destination, void *_source, size_t bytes);
 OS_EXTERN_C void OSZeroMemory(void *destination, size_t bytes);

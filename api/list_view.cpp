@@ -1456,14 +1456,6 @@ static OSCallbackResponse ProcessListViewMessage(OSObject listView, OSMessage *m
 		}
 	} 
 
-#if 1
-	for (uintptr_t i = 0; i < list->visibleItemCount; i++) {
-		if (list->visibleItems[i].index != list->firstVisibleItem + i) {
-			OSCrashProcess(OS_FATAL_ERROR_UNKNOWN);
-		}
-	}
-#endif
-
 	return response;
 }
 

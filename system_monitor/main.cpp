@@ -17,6 +17,9 @@
 #define COMMAND_UPDATE_SPEED_NORMAL (7)
 #define COMMAND_UPDATE_SPEED_LOW (8)
 
+#define TAB_PROCESSES (0)
+#define TAB_RESOURCES (1)
+
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/Programs/System Monitor/manifest.h"
 
@@ -50,7 +53,10 @@ struct Instance {
 		 newTaskTextbox,
 		 endProcessConfirmDialog,
 		 optionsWindow,
-		 instanceObject;
+		 instanceObject,
+		 tabProcesses,
+		 tabResources,
+		 tabPane;
 
 	uintptr_t sortColumn;
 	bool sortDescending;
@@ -337,9 +343,8 @@ OSCallbackResponse ProcessTaskListingNotification(OSNotification *notification) 
 OSCallbackResponse DestroyInstance(OSNotification *notification) {
 	if (notification->type != OS_NOTIFICATION_WINDOW_CLOSE) return OS_CALLBACK_NOT_HANDLED;
 
-	// TODO Don't rely on hardcoded paths.
 	OSNodeInformation node;
-	OSError error = OSOpenNode(OSLiteral("/Programs/System Monitor/Configuration.txt"), OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS, &node);
+	OSError error = OSOpenNode(OSLiteral("Configuration.txt"), OS_OPEN_NODE_WRITE_ACCESS | OS_OPEN_NODE_RESIZE_ACCESS, &node);
 	size_t length;
 
 	if (error == OS_SUCCESS) {
@@ -477,6 +482,22 @@ void ParseConfiguration(Token attribute, Token section, Token name, Token value,
 	}
 }
 
+OSCallbackResponse ProcessTabPaneMessage(OSNotification *notification) {
+	if (notification->type == OS_NOTIFICATION_ACTIVE_TAB_CHANGED) {
+		if (notification->activeTabChanged.newIndex == TAB_PROCESSES) {
+			OSSetTabPaneContent(instance.tabPane, instance.tabProcesses);
+		} else if (notification->activeTabChanged.newIndex == TAB_RESOURCES) {
+			OSSetTabPaneContent(instance.tabPane, instance.tabResources);
+		}
+
+		return OS_CALLBACK_HANDLED;
+	} else if (notification->type == OS_NOTIFICATION_NEW_TAB) {
+		OSInsertTab(instance.tabPane, 0, OSLiteral("New tab"));
+	}
+
+	return OS_CALLBACK_NOT_HANDLED;
+}
+
 void Instance::Initialise() {
 	createdInstance = true;
 
@@ -486,9 +507,8 @@ void Instance::Initialise() {
 	instance.showEndProcessConfirmationDialog = true;
 
 	{
-		// TODO Don't rely on hardcoded paths.
 		size_t fileSize;
-		char *file = (char *) OSReadEntireFile(OSLiteral("/Programs/System Monitor/Configuration.txt"), &fileSize); 
+		char *file = (char *) OSReadEntireFile(OSLiteral("Configuration.txt"), &fileSize); 
 
 		if (file) {
 			ParseManifest(file, ParseConfiguration);
@@ -510,11 +530,24 @@ void Instance::Initialise() {
 
 	OSObject content = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
 	OSAddGrid(rootLayout, 0, 1, content, OS_CELL_FILL);
+
+	instance.tabPane = OSCreateTabPane(OS_FLAGS_DEFAULT);
+	instance.tabProcesses = OSCreateGrid(1, 1, OS_GRID_STYLE_TAB_PANE_CONTENT);
+	instance.tabResources = OSCreateGrid(1, 1, OS_GRID_STYLE_TAB_PANE_CONTENT);
+	OSSetObjectNotificationCallback(instance.tabPane, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTabPaneMessage, nullptr));
+
+	OSSetTabPaneContent(instance.tabPane, instance.tabProcesses);
+	OSAddGrid(content, 0, 0, instance.tabPane, OS_CELL_FILL);
+
+	OSInsertTab(instance.tabPane, true, OSLiteral("Processes"));
+	OSInsertTab(instance.tabPane, true, OSLiteral("Resources"));
+	OSSetActiveTab(instance.tabPane, 0, false, false);
+
 	taskListing = OSCreateListView(OS_CREATE_LIST_VIEW_SINGLE_SELECT | OS_CREATE_LIST_VIEW_CONSTANT_HEIGHT 
 			| OS_CREATE_LIST_VIEW_BORDER | OS_CREATE_LIST_VIEW_SORTABLE, OS_LIST_VIEW_ITEM_HEIGHT_DEFAULT);
 	OSListViewSetColumns(taskListing, taskListingColumns, sizeof(taskListingColumns) / sizeof(taskListingColumns[0]));
-	OSAddControl(content, 0, 0, taskListing, OS_CELL_FILL);
 	OSSetObjectNotificationCallback(taskListing, OS_MAKE_NOTIFICATION_CALLBACK(ProcessTaskListingNotification, nullptr));
+	OSAddControl(instance.tabProcesses, 0, 0, taskListing, OS_CELL_FILL);
 
 	OSObject statusBar = OSCreateGrid(2, 1, OS_GRID_STYLE_STATUS_BAR);
 	OSAddGrid(rootLayout, 0, 2, statusBar, OS_CELL_H_FILL);
