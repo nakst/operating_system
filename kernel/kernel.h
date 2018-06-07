@@ -29,6 +29,11 @@
 #define LOW_MEMORY_MAP_START (0xFFFFFF0000000000)
 #endif
 
+struct UniqueIdentifier {
+	// Don't mess with this structure, it's used in filesystems.
+	uint8_t d[16];
+};
+
 enum LogLevel {
 	LOG_NONE,
 	LOG_VERBOSE,
@@ -40,12 +45,14 @@ enum LogLevel {
 void KernelLog(LogLevel level, const char *format, ...);
 void KernelPanic(const char *format, ...);
 void Print(const char *format, ...);
+#define OSPrint Print
 
 #include "../api/os.h"
 #define Defer(x) OSDefer(x)
 #define CF(x) x
 #include "../api/common.cpp"
 #include "../api/linked_list.cpp"
+#include "../kernel/hash_table.cpp"
 
 extern "C" void ProcessorDisableInterrupts();
 extern "C" void ProcessorEnableInterrupts();
@@ -173,11 +180,6 @@ struct CPULocalStorage {
 #define MAX_ASYNC_TASKS (256)
 	volatile AsyncTask asyncTasks[MAX_ASYNC_TASKS];
 	volatile uint8_t asyncTasksRead, asyncTasksWrite;
-};
-
-struct UniqueIdentifier {
-	// Don't mess with this structure, it's used in filesystems.
-	uint8_t d[16];
 };
 
 struct ConstantBuffer {

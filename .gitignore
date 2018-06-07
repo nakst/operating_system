@@ -38,6 +38,7 @@ ports/musl/VERSION
 ports/musl/WHATSNEW
 ports/musl/config.mak
 ports/musl/libm.a
+ports/tcc
 
 # Output drives
 drive

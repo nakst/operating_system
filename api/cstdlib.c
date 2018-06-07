@@ -1320,7 +1320,7 @@ struct PosixFile {
 
 static void InitialiseCStandardLibrary() {
 	// OSPrint("starting musl libc\n");
-	strcpy(currentWorkingDirectory, "/__prefix");
+	strcpy(currentWorkingDirectory, "");
 	__libc_start_main(nullptr, 1, argv);
 }
 
@@ -1334,6 +1334,16 @@ static char *FixFilename(char *filename) {
 		result = filename + OSCStringLength("/__prefix/");
 	} else if (0 == memcmp(filename, OSLiteral("/__user_storage/"))) {
 		result = filename + OSCStringLength("/__user_storage/");
+	} else if (0 == memcmp(filename, OSLiteral("/usr/local/lib/tcc/"))) {
+		result = filename + OSCStringLength("/usr/local/lib/tcc/");
+	} else if (0 == memcmp(filename, OSLiteral("/usr/include"))) {
+		strcpy(fixedFilename, "/Programs/C Standard Library/Headers");
+		strcat(fixedFilename, filename + OSCStringLength("/usr/include"));
+		result = (fixedFilename);
+	} else if (0 == memcmp(filename, OSLiteral("/usr/lib64"))) {
+		strcpy(fixedFilename, "/Programs/C Standard Library");
+		strcat(fixedFilename, filename + OSCStringLength("/usr/lib64"));
+		result = (fixedFilename);
 	} else if (0 == strcmp(filename, "/__prefix")) {
 		result = (char *) "";
 	} else if (0 == strcmp(filename, "/__user_storage")) {
@@ -1348,7 +1358,7 @@ static char *FixFilename(char *filename) {
 	} else if (filename[0] != '/') {
 		strcpy(fixedFilename, currentWorkingDirectory);
 		int x = currentWorkingDirectory[strlen(currentWorkingDirectory) - 1] == '/' ? 1 : 0;
-		if (!x) strcat(fixedFilename, "/");
+		if (!x && currentWorkingDirectory[0]) strcat(fixedFilename, "/");
 		strcat(fixedFilename, filename);
 		result = (fixedFilename);
 	} else {
@@ -1368,7 +1378,7 @@ void PrintOutput(char *string, size_t length) {
 		OSPrint("\t%d: %X, %c\n", i, string[i], string[i]);
 	}
 #else
-#if 0
+#if 1
 	OSPrintDirect(string, length);
 #else
 	OSMessage m;
@@ -1454,6 +1464,8 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 		} break;
 
 		case SYS_read: {
+			if (!a3) return 0;
+
 			if (a1 == 0) {
 				// OSPrint("read stdin, max %d\n", a3);
 				OSMessage m;
@@ -1466,6 +1478,8 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			} else if (a1 > 2) {
 				PosixFile *file = GET_POSIX_FILE(a1);
 				uint64_t read = 0;
+
+				// OSPrint("read, %x %d %d %x\n", a1, file->offset, a3, a2);
 
 				intptr_t x = OSReadFileSync(file->handle, file->offset, a3, (void *) a2); 
 				if (x >= 0) read += x;
@@ -1487,6 +1501,8 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 		} break;
 
 		case SYS_write: {
+			if (!a3) return 0;
+
 			if (a1 == 1 || a1 == 2) {
 				PrintOutput((char *) a2, a3);
 				return a3;
@@ -1500,6 +1516,8 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 					OSRefreshNodeInformation(&node);
 					file->offset = node.fileSize;
 				}
+
+				// OSPrint("write, %x %d %d %x\n", a1, file->offset, a3, a2);
 
 				intptr_t x = OSWriteFileSync(file->handle, file->offset, a3, (void *) a2); 
 				if (x >= 0) written += x;
@@ -1524,6 +1542,37 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 				}
 
 				return s;
+			} else if (a1 > 2) {
+				PosixFile *file = GET_POSIX_FILE(a1);
+				uint64_t written = 0;
+
+				if (file->seekToEndBeforeWrite) {
+					OSNodeInformation node;
+					node.handle = file->handle;
+					OSRefreshNodeInformation(&node);
+					file->offset = node.fileSize;
+				}
+
+				struct iovec *buffers = (struct iovec *) a2;
+
+				for (intptr_t i = 0; i < a3; i++) {
+					if (!buffers[i].iov_len) continue;
+					// OSPrint("write(v), %x %d %d %x\n", a1, file->offset, buffers[i].iov_len, buffers[i].iov_base);
+					intptr_t x = OSWriteFileSync(file->handle, file->offset, buffers[i].iov_len, buffers[i].iov_base); 
+					if (x < 0) break;
+					written += x;
+					file->offset += buffers[i].iov_len;
+
+#if 0
+					for (uintptr_t j = 0; j < buffers[i].iov_len; j++) {
+						OSPrint("%X, ", ((uint8_t *) buffers[i].iov_base)[j]);
+					}
+
+					OSPrint("\n");
+#endif
+				}
+
+				return written;
 			} else {
 				OSPrint("Unsupported writev %d [%x, %x, %x, %x, %x, %x]\n", n, a1, a2, a3, a4, a5, a6);
 				OSCrashProcess(OS_FATAL_ERROR_UNKNOWN_SYSCALL);
@@ -1636,6 +1685,8 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			OSError error;
 			OSNodeInformation node;
 
+			OSPrint("attempting to stat %z (%z)\n", filename, (char *) a1);
+
 			error = OSOpenNode(filename, strlen(filename), OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &node);
 
 			if (error == OS_ERROR_INCORRECT_NODE_TYPE) {
@@ -1699,7 +1750,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			if (a2 & O_DIRECTORY) flags |= OS_OPEN_NODE_DIRECTORY;
 			if (a2 & O_TRUNC) flags |= OS_OPEN_NODE_RESIZE_ACCESS;
 
-			// OSPrint("attempting to open %z (%z) with flags %x\n", filename, (char *) a1, flags);
+			OSPrint("attempting to open %z (%z) with flags %x\n", filename, (char *) a1, flags);
 			OSNodeInformation node;
 			OSError error = OSOpenNode(filename, OSCStringLength(filename), flags, &node);
 			// OSPrint("\terror = %x\n", error);
@@ -1733,7 +1784,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 				}
 
 				// OSPrint("\tsuccess!\n");
-				// OSPrint("opened %z [%x]\n", (char *) a1, flags);
+				OSPrint("opened %z for %x\n", (char *) a1, fildes);
 
 				return fildes;
 			}
@@ -1775,6 +1826,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 
 				for (intptr_t i = 0; i < a3; i++) {
 					if (!buffers[i].iov_len) continue;
+					// OSPrint("read(v), %x %d %d %x\n", a1, file->offset, buffers[i].iov_len, buffers[i].iov_base);
 					intptr_t x = OSReadFileSync(file->handle, file->offset, buffers[i].iov_len, buffers[i].iov_base); 
 					if (x < 0) break;
 					read += x;

@@ -143,6 +143,11 @@ DeviceManager deviceManager;
 
 bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, int operation, uint8_t *buffer, 
 		bool alreadyInCorrectPartition, bool freeBuffer, bool makesProgress) {
+#if 0
+	OSPrint("BlockDevice::Access - Packet %x; Offset %d; Count %d; Operation %d; Buffer %x; InCorrectPartition: %d\n",
+			packet, offset, countBytes, operation, buffer, alreadyInCorrectPartition);
+#endif
+
 	if (!packet && freeBuffer) {
 		KernelPanic("BlockDevice::Access - `freeBuffer` set but `packet` was nullptr.\n");
 	}

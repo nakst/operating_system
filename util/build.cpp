@@ -124,6 +124,9 @@ void Compile(bool enableOptimisations) {
 
 	printf("-> Building " Color3 "API" ColorNormal "...\n");
 
+	system("cp api/os.h bin/Programs/C\\ Standard\\ Library/Headers");
+	system("cp ports/freetype/libfreetype.a bin/Programs/C\\ Standard\\ Library");
+
 	system("./manifest_parser api/empty.manifest bin/OS/standard.manifest.h");
 	system("nasm -felf64 api/api.s -o bin/OS/api1.o -Fdwarf");
 	system("nasm -felf64 api/crti.s -o crti.o -Fdwarf");

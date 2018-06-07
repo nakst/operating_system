@@ -76,6 +76,9 @@ uint32_t DISABLE_TEXT_SHADOWS = 1;
 // 	- Toggle buttons.
 // 	- Splitter.
 // 	- Spinner.
+// 	- Graphs.
+// TODO Standard dialogs (pick font/color/file/folder).
+// TODO Tooltips.
 
 struct UIImage {
 	OSRectangle region;

@@ -113,6 +113,11 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 			return 0;
 		}
 
+		OSPrint("FileOffset %x    VirtualAddress %x    SegmentSize %x    DataInFile %x\n",
+				header->fileOffset, header->virtualAddress, header->segmentSize, header->dataInFile);
+
+		segment = (void *) (((uintptr_t) segment) & ~(PAGE_SIZE - 1));
+
 #if 0
 		thisProcess->vmm->lock.Acquire();
 		bool success = thisProcess->vmm->AddRegion((uintptr_t) segment, 
@@ -121,10 +126,14 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 #else
 		header->dataInFile = (header->dataInFile + 0xFFF) & ~0xFFF;
 		header->segmentSize = (header->segmentSize + 0xFFF) & ~0xFFF;
+
 		void *success = thisProcess->vmm->Allocate("Executable", header->dataInFile, VMM_MAP_CHUNKS, VMM_REGION_SHARED,
 				header->fileOffset, VMM_REGION_FLAG_CACHABLE | VMM_REGION_FLAG_READ_ONLY, &((Node *) object)->region, (uintptr_t) segment);
-		if (success && header->segmentSize - header->dataInFile) success = thisProcess->vmm->Allocate("Executable", header->segmentSize - header->dataInFile, VMM_MAP_LAZY, VMM_REGION_STANDARD,
+
+		if (success && header->segmentSize - header->dataInFile) {
+			success = thisProcess->vmm->Allocate("Executable", header->segmentSize - header->dataInFile, VMM_MAP_LAZY, VMM_REGION_STANDARD,
 				0, VMM_REGION_FLAG_CACHABLE, nullptr, (uintptr_t) segment + header->dataInFile);
+		}
 #endif
 
 		if (!success) {
@@ -132,7 +141,7 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 		}
 
 #if 0
-		bytesRead = OSReadFileSync(node.handle, header->fileOffset, header->dataInFile, (uint8_t *) segment);
+		bytesRead = OSReadFileSync(node.handle, header->fileOffset, header->dataInFile, (uint8_t *) segment + (header->virtualAddress - (uintptr_t) segment));
 		if (bytesRead != header->dataInFile) return 0;
 #endif
 	}

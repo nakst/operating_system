@@ -6,8 +6,11 @@
 #include <stdint.h>
 #include <limits.h>
 #include <stddef.h>
-#include <stdarg.h>
 #include <stdbool.h>
+
+#ifndef OS_NO_STDARG
+#include <stdarg.h>
+#endif
 
 #ifdef __cplusplus
 #define OS_EXTERN_C extern "C"
@@ -1470,13 +1473,13 @@ OS_EXTERN_C uint64_t OSProcessorReadTimeStamp();
 
 #ifndef OS_NO_CSTDLIB
 #include "cstdlib.h"
-#endif
 
 #define STBI_NO_STDIO
 #define STBI_ONLY_PNG
 #define STBI_ONLY_JPEG
 #define STBI_NO_LINEAR
 #include "stb_image.h"
+#endif
 #endif
 
 OS_EXTERN_C void ProgramEntry(void); 

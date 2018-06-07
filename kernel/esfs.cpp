@@ -673,6 +673,7 @@ bool EsFSVolume::GrowDataStream(EsFSAttributeFileData *data, uint64_t newSize, b
 		if (newSize <= ESFS_DIRECT_BYTES) {
 			// The stream still fits into the attribute.
 			if (clearNewBlocks) ZeroMemory(data->direct + oldSize, newSize - oldSize);
+			data->size = newSize;
 			return true;
 		}
 

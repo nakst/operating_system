@@ -5,7 +5,7 @@
 #include <ctype.h>
 
 // #define WALLPAPER ("/OS/Sample Images/Sunset.jpg")
-#define FIRST_PROGRAM ("system monitor")
+#define FIRST_PROGRAM ("file manager")
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"
