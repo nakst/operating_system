@@ -148,7 +148,7 @@ Node *EsFSVolume::LoadRootDirectory() {
 
 	uint64_t temp = 0;
 	Node *node = vfs.RegisterNodeHandle(OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true), temp, 
-			((EsFSFileEntry *) root)->identifier, nullptr, OS_NODE_DIRECTORY, true);
+			((EsFSFileEntry *) root)->identifier, nullptr, OS_NODE_DIRECTORY, true, nullptr, 0);
 	EsFSFile *eFile = (EsFSFile *) (node + 1);
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) (eFile + 1);
 
@@ -998,7 +998,8 @@ void EsFSVolume::Enumerate(Node *_directory, OSDirectoryChild *childBuffer) {
 	}
 }
 
-Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_directory, uint64_t &flags, bool &checkPresenceOnly) {
+Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_directory, 
+		uint64_t &flags, bool &checkPresenceOnly) {
 	EsFSFileEntry *fileEntry = (EsFSFileEntry *) ((EsFSFile *) (_directory + 1) + 1);
 
 	EsFSAttributeFileDirectory *directory = (EsFSAttributeFileDirectory *) FindAttribute(ESFS_ATTRIBUTE_FILE_DIRECTORY, fileEntry + 1);
@@ -1105,7 +1106,7 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 
 		// If the file is already open, return that file.
 		if ((node = vfs.FindOpenNode(returnValue->identifier, _directory->filesystem))) {
-			return vfs.RegisterNodeHandle(node, flags, returnValue->identifier, _directory, type, false);
+			return vfs.RegisterNodeHandle(node, flags, returnValue->identifier, _directory, type, false, nullptr, 0);
 		}
 
 		node = (Node *) OSHeapAllocate(sizeof(Node) + sizeof(EsFSFile) + fileEntryLength, true);
@@ -1138,7 +1139,7 @@ Node *EsFSVolume::SearchDirectory(char *searchName, size_t nameLength, Node *_di
 		eFile->offsetIntoBlock = (uintptr_t) returnValue - (uintptr_t) directoryBuffer;
 		eFile->offsetIntoBlock2 = blockPosition;
 
-		if (!vfs.RegisterNodeHandle(node, flags, returnValue->identifier, _directory, type, true)) {
+		if (!vfs.RegisterNodeHandle(node, flags, returnValue->identifier, _directory, type, true, searchName, nameLength)) {
 			OSHeapFree(node);
 			return nullptr;
 		}

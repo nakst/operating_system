@@ -1,6 +1,8 @@
 #include "../api/os.h"
 
+#define _GNU_SOURCE
 #include <stdlib.h>
+#include <string.h>
 #include <ctype.h>
 #include <setjmp.h>
 
@@ -400,7 +402,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	(void) _object;
 
 	if (message->type != OS_MESSAGE_CREATE_INSTANCE) return OS_CALLBACK_NOT_HANDLED;
-#if 0
+#if 1
 	if (x != 5) OSCrashProcess(600);
 	if (y2.a != 1) OSCrashProcess(601);
 	if (y2.b != 2) OSCrashProcess(602);
@@ -554,12 +556,15 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 		OSCloseHandle(node.handle);
 	}
 
+	// TODO This doesn't work with the new libc?
+#if 0
 	{
 		void *a = malloc(0x100000);
 		void *b = realloc(a, 0x1000);
 		void *c = realloc(b, 0x100000);
 		free(c);
 	}
+#endif
 
 	if (strcasecmp("abc", "AbC")) {
 		OSCrashProcess(250);

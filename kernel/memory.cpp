@@ -512,9 +512,11 @@ bool VMM::AddRegion(uintptr_t baseAddress, size_t pageCount, uintptr_t offset, V
 void *VMM::Allocate(const char *reason, size_t size, VMMMapPolicy mapPolicy, VMMRegionType type, uintptr_t offset, unsigned flags, void *object, uintptr_t _baseAddress) {
 	// Print("allocating memory, %d bytes, reason %z, ba = %d\n", size, reason, pmm.pagesAllocated * PAGE_SIZE);
 
+#if 0
 	if (*reason == 'E') {
 		OSPrint("   Size %x     Offset %x     Base %x\n", size, offset, _baseAddress);
 	}
+#endif
 
 	if (!size) return nullptr;
 	size_t pageCount = (((offset & (PAGE_SIZE - 1)) + size - 1) >> PAGE_BITS) + 1;

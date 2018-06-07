@@ -1,3 +1,5 @@
+#define MEMORY_MAPPED_EXECUTABLES
+
 #ifdef IMPLEMENTATION
 
 typedef struct {
@@ -113,12 +115,14 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 			return 0;
 		}
 
+#if 0
 		OSPrint("FileOffset %x    VirtualAddress %x    SegmentSize %x    DataInFile %x\n",
 				header->fileOffset, header->virtualAddress, header->segmentSize, header->dataInFile);
+#endif
 
 		segment = (void *) (((uintptr_t) segment) & ~(PAGE_SIZE - 1));
 
-#if 0
+#ifndef MEMORY_MAPPED_EXECUTABLES
 		thisProcess->vmm->lock.Acquire();
 		bool success = thisProcess->vmm->AddRegion((uintptr_t) segment, 
 				(header->segmentSize / PAGE_SIZE) + 1, 0, VMM_REGION_STANDARD, VMM_MAP_ALL, true, nullptr);
@@ -140,7 +144,7 @@ uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 			return 0;
 		}
 
-#if 0
+#ifndef MEMORY_MAPPED_EXECUTABLES
 		bytesRead = OSReadFileSync(node.handle, header->fileOffset, header->dataInFile, (uint8_t *) segment + (header->virtualAddress - (uintptr_t) segment));
 		if (bytesRead != header->dataInFile) return 0;
 #endif

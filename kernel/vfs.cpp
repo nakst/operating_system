@@ -52,8 +52,7 @@ struct Node {
 	struct Filesystem *filesystem;
 	volatile size_t handles; // Every node handle also implies a handle to its parent.
 
-	struct Node *nextNodeInHashTableSlot;
-	struct Node **pointerToThisNodeInHashTableSlot;
+	HashedItem<Node> item;
 
 	// Must be acquired BEFORE ITS PARENT.
 	Semaphore semaphore; 
@@ -65,6 +64,11 @@ struct Node {
 	LinkedItem<Node> noHandleCacheItem; 
 
 	SharedMemoryRegion region;
+
+	HashedItem<Node> childItem;
+	HashTable<Node> children; // Open child nodes.
+	HashedItem<Node> *childrenStorage[16];
+	uint32_t nameHash;
 };
 
 struct Filesystem {
@@ -93,7 +97,9 @@ struct VFS {
 	Node *OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *error);
 	void CloseNode(Node *node, uint64_t flags);
 
-	Node *RegisterNodeHandle(void *existingNode, uint64_t &flags /*Removes failing access flags*/, UniqueIdentifier identifier, Node *parent, OSNodeType type, bool isNodeNew);
+	Node *RegisterNodeHandle(void *existingNode, uint64_t &flags /*Removes failing access flags*/, 
+			UniqueIdentifier identifier, Node *parent, OSNodeType type, bool isNodeNew,
+			char *name, size_t nameBytes /*Used to compute the hash for the child hash table*/);
 	Node *FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem);
 
 	void NodeMapped(Node *node);
@@ -108,8 +114,9 @@ struct VFS {
 
 	bool foundBootFilesystem;
 
-#define NODE_HASH_TABLE_BITS (12)
-	Node *nodeHashTable[1 << NODE_HASH_TABLE_BITS];
+	HashTable<Node> nodeHashTable; // Hash table based on the unique identifier of the node.
+	HashedItem<Node> *nodeHashTableStorage[4096];
+
 	Mutex nodeHashTableMutex; // Required to changed node handle count.
 };
 
@@ -248,6 +255,9 @@ OSError Node::Move(Node *newDirectory, char *newName, size_t newNameLength) {
 
 	if (result == OS_SUCCESS) {
 		parent = newDirectory;
+
+		childItem.Remove();
+		parent->children.Insert(&childItem, CalculateCRC32(newName, newNameLength));
 	}
 
 	return result;
@@ -268,7 +278,7 @@ void Node::Sync() {
 		} break;
 
 		default: {
-			// The filesystem does not need to the do anything.
+			// The filesystem does not need to do anything.
 		} break;
 	}
 }
@@ -427,6 +437,9 @@ void VFS::Initialise() {
 	if (!bootedFromEsFS) {
 		KernelPanic("VFS::Initialise - The operating system was not booted from an EssenceFS volume.\n");
 	}
+
+	nodeHashTable.table = nodeHashTableStorage;
+	nodeHashTable.tableSize = 4096;
 }
 
 void VFS::NodeUnmapped(Node *node) {
@@ -468,13 +481,8 @@ void VFS::CloseNode(Node *node, uint64_t flags) {
 			}
 
 			// Remove the node from the hash table.
-			{
-				if (node3->nextNodeInHashTableSlot) {
-					node3->nextNodeInHashTableSlot->pointerToThisNodeInHashTableSlot = node3->pointerToThisNodeInHashTableSlot;
-				}
-
-				*node3->pointerToThisNodeInHashTableSlot = node3->nextNodeInHashTableSlot;
-			}
+			node3->item.Remove();
+			node3->childItem.Remove();
 		}
 	}
 
@@ -524,7 +532,7 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 
 	Filesystem *filesystem = mountpoint->filesystem;
 	uint64_t directoryAccess = DIRECTORY_ACCESS;
-	Node *node = RegisterNodeHandle(mountpoint->root, directoryAccess, mountpoint->root->identifier, nullptr, OS_NODE_DIRECTORY, false);
+	Node *node = RegisterNodeHandle(mountpoint->root, directoryAccess, mountpoint->root->identifier, nullptr, OS_NODE_DIRECTORY, false, nullptr, 0);
 
 	if (!node) {
 		*error = OS_ERROR_PATH_NOT_TRAVERSABLE;
@@ -567,14 +575,53 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 			KernelPanic("VFS::OpenFile - Incorrect node filesystem.\n");
 		}
 
-		switch (filesystem->type) {
-			case FILESYSTEM_ESFS: {
-				node = EsFSScan(entry, entryLength, parent, isFinalNode ? flags : directoryAccess);
-			} break;
+		Node *fastNode = nullptr;
 
-			default: {
-				KernelPanic("VFS::OpenNode - Unimplemented filesystem type %d\n", filesystem->type);
-			} break;
+#if 1
+		// (Fast code path - this can be disabled if desired).
+		if (!secondAttempt) {
+			nodeHashTableMutex.Acquire();
+			Defer(nodeHashTableMutex.Release());
+
+			uint32_t nameHash = CalculateCRC32(entry, entryLength);
+			uint16_t slot = nameHash % parent->children.tableSize;
+			HashedItem<Node> *node = parent->children.table[slot];
+
+			while (node) {
+				Node *data = node->thisItem;
+
+				if (data->nameHash == nameHash && !data->deleted) {
+					if (fastNode) {
+						// Name hash collision, use normal code path.
+						fastNode = nullptr;
+						KernelLog(LOG_WARNING, "VFS::OpenNode - Name hash collision; using slow path.\n");
+						break;
+					}
+
+					fastNode = data;
+				}
+
+				node = node->next;
+			}
+		}
+#endif
+
+		if (fastNode) {
+			// OSPrint("FAST PATH!!!!!!!!!!\n");
+			node = fastNode;
+			vfs.RegisterNodeHandle(node, isFinalNode ? flags : directoryAccess, 
+					node->identifier, parent, node->data.type, false, nullptr, 0);
+		} else {
+			// OSPrint("SLOW PATH :(:(:(\n");
+			switch (filesystem->type) {
+				case FILESYSTEM_ESFS: {
+					node = EsFSScan(entry, entryLength, parent, isFinalNode ? flags : directoryAccess);
+				} break;
+
+				default: {
+					KernelPanic("VFS::OpenNode - Unimplemented filesystem type %d\n", filesystem->type);
+				} break;
+			}
 		}
 
 		if (!node) {
@@ -672,7 +719,8 @@ void VFS::NodeMapped(Node *node) {
 	node->handles++;
 }
 
-Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdentifier identifier, Node *parent, OSNodeType type, bool isNodeNew) {
+Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdentifier identifier, 
+		Node *parent, OSNodeType type, bool isNodeNew, char *name, size_t nameBytes) {
 	if (parent && !parent->filesystem) {
 		KernelPanic("VFS::RegisterNodeHandle - Trying to register a node without a filesystem.\n");
 	}
@@ -731,15 +779,21 @@ Node *VFS::RegisterNodeHandle(void *_existingNode, uint64_t &flags, UniqueIdenti
 
 	existingNode->handles++;
 
-	if (isNodeNew && parent) {
-		existingNode->filesystem = parent->filesystem;
-		existingNode->parent = parent; // The handle to the parent will be closed when the file is closed.
+	if (isNodeNew) {
+		existingNode->children.table = existingNode->childrenStorage;
+		existingNode->children.tableSize = 16;
 
-		uint16_t slot = ((uint16_t) identifier.d[0] + ((uint16_t) identifier.d[1] << 8)) & 0xFFF;
-		existingNode->nextNodeInHashTableSlot = nodeHashTable[slot];
-		if (nodeHashTable[slot]) nodeHashTable[slot]->pointerToThisNodeInHashTableSlot = &existingNode->nextNodeInHashTableSlot;
-		nodeHashTable[slot] = existingNode;
-		existingNode->pointerToThisNodeInHashTableSlot = nodeHashTable + slot;
+		if (parent) {
+			existingNode->filesystem = parent->filesystem;
+			existingNode->parent = parent; // The handle to the parent will be closed when the file is closed.
+
+			existingNode->item.thisItem = existingNode;
+			nodeHashTable.Insert(&existingNode->item, CalculateCRC32(&identifier, sizeof(UniqueIdentifier)));
+
+			existingNode->childItem.thisItem = existingNode;
+			existingNode->nameHash = CalculateCRC32(name, nameBytes);
+			parent->children.Insert(&existingNode->childItem, existingNode->nameHash);
+		}
 	}
 
 	return existingNode;
@@ -749,27 +803,29 @@ Node *VFS::FindOpenNode(UniqueIdentifier identifier, Filesystem *filesystem) {
 	nodeHashTableMutex.Acquire();
 	Defer(nodeHashTableMutex.Release());
 
-	uint16_t slot = ((uint16_t) identifier.d[0] + ((uint16_t) identifier.d[1] << 8)) & 0xFFF;
+	uint16_t slot = nodeHashTable.CalculateSlot(&identifier, sizeof(UniqueIdentifier));
 
-	Node *node = nodeHashTable[slot];
+	HashedItem<Node> *node = nodeHashTable.table[slot];
 
-	if (node && node->pointerToThisNodeInHashTableSlot != nodeHashTable + slot) {
+	if (node && node->reference != nodeHashTable.table + slot) {
 		KernelPanic("VFS::FindOpenNode - Broken hash table.\n");
 	}
 
 	while (node) {
-		if (node->filesystem == filesystem && !CompareBytes(&node->identifier, &identifier, sizeof(UniqueIdentifier)) && !node->deleted) {
-			return node;
+		Node *data = node->thisItem;
+
+		if (data->filesystem == filesystem && !CompareBytes(&data->identifier, &identifier, sizeof(UniqueIdentifier)) && !data->deleted) {
+			return data;
 		}
 
-		if (node == node->nextNodeInHashTableSlot) {
+		if (node == node->next) {
 			KernelPanic("VFS::FindOpenNode - Broken hash table.\n");
 		}
 
-		Node **t = &node->nextNodeInHashTableSlot;
-		node = node->nextNodeInHashTableSlot;
+		HashedItem<Node> **t = &node->next;
+		node = node->next;
 
-		if (node && node->pointerToThisNodeInHashTableSlot != t) {
+		if (node && node->reference != t) {
 			KernelPanic("VFS::FindOpenNode - Broken hash table.\n");
 		}
 	}

@@ -1685,7 +1685,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			OSError error;
 			OSNodeInformation node;
 
-			OSPrint("attempting to stat %z (%z)\n", filename, (char *) a1);
+			// OSPrint("attempting to stat %z (%z)\n", filename, (char *) a1);
 
 			error = OSOpenNode(filename, strlen(filename), OS_OPEN_NODE_FAIL_IF_NOT_FOUND, &node);
 
@@ -1750,7 +1750,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 			if (a2 & O_DIRECTORY) flags |= OS_OPEN_NODE_DIRECTORY;
 			if (a2 & O_TRUNC) flags |= OS_OPEN_NODE_RESIZE_ACCESS;
 
-			OSPrint("attempting to open %z (%z) with flags %x\n", filename, (char *) a1, flags);
+			// OSPrint("attempting to open %z (%z) with flags %x\n", filename, (char *) a1, flags);
 			OSNodeInformation node;
 			OSError error = OSOpenNode(filename, OSCStringLength(filename), flags, &node);
 			// OSPrint("\terror = %x\n", error);
@@ -1784,7 +1784,7 @@ long _OSMakeLinuxSystemCall(long n, long a1, long a2, long a3, long a4, long a5,
 				}
 
 				// OSPrint("\tsuccess!\n");
-				OSPrint("opened %z for %x\n", (char *) a1, fildes);
+				// OSPrint("opened %z for %x\n", (char *) a1, fildes);
 
 				return fildes;
 			}
