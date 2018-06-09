@@ -224,7 +224,6 @@ struct Process *desktopProcess;
 #endif
 
 #include "ata.cpp"
-#include "ahci.cpp"
 #include "vfs.cpp"
 #include "esfs.cpp"
 #include "ps2.cpp"

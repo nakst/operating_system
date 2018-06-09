@@ -448,7 +448,7 @@ typedef struct OSRectangle {
 #define OS_MAKE_MESSAGE_CALLBACK(a, b) ((OSMessageCallback){(a),(b)})
 #define OS_MAKE_NOTIFICATION_CALLBACK(a, b) ((OSNotificationCallback){(a),(b)})
 #define OS_MAKE_POINT(x, y) ((OSPoint){(int32_t)(x),(int32_t)(y)})
-#define OS_MAKE_COLOR(x) ((OSColor){(x) >> 16, (x) >> 8, (x)})
+#define OS_MAKE_COLOR(x) ((OSColor){(uint8_t)((x) >> 16), (uint8_t)((x) >> 8), (uint8_t)(x)})
 #define OS_MAKE_COLOR_RGB(r, g, b) ((OSColor){(r),(g),(b)})
 
 typedef struct OSColor {

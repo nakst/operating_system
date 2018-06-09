@@ -364,6 +364,11 @@ bool Surface::Initialise(size_t _resX, size_t _resY, bool createDepthBuffer) {
 	// We probably want to invalidate the whole surface when it is created.
 	InvalidateRectangle(OS_MAKE_RECTANGLE(0, resX, 0, resY));
 
+#if 0
+	// Set the background.
+	FillRectangle(OS_MAKE_RECTANGLE(0, resX, 0, resY), OS_MAKE_COLOR(0xFF0000));
+#endif
+
 	// We created the surface successfully!
 	return true;
 }

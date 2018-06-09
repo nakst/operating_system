@@ -60,7 +60,7 @@ enum IOPacketType {
 	IO_PACKET_ESFS,
 	IO_PACKET_BLOCK_DEVICE_PARTIAL_WRITE,
 	IO_PACKET_BLOCK_DEVICE_FREE_BUFFER,
-	IO_PACKET_AHCI,
+	// IO_PACKET_AHCI,
 	IO_PACKET_ATA,
 };
 
@@ -275,6 +275,7 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 			}
 		} break;
 
+#if 0
 		case BLOCK_DEVICE_DRIVER_AHCI: {
 			if (driverPacket) driverPacket->type = IO_PACKET_AHCI;
 			result = ahci.Access(driverPacket, driveID, offset, countBytes, operation, buffer);
@@ -288,6 +289,7 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 				}
 			}
 		} break;
+#endif
 
 		default: {
 			KernelPanic("BlockDevice::Access - Invalid BlockDeviceDriver %d\n", driver);
@@ -445,6 +447,7 @@ void IOPacket::Complete(OSError error) {
 				OSHeapFree(buffer);
 			} break;
 
+#if 0
 			case IO_PACKET_AHCI: {
 				if (!success) {
 					// The IO request was cancelled.
@@ -471,6 +474,7 @@ void IOPacket::Complete(OSError error) {
 					if (!deallocatePacket) return; 
 				}
 			} break;
+#endif
 
 			case IO_PACKET_ATA: {
 				if (!success) {

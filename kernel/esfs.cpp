@@ -10,7 +10,7 @@ void EsFSEnumerate(Node *directory, OSDirectoryChild *buffer);
 bool EsFSRemove(Node *file);
 bool EsFSMove(Node *file, Node *newDirectory, char *newName, size_t newNameLength);
 
-void EsFSRegister(Device *device);
+void EsFSRegister(struct Device *device);
 
 #ifdef IMPLEMENTATION
 

@@ -1,4 +1,6 @@
 // TODO Maintain focused list view item after sort.
+// TODO Reported kernel memory is incorrect.
+// TODO Resources tab.
 
 #include "../api/os.h"
 

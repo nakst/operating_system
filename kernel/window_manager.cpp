@@ -1,6 +1,6 @@
 #ifndef IMPLEMENTATION
 
-// #define TRANSPARENT_WINDOWS
+#define TRANSPARENT_WINDOWS
 
 #define SCANCODE_KEY_RELEASED (1 << 15)
 #define SCANCODE_KEY_PRESSED  (0 << 15)
@@ -11,8 +11,6 @@
 
 // TODO Better alt-tab with modal windows.
 // TODO Don't send key released messages if the focused window has changed.
-// TODO Prevent accessing the window's surface during a resize.
-// 	-> I think this isn't a problem anymore since we probably lock surfaces during drawing operations?
 
 struct Window {
 	void Update(bool fromUser);
@@ -706,6 +704,7 @@ Window *WindowManager::CreateWindow(Process *process, OSRectangle bounds, OSObje
 		window = (Window *) OSHeapAllocate(sizeof(Window), true);
 		window->surface = (Surface *) OSHeapAllocate(sizeof(Surface), true);
 		window->apiWindow = apiWindow;
+		window->resizing = true;
 		// window->surface->roundCorners = true;
 
 		size_t width = bounds.right - bounds.left;
@@ -793,7 +792,7 @@ bool Window::Move(OSRectangle &rectangle) {
 
 		if (oldWidth != width || oldHeight != height) {
 			surface->Resize(width, height);
-			resizing = true; // Don't draw the window again until the API actually requests it.
+			// resizing = true; // Don't draw the window again until the API actually requests it.
 		}
 
 		surface->InvalidateRectangle(OS_MAKE_RECTANGLE(0, width, 0, height));
@@ -993,7 +992,7 @@ void WindowManager::Redraw(OSPoint position, int width, int height, Window *exce
 void Window::Update(bool fromUser) {
 	mutex.AssertLocked();
 
-	if (fromUser && resizing) {
+	if (!fromUser && resizing) {
 		return;
 	}
 
