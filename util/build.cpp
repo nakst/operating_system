@@ -645,6 +645,9 @@ int main(int argc, char **argv) {
 		} else if (0 == memcmp(l, "python ", 7) || 0 == memcmp(l, "p ", 2)) {
 			sprintf(buffer, "python -c \"print(%s)\"", 1 + strchr(l, ' '));
 			system(buffer);
+		} else if (0 == memcmp(l, "git ", 4)) {
+			sprintf(buffer, "git %s", 1 + strchr(l, ' '));
+			system(buffer);
 		} else if (0 == strcmp(l, "build-cross")) {
 			BuildCrossCompiler(true);
 			SaveConfig();

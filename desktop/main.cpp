@@ -4,7 +4,7 @@
 #include <string.h>
 #include <ctype.h>
 
-// #define WALLPAPER ("/OS/Sample Images/Sunset.jpg")
+#define WALLPAPER ("/OS/Sample Images/Sunset.jpg")
 #define STRINGIZE(x) #x
 #define STRINGIZE_VALUE_OF(x) STRINGIZE(x)
 
