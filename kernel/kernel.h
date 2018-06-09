@@ -52,7 +52,7 @@ void Print(const char *format, ...);
 #define CF(x) x
 #include "../api/common.cpp"
 #include "../api/linked_list.cpp"
-#include "../kernel/hash_table.cpp"
+#include "hash_table.cpp"
 
 extern "C" void ProcessorDisableInterrupts();
 extern "C" void ProcessorEnableInterrupts();

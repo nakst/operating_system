@@ -5,7 +5,8 @@
 #include <ctype.h>
 
 // #define WALLPAPER ("/OS/Sample Images/Sunset.jpg")
-#define FIRST_PROGRAM ("file manager")
+#define STRINGIZE(x) #x
+#define STRINGIZE_VALUE_OF(x) STRINGIZE(x)
 
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/OS/desktop.manifest.h"
@@ -449,7 +450,7 @@ extern "C" void ProgramEntry() {
 	}
 #endif
 
-	OSExecuteProgram(OSLiteral(FIRST_PROGRAM));
+	OSExecuteProgram(OSLiteral(STRINGIZE_VALUE_OF(__OS_FIRST_PROGRAM)));
 
 	OSSetMessageCallback(osSystemMessages, OS_MAKE_MESSAGE_CALLBACK(ProcessSystemMessage, nullptr));
 	OSProcessMessages();

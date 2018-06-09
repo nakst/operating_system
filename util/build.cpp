@@ -2,7 +2,6 @@
 // TODO Merge the manifest header generator into this program.
 // TODO Managing the list of programs.
 // TODO Incremental builds.
-// TODO First program selection.
 
 #include <stdio.h>
 #include <sys/stat.h>
@@ -20,6 +19,8 @@
 bool acceptedLicense;
 char compilerPath[4096];
 
+char firstProgram[128];
+
 char buffer[4096];
 char buffer2[2048];
 
@@ -30,11 +31,11 @@ char buffer2[2048];
 
 const char *programs[] = {
 	"desktop", "desktop/desktop.manifest",
+	"lua", "ports/lua/lua.manifest",
 	"calculator", "",
 	"file_manager", "",
 	"image_viewer", "",
 	"system_monitor", "",
-	"lua", "ports/lua/lua.manifest",
 	// "vim", "ports/vim/vim.manifest",
 	"test", "api/test.manifest",
 };
@@ -110,7 +111,10 @@ void Compile(bool enableOptimisations) {
 #define LinkFlags "-T util/linker_userland64.ld -ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000 -Lbin/OS -lapi -lfreetype -lc -Lports/freetype -L\"bin/Programs/C Standard Library\""
 #define KernelLinkFlags "-ffreestanding -nostdlib -lgcc -g -z max-page-size=0x1000"
 
-	setenv("BuildFlags", BuildFlags, 1);
+	char buildFlags[4096];
+	sprintf(buildFlags, "%s -D__OS_FIRST_PROGRAM=\"%s\" ", BuildFlags, firstProgram);
+
+	setenv("BuildFlags", buildFlags, 1);
 	setenv("LinkFlags", LinkFlags, 1);
 	setenv("Optimise", Optimise, 1);
 
@@ -479,6 +483,10 @@ void LoadConfig(Token attribute, Token section, Token name, Token value, int eve
 
 	if (CompareTokens(name, "accepted_license") && CompareTokens(value, "true")) {
 		acceptedLicense = true;
+	} else if (CompareTokens(name, "first_program")) {
+		value = RemoveQuotes(value);
+		memcpy(firstProgram, value.text, value.bytes);
+		firstProgram[value.bytes] = 0;
 	} else if (CompareTokens(name, "compiler_path")) {
 		char path[65536];
 		char *originalPath = getenv("PATH");
@@ -496,7 +504,7 @@ void LoadConfig(Token attribute, Token section, Token name, Token value, int eve
 
 void SaveConfig() {
 	FILE *file = fopen("build_system_config.dat", "w");
-	fprintf(file, "[build_system]\naccepted_license = true;\n");
+	fprintf(file, "[build_system]\naccepted_license = true;\nfirst_program = \"%s\";\n", firstProgram);
 	if (strlen(compilerPath)) fprintf(file, "compiler_path = \"%s\";\n", compilerPath);
 	fclose(file);
 }
@@ -504,6 +512,8 @@ void SaveConfig() {
 int main(int argc, char **argv) {
 	(void) argc;
 	(void) argv;
+
+	strcpy(firstProgram, "File Manager");
 
 	char *prev = nullptr;
 	printf(Color1 "Essence Build System" ColorNormal "\nPress Ctrl-C to exit.\n");
@@ -587,7 +597,7 @@ int main(int argc, char **argv) {
 			Build(true);
 		} else if (0 == strcmp(l, "test") || 0 == strcmp(l, "t")) {
 			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 4, LOG_NORMAL, false);
+			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "ata")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
@@ -596,22 +606,22 @@ int main(int argc, char **argv) {
 			Run(EMULATOR_BOCHS, 0, 0, 0, 0, false);
 		} else if (0 == strcmp(l, "test-without-smp") || 0 == strcmp(l, "t2")) {
 			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
+			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 1, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "test-opt") || 0 == strcmp(l, "t4")) {
 			Build(true);
-			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 4, LOG_NORMAL, false);
+			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "low-memory")) {
 			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_AHCI, 32, 4, LOG_NORMAL, false);
+			Run(EMULATOR_QEMU, DRIVE_ATA, 32, 4, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "debug") || 0 == strcmp(l, "d")) {
 			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, true);
+			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 1, LOG_NORMAL, true);
 		} else if (0 == strcmp(l, "debug-without-compiling") || 0 == strcmp(l, "d2")) {
 			Build(false, false);
-			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, true);
+			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 1, LOG_NORMAL, true);
 		} else if (0 == strcmp(l, "debug-smp")) {
 			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 4, LOG_NORMAL, true);
+			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, true);
 		} else if (0 == strcmp(l, "vbox") || 0 == strcmp(l, "v")) {
 			Build(true);
 			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
@@ -642,18 +652,37 @@ int main(int argc, char **argv) {
 			return 0;
 		} else if (0 == strcmp(l, "clean")) {
 			system("rm -rf ports/musl/obj ports/musl/lib bin ports/lua/*.o ports/lua/src/*.o");
+		} else if (0 == strcmp(l, "first-program") || 0 == strcmp(l, "fp")) {
+			sprintf(buffer, "The current first program is " Color1 "%s" ColorNormal ".\nEnter the name of the new first program: ", firstProgram);
+			printf(buffer);
+
+			{
+				char *l2 = nullptr;
+				size_t pos;
+				getline(&l2, &pos, stdin);
+
+				if (strlen(l2) > 1) {
+					l2[strlen(l2) - 1] = 0;
+					strcpy(firstProgram, l2);
+					sprintf(buffer, "The new first program is " Color1 "%s" ColorNormal ".\n", firstProgram);
+					printf(buffer);
+					SaveConfig();
+				}
+
+				free(l2);
+			}
 		} else if (0 == strcmp(l, "help") || 0 == strcmp(l, "h") || 0 == strcmp(l, "?")) {
 			printf("(b ) build - Unoptimised build\n");
 			printf("(o ) optimise - Optimised build\n");
-			printf("(t ) test - Qemu (SMP/AHCI/64MB)\n");
+			printf("(t ) test - Qemu (SMP/ATA/64MB)\n");
 			printf("(  ) ata - Qemu (SMP/ATA/64MB)\n");
-			printf("(t2) test-without-smp - Qemu (AHCI/64MB)\n");
-			printf("(t4) test-opt - Qemu (AHCI/64MB/optimised)\n");
+			printf("(t2) test-without-smp - Qemu (ATA/64MB)\n");
+			printf("(t4) test-opt - Qemu (ATA/64MB/optimised)\n");
 			printf("(  ) bochs - Bochs\n");
-			printf("(  ) low-memory - Qemu (SMP/AHCI/32MB)\n");
-			printf("(d ) debug - Qemu (AHCI/64MB/GDB)\n");
-			printf("(d2) debug-without-compiling - Qemu (AHCI/64MB/GDB)\n");
-			printf("(  ) debug-smp - Qemu (AHCI/64MB/GDB/SMP)\n");
+			printf("(  ) low-memory - Qemu (SMP/ATA/32MB)\n");
+			printf("(d ) debug - Qemu (ATA/64MB/GDB)\n");
+			printf("(d2) debug-without-compiling - Qemu (ATA/64MB/GDB)\n");
+			printf("(  ) debug-smp - Qemu (ATA/64MB/GDB/SMP)\n");
 			printf("(v ) vbox - VirtualBox (optimised)\n");
 			printf("(  ) vbox-without-opt - VirtualBox (unoptimised)\n");
 			printf("(x ) exit - Exit the build system.\n");
@@ -661,6 +690,7 @@ int main(int argc, char **argv) {
 			printf("(l ) lua - Execute a Lua expression.\n");
 			printf("(p ) python - Execute a Lua expression.\n");
 			printf("(c ) compile - Compile the kernel and programs.\n");
+			printf("(fp) first-program - Set the first program to run in the OS (local).\n");
 			printf("(  ) reset-config - Reset the build system's config file.\n");
 			printf("(  ) build-cross - Build a GCC cross compiler for building the OS.\n");
 			printf("(  ) clean - Remove all build files.\n");
