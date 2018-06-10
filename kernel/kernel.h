@@ -203,6 +203,8 @@ UniqueIdentifier installationID; // The identifier of this OS installation, give
 
 struct Process *desktopProcess;
 
+void WaitMicroseconds(uint64_t mcs);
+
 #endif
 
 #include "bitset.cpp"
@@ -224,6 +226,7 @@ struct Process *desktopProcess;
 #endif
 
 #include "ata.cpp"
+#include "ahci.cpp"
 #include "vfs.cpp"
 #include "esfs.cpp"
 #include "ps2.cpp"
@@ -233,5 +236,11 @@ struct Process *desktopProcess;
 #include "syscall.cpp"
 
 #ifdef IMPLEMENTATION
+void WaitMicroseconds(uint64_t mcs) {
+	uint64_t start = ProcessorReadTimeStamp();
+	uint64_t end = start + mcs * (acpi.timestampTicksPerMs / 1000);
+	while (ProcessorReadTimeStamp() < end);
+}
+
 #include "../api/syscall.cpp"
 #endif

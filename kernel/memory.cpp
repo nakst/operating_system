@@ -42,6 +42,7 @@ struct PMM {
 	uintptr_t AllocatePage(bool zeroPage); 
 	uintptr_t AllocateContiguous64KB();
 	uintptr_t AllocateContiguous128KB();
+	void FreeContiguous(uintptr_t address, size_t bytes);
 	void FreePage(uintptr_t address, bool bypassStack = false);
 	void ZeroPages();
 	void Initialise();
@@ -1267,6 +1268,20 @@ bool HandlePageFault(uintptr_t page, bool write) {
 	}
 }
 #endif
+
+void PMM::FreeContiguous(uintptr_t address, size_t bytes) {
+	lock.Acquire();
+
+	if (bytes & (PAGE_SIZE - 1)) {
+		KernelPanic("PMM::FreeContiguous - Excepted bytes to be a multiple of PAGE_SIZE.\n");
+	}
+
+	for (uintptr_t i = 0; i < bytes / PAGE_SIZE; i++) {
+		FreePage(address + i * PAGE_SIZE);
+	}
+
+	lock.Release();
+}
 
 uintptr_t PMM::AllocateContiguous64KB() {
 	lock.Acquire();

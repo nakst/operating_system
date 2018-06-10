@@ -607,6 +607,9 @@ int main(int argc, char **argv) {
 		} else if (0 == strcmp(l, "test-without-smp") || 0 == strcmp(l, "t2")) {
 			Build(false);
 			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 1, LOG_NORMAL, false);
+		} else if (0 == strcmp(l, "test-ahci") || 0 == strcmp(l, "t3")) {
+			Build(false);
+			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "test-opt") || 0 == strcmp(l, "t4")) {
 			Build(true);
 			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
@@ -680,6 +683,7 @@ int main(int argc, char **argv) {
 			printf("(t ) test - Qemu (SMP/ATA/64MB)\n");
 			printf("(  ) ata - Qemu (SMP/ATA/64MB)\n");
 			printf("(t2) test-without-smp - Qemu (ATA/64MB)\n");
+			printf("(t3) test-ahci - Qemu (AHCI/64MB)\n");
 			printf("(t4) test-opt - Qemu (ATA/64MB/optimised)\n");
 			printf("(  ) bochs - Bochs\n");
 			printf("(  ) low-memory - Qemu (SMP/ATA/32MB)\n");

@@ -8,6 +8,8 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/Programs/Image Viewer/manifest.h"
 
+#include <stdlib.h>
+
 // TODO Be able to open the image viewer from the file manager.
 
 // TODO Make the zoom slider's range easier to use.
@@ -304,7 +306,7 @@ void Instance::Initialise(char *path, size_t pathBytes, OSMessage *message) {
 
 		OSUnmapObject(bitmap);
 		OSCloseHandle(buffer.handle);
-		OSHeapFree(image);
+		free(image);
 
 		zoom = 1;
 	}

@@ -21,6 +21,8 @@ struct PCIDevice {
 	void WriteBAR8(uintptr_t index, uintptr_t offset, uint8_t value);
 	uint8_t ReadBAR8(uintptr_t index, uintptr_t offset);
 
+	uint32_t deviceID;
+
 	uint8_t classCode, subclassCode, progIF;
 	uint8_t bus, device, function;
 
@@ -29,6 +31,8 @@ struct PCIDevice {
 
 	PCIDeviceType type;
 };
+
+// TODO WaitMicroseconds(10) for each of these?
 
 uint8_t PCIDevice::ReadBAR8(uintptr_t index, uintptr_t offset) {
 	uint32_t baseAddress = baseAddresses[index];
@@ -222,6 +226,8 @@ void PCI::Enumerate() {
 						pciDevice->interruptPin = (interruptInformation >> 8) & 0xFF;
 						pciDevice->interruptLine = (interruptInformation >> 0) & 0xFF;
 
+						pciDevice->deviceID = ReadConfig(bus, device, function, 0);
+
 						for (int i = 0; i < 6; i++) {
 							pciDevice->baseAddresses[i] = ReadConfig(bus, device, function, 0x10 + 4 * i);
 						}
@@ -252,14 +258,12 @@ void PCI::Enumerate() {
 				ATARegisterController(device);
 			} break;
 
-#if 0
 			case PCI_DEVICE_TYPE_AHCI: {
 				// Enable busmastering DMA and interrupts.
 				uint32_t previousCommand = ReadConfig(device->bus, device->device, device->function, 4);
 				WriteConfig(device->bus, device->device, device->function, 4, ((1 << 2) | previousCommand) & ~(1 << 10));
 				AHCIRegisterController(device);
 			} break;
-#endif
 
 			default: {
 			} break;
