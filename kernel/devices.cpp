@@ -60,7 +60,7 @@ enum IOPacketType {
 	IO_PACKET_ESFS,
 	IO_PACKET_BLOCK_DEVICE_PARTIAL_WRITE,
 	IO_PACKET_BLOCK_DEVICE_FREE_BUFFER,
-	// IO_PACKET_AHCI,
+	IO_PACKET_AHCI,
 	IO_PACKET_ATA,
 };
 
@@ -275,10 +275,9 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 			}
 		} break;
 
-#if 0
 		case BLOCK_DEVICE_DRIVER_AHCI: {
 			if (driverPacket) driverPacket->type = IO_PACKET_AHCI;
-			result = ahci.Access(driverPacket, driveID, offset, countBytes, operation, buffer);
+			result = AHCIAccess(driverPacket, driveID, offset, countBytes, operation, buffer);
 
 			if (driverPacket) {
 				if (result) {
@@ -289,7 +288,6 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 				}
 			}
 		} break;
-#endif
 
 		default: {
 			KernelPanic("BlockDevice::Access - Invalid BlockDeviceDriver %d\n", driver);
@@ -447,17 +445,17 @@ void IOPacket::Complete(OSError error) {
 				OSHeapFree(buffer);
 			} break;
 
-#if 0
 			case IO_PACKET_AHCI: {
 				if (!success) {
 					// The IO request was cancelled.
 
 					bool deallocatePacket = true;
-
-					ahci.mutex.Acquire();
+					ahciBlockedPacketsMutex.Acquire();
 
 					if (driverState == IO_PACKET_DRIVER_BLOCKING) {
-						ahci.RemoveBlockingPacket(this);
+						AHCIBlockedOperation *op = (AHCIBlockedOperation *) driverTemp;
+						op->item.list->Remove(&op->item);
+						OSHeapFree(op);
 					} else if (driverState == IO_PACKET_DRIVER_ISSUED) {
 						// We need to wait for the driver to finish with this packet.
 						// They will send a Complete() when it is done.
@@ -469,12 +467,10 @@ void IOPacket::Complete(OSError error) {
 						// TODO Add the block to a damaged list in the filesystem driver.
 					}
 
-					ahci.mutex.Release();
-
+					ahciBlockedPacketsMutex.Release();
 					if (!deallocatePacket) return; 
 				}
 			} break;
-#endif
 
 			case IO_PACKET_ATA: {
 				if (!success) {
@@ -486,6 +482,7 @@ void IOPacket::Complete(OSError error) {
 					if (driverState == IO_PACKET_DRIVER_BLOCKING) {
 						ATABlockedOperation *op = (ATABlockedOperation *) driverTemp;
 						op->item.list->Remove(&op->item);
+						OSHeapFree(op);
 					} else if (driverState == IO_PACKET_DRIVER_ISSUED) {
 						// We need to wait for the driver to finish with this packet.
 						// They will send a Complete() when it is done.

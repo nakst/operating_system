@@ -618,7 +618,7 @@ int main(int argc, char **argv) {
 			Run(EMULATOR_QEMU, DRIVE_ATA, 32, 4, LOG_NORMAL, false);
 		} else if (0 == strcmp(l, "debug") || 0 == strcmp(l, "d")) {
 			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 1, LOG_NORMAL, true);
+			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, true);
 		} else if (0 == strcmp(l, "debug-without-compiling") || 0 == strcmp(l, "d2")) {
 			Build(false, false);
 			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 1, LOG_NORMAL, true);
@@ -687,7 +687,7 @@ int main(int argc, char **argv) {
 			printf("(t4) test-opt - Qemu (ATA/64MB/optimised)\n");
 			printf("(  ) bochs - Bochs\n");
 			printf("(  ) low-memory - Qemu (SMP/ATA/32MB)\n");
-			printf("(d ) debug - Qemu (ATA/64MB/GDB)\n");
+			printf("(d ) debug - Qemu (AHCI/64MB/GDB)\n");
 			printf("(d2) debug-without-compiling - Qemu (ATA/64MB/GDB)\n");
 			printf("(  ) debug-smp - Qemu (ATA/64MB/GDB/SMP)\n");
 			printf("(v ) vbox - VirtualBox (optimised)\n");

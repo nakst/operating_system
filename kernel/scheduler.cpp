@@ -1529,7 +1529,7 @@ void Timer::Set(uint64_t triggerInMs, bool autoReset, AsyncTaskCallback _callbac
 	Defer(scheduler.lock.Release());
 
 	if (item.list) {
-		KernelPanic("Timer::Set - Setting a timer that hasn't been reset.");
+		KernelPanic("Timer::Set - Setting a timer that hasn't been reset.\n");
 	}
 
 	event.Reset();
