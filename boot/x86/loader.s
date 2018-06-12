@@ -1,6 +1,9 @@
 [bits 16]
 [org 0x1000]
 
+; WARNING:
+; We seemed to have reached the size limit for this file.
+
 ; This is missing any filesystem specific macros.
 %define vesa_info 0x7000
 %define os_installation_identifier 0x7FF0
@@ -35,37 +38,6 @@ check_pci:
 	jc	error
 	or	ah,ah
 	jnz	error
-
-enable_video_mode:
-	; Uncomment to disable video mode setting.
-	; jmp	check_cpuid
-
-	; TODO Proper video mode checking/selection.
-	mov	ax,vesa_info >> 4
-	mov	es,ax
-	xor	di,di
-	mov	ax,0x4F01
-;%define video_mode 274
-; %define video_mode 277
-; 1024x768
-%define video_mode 280
-; 1280x1024
- ;%define video_mode 283
-;%define video_mode 287
-	mov	cx,video_mode | (1 << 14)
-	int	0x10
-;	mov	si,error_could_not_set_video_mode
-	cmp	ax,0x4F
-;	jne	error
-	jne	.fail
-	mov	ax,0x4F02
-	mov	bx,video_mode | (1 << 14)
-	int	0x10
-	cmp	ax,0x4F
-;	mov	si,error_could_not_set_video_mode
-;	jne	error
-	jne	.fail
-	.fail:
 
 check_cpuid:
 	; Check the CPU has CPUID
@@ -137,6 +109,14 @@ identity_paging:
 load_gdt:
 	; Load the GDT
 	lgdt	[gdt_data.gdt]
+
+enable_video_mode:
+	; Uncomment to disable video mode setting.
+	; jmp	enable_video_mode_done
+	call 	vbe_init
+	jmp	enable_video_mode_done
+%include "boot/x86/vbe.s"
+enable_video_mode_done:
 
 load_memory_map:
 	; Load the memory map
