@@ -1,5 +1,10 @@
 #ifndef IMPLEMENTATION
 
+// TODO Complete cancelled requests?
+// 	- Investigate with ATA and AHCI.
+
+// #define NO_ASYNC_IO
+
 enum DeviceType {
 	DEVICE_TYPE_INVALID,
 	DEVICE_TYPE_BLOCK,
@@ -263,6 +268,15 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 	switch (driver) {
 		case BLOCK_DEVICE_DRIVER_ATA: {
 			if (driverPacket) driverPacket->type = IO_PACKET_ATA;
+
+#ifdef NO_ASYNC_IO
+			result = ata.Access(nullptr, driveID, offset, countBytes, operation, buffer);
+
+			if (driverPacket) {
+				if (!result) driverPacket->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE); 
+				else driverPacket->Complete(OS_SUCCESS);
+			}
+#else
 			result = ata.Access(driverPacket, driveID, offset, countBytes, operation, buffer);
 
 			if (driverPacket) {
@@ -273,10 +287,20 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 					driverPacket->Complete(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 				}
 			}
+#endif
 		} break;
 
 		case BLOCK_DEVICE_DRIVER_AHCI: {
 			if (driverPacket) driverPacket->type = IO_PACKET_AHCI;
+
+#ifdef NO_ASYNC_IO
+			result = AHCIAccess(nullptr, driveID, offset, countBytes, operation, buffer);
+
+			if (driverPacket) {
+				if (!result) driverPacket->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE); 
+				else driverPacket->Complete(OS_SUCCESS);
+			}
+#else
 			result = AHCIAccess(driverPacket, driveID, offset, countBytes, operation, buffer);
 
 			if (driverPacket) {
@@ -287,6 +311,7 @@ bool BlockDevice::Access(IOPacket *packet, uint64_t offset, size_t countBytes, i
 					driverPacket->Complete(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
 				}
 			}
+#endif
 		} break;
 
 		default: {

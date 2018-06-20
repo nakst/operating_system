@@ -11,6 +11,7 @@ void RegisterAsyncTask(AsyncTaskCallback callback, void *argument, struct Proces
 struct Semaphore {
 	bool Take(uintptr_t units = 1, uintptr_t timeoutMs = OS_WAIT_NO_TIMEOUT);
 	void Return(uintptr_t units = 1);
+	bool Poll();
 	void Set(uintptr_t units = 1);
 
 	Event available;
@@ -1421,6 +1422,15 @@ void Mutex::AssertLocked() {
 				currentThread, owner, this, __builtin_return_address(0), __builtin_return_address(1), 
 				acquireAddress, releaseAddress);
 	}
+}
+
+bool Semaphore::Poll() {
+	bool success = false;
+	mutex.Acquire();
+	if (units) { success = true; units--; }
+	if (!units && available.state) available.Reset();
+	mutex.Release();
+	return success;
 }
 
 bool Semaphore::Take(uintptr_t u, uintptr_t timeoutMs) {

@@ -3,6 +3,10 @@ vbe_init:
 	mov	es,ax
 	xor	di,di
 
+	; Comment out to enable graphics mode selection.
+	mov	bx,280
+	jmp	.set_graphics_mode
+
 	; Get SVGA information.
 	mov	ax,0x4F00
 	int	0x10
@@ -83,6 +87,8 @@ vbe_init:
 	mov	dx,[es:bx]
 	cmp	dx,0xFFFF
 	je	.print_done
+	cmp	cx,21			; Maximum of 20 options (to avoid scrolling).
+	je	.print_done
 	xor	di,di
 	push	cx
 	mov	ax,0x4F01
@@ -137,6 +143,7 @@ vbe_init:
 	shl	di,1
 	add	di,0x200
 	mov	bx,[es:di]
+	.set_graphics_mode:
 	or	bx,(1 << 14)
 	mov	cx,bx
 	mov	ax,0x4F02

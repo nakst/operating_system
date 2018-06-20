@@ -883,6 +883,10 @@ void EsFSVolume::ValidateDirectory(Node *_directory) {
 
 	for (uint64_t i = 0; i < directory->itemsInDirectory; i++) {
 		while (blockPosition == superblock.blockSize || !directoryBuffer[blockPosition]) {
+			if (blockPosition == 0) {
+				KernelPanic("EsFSVolume::ValidateDirectory - Directory block was empty.\n");
+			}
+
 			// We're reached the end of the block.
 			// The next directory entry will be at the start of the next block.
 			blockPosition = 0;

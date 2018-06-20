@@ -1,8 +1,22 @@
 #ifndef IMPLEMENTATION
 
+// TODO Investigate AHCI timeouts.
+
 // #define AHCI_VERBOSE		
+#define AHCI_SERIAL
+
 #define AHCI_DRIVE_IDENTIFY	(10)
 #define AHCI_TIMEOUT		(1000)
+#define AHCI_BUFFER_SIZE 	(65536)
+#define AHCI_MAX_PORTS 		(32)
+
+#ifdef AHCI_SERIAL
+#define AHCI_MAX_COMMANDS	(1)
+#define AHCI_MAX_BUFFER_COUNT 	(1)
+#else
+#define AHCI_MAX_COMMANDS 	(32)
+#define AHCI_MAX_BUFFER_COUNT 	(16)
+#endif
 
 #define AHCI_HBA_CAP            (0x00)		// Host capabilities.
 #define AHCI_HBA_GHC            (0x04)		// Global host control.
@@ -124,12 +138,22 @@
 #define AHCI_TFD_CS2		(3 << 1)	// Command specific.
 #define AHCI_TFD_ERR		(1 << 0)	// Indicates an error during the transfer.
 
+struct AHCICommand {
+	enum {
+		UNUSED,
+		ALLOCATED,
+		ISSUED,
+		FINISHED,
+	} state;
+
+	Event finished;
+};
+
 struct AHCIPort {
 	bool present;
 
 	uint64_t sectors;
-	uint32_t runningCommands, usedCommands;
-	Event commandsFinished[32];
+	AHCICommand commands[AHCI_MAX_COMMANDS];
 
 	uintptr_t commandList, receivedFIS, 
 		  commandTable, commandTableBase;
@@ -154,17 +178,15 @@ struct AHCIController {
 
 	uintptr_t driveBase;
 
-#define AHCI_BUFFER_SIZE (65536)
-#define AHCI_MAX_BUFFER_COUNT (16)
+	Spinlock spinlock;
+	Semaphore semaphore;
 	uint8_t *buffers[AHCI_MAX_BUFFER_COUNT];
 	uintptr_t buffersBase[AHCI_MAX_BUFFER_COUNT];
 	size_t bufferCount;
 	uint32_t usedBuffers;
+
 	AHCIOperation operations[AHCI_MAX_BUFFER_COUNT];
 
-	Spinlock spinlock;
-
-#define AHCI_MAX_PORTS (32)
 	AHCIPort ports[AHCI_MAX_PORTS];
 };
 
@@ -189,24 +211,37 @@ void AHCITimeout(AHCIOperation *op);
 bool AHCIAccess(struct IOPacket *packet, uintptr_t _drive, uint64_t offset, size_t _countBytes, int operation, uint8_t *_buffer);
 bool AHCIIRQHandler(uintptr_t interruptIndex);
 void AHCIFinish(AHCIOperation *op);
-void AHCIUnblock(void *argument);
 void AHCIRegisterController(struct PCIDevice *device);
 
 #else
 
 void AHCITimeout(AHCIOperation *op) {
+	op->timeout.Remove();
+
 	AHCIController *controller = op->controller;
 	AHCIPort *port = op->portIndex + controller->ports;
 
+	bool finish = false;
+
 	controller->spinlock.Acquire();
 
-	if (port->runningCommands & (1 << op->commandIndex)) {
-		port->runningCommands &= ~(1 << op->commandIndex);
+	if (port->commands[op->commandIndex].state == AHCICommand::ISSUED) {
+#ifdef AHCI_VERBOSE
+		OSPrint("AHCITimeout %x\n", op);
+#else
+		KernelLog(LOG_WARNING, "AHCITimeout - Request timed out.\n");
+#endif
+
+		port->commands[op->commandIndex].state = AHCICommand::FINISHED;
 		op->error = true;
-		AHCIFinish(op);
+		finish = true;
 	}
 
 	controller->spinlock.Release();
+
+	if (finish) {
+		AHCIFinish(op);
+	}
 }
 
 bool AHCIAccess(IOPacket *packet, uintptr_t _drive, uint64_t offset, size_t _countBytes, int operation, uint8_t *_buffer) {
@@ -229,57 +264,59 @@ bool AHCIAccess(IOPacket *packet, uintptr_t _drive, uint64_t offset, size_t _cou
 	if (!port->present) return false;
 	if (sector > port->sectors) return false;
 
-	uintptr_t commandIndex = 32;
-	uintptr_t bufferIndex = AHCI_MAX_BUFFER_COUNT;
+	{
+		if (packet) {
+			ahciBlockedPacketsMutex.Acquire();
+			Defer(ahciBlockedPacketsMutex.Release());
 
-	controller->spinlock.Acquire();
+			bool success = controller->semaphore.Poll();
 
-	for (uintptr_t i = 0; i < 32; i++) {
-		if (port->usedCommands & (1 << i)) {
-			continue;
+			if (!success) {
+				AHCIBlockedOperation *op = (AHCIBlockedOperation *) OSHeapAllocate(sizeof(AHCIBlockedOperation), true);
+				op->packet = packet;
+				op->packet->driverState = IO_PACKET_DRIVER_BLOCKING;
+				op->drive = _drive;
+				op->offset = offset;
+				op->_countBytes = _countBytes;
+				op->operation = operation;
+				op->_buffer = _buffer;
+				op->item.thisItem = op;
+
+				ahciBlockedOperations.InsertEnd(&op->item);
+				return true;
+			}
+		} else {
+			controller->semaphore.Take();
 		}
-
-		commandIndex = i;
-		break;
 	}
 
-	for (uintptr_t i = 0; i < AHCI_MAX_BUFFER_COUNT; i++) {
-		if (controller->usedBuffers & (1 << i)) {
-			continue;
+	uintptr_t commandIndex = 0, bufferIndex = 0;
+
+	{
+		controller->spinlock.Acquire();
+
+		for (; commandIndex < AHCI_MAX_COMMANDS; commandIndex++) {
+			if (port->commands[commandIndex].state == AHCICommand::UNUSED) {
+				break;
+			}
 		}
 
-		if (!controller->buffers[i]) {
-			continue;
+		for (; bufferIndex < AHCI_MAX_BUFFER_COUNT; bufferIndex++) {
+			if (!(controller->usedBuffers & (1 << bufferIndex)) && controller->buffers[bufferIndex]) {
+				break;
+			}
 		}
 
-		bufferIndex = i;
-		break;
-	}
+		if (commandIndex != AHCI_MAX_COMMANDS && bufferIndex != AHCI_MAX_BUFFER_COUNT) {
+			port->commands[commandIndex].state = AHCICommand::ALLOCATED;
+			controller->usedBuffers |= (1 << bufferIndex);
+		}
 
-	if (commandIndex != 32 && bufferIndex != AHCI_MAX_BUFFER_COUNT) {
-		port->usedCommands |= (1 << commandIndex);
-		controller->usedBuffers |= (1 << bufferIndex);
-	}
+		controller->spinlock.Release();
 
-	controller->spinlock.Release();
-
-	if (commandIndex == 32 || bufferIndex == AHCI_MAX_BUFFER_COUNT) {
-		ahciBlockedPacketsMutex.Acquire();
-
-		AHCIBlockedOperation *op = (AHCIBlockedOperation *) OSHeapAllocate(sizeof(AHCIBlockedOperation), true);
-
-		op->packet = packet;
-		op->drive = _drive;
-		op->offset = offset;
-		op->_countBytes = _countBytes;
-		op->operation = operation;
-		op->_buffer = _buffer;
-		op->item.thisItem = op;
-
-		ahciBlockedOperations.InsertEnd(&op->item);
-
-		ahciBlockedPacketsMutex.Release();
-		return true;
+		if (commandIndex == AHCI_MAX_COMMANDS || bufferIndex == AHCI_MAX_BUFFER_COUNT) {
+			KernelPanic("AHCIAccess - Unit taken from semaphore but no buffers/commands were available.\n");
+		}
 	}
 
 	if (packet) {
@@ -344,64 +381,44 @@ bool AHCIAccess(IOPacket *packet, uintptr_t _drive, uint64_t offset, size_t _cou
 	// Start the command.
 
 #ifdef AHCI_VERBOSE
-	OSPrint("start %d, %d\n", bufferIndex, commandIndex);
+	OSPrint("start %d, %d, %x\n", bufferIndex, commandIndex, packet);
 #endif
 
-	port->commandsFinished[commandIndex].Reset();
-
 	controller->spinlock.Acquire();
-	port->runningCommands |= (1 << commandIndex);
-	controller->spinlock.Release();
 
-	WaitMicroseconds(10);
+	port->commands[commandIndex].finished.Reset();
 	controller->device->WriteBAR32(controller->abar, AHCI_PORT(drive) + AHCI_PORT_CI, 1 << commandIndex);
+	port->commands[commandIndex].state = AHCICommand::ISSUED;
 
-	if (!packet) {
-		// Wait for the command to complete.
-
-		port->commandsFinished[0].Wait(AHCI_TIMEOUT);
-
-		// Finish the operation.
-
-		controller->spinlock.Acquire();
-		port->usedCommands &= ~(1 << op->commandIndex);
-		controller->usedBuffers &= ~(1 << op->bufferIndex);
-		controller->spinlock.Release();
-	} else {
+	if (packet) {
 		op->timeout.Remove();
 		op->timeout.Set(AHCI_TIMEOUT, false, (AsyncTaskCallback) AHCITimeout, op);
+	}
+
+	controller->spinlock.Release();
+
+	if (!packet) {
+		// Finish the operation.
+
+		if (!port->commands[commandIndex].finished.Wait(AHCI_TIMEOUT)) {
+			op->error = true;
+
+#ifdef AHCI_VERBOSE
+			OSPrint("AHCITimeout %x\n", op);
+#else
+			KernelLog(LOG_WARNING, "AHCIAccess - Request timed out.\n");
+#endif
+		}
+
+		AHCIFinish(op);
 	}
 
 	return true;
 }
 
-void AHCIUnblock(void *argument) {
-	(void) argument;
-
-	ahciBlockedPacketsMutex.Acquire();
-
-	LinkedItem<AHCIBlockedOperation> *item = ahciBlockedOperations.firstItem;
-
-	if (item) {
-		ahciBlockedOperations.Remove(item);
-	}
-
-	ahciBlockedPacketsMutex.Release();
-
-	if (item) {
-		AHCIBlockedOperation *op = item->thisItem;
-
-		if (!AHCIAccess(op->packet, op->drive, op->offset, op->_countBytes, op->operation, op->_buffer)) {
-			op->packet->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
-		}
-
-		OSHeapFree(op);
-	}
-}
-
 void AHCIFinish(AHCIOperation *op) {
 #ifdef AHCI_VERBOSE
-	OSPrint("finish %d, %d\n", op->bufferIndex, op->commandIndex);
+	OSPrint("finish %d, %d, %x\n", op->bufferIndex, op->commandIndex, op->packet);
 #endif
 
 	AHCIController *controller = op->controller;
@@ -436,18 +453,7 @@ void AHCIFinish(AHCIOperation *op) {
 #endif
 	}
 
-	// We're done!
-
-	controller->spinlock.Acquire();
-	port->commandsFinished[op->commandIndex].Set();
-	controller->spinlock.Release();
-
 	if (op->packet) {
-		controller->spinlock.Acquire();
-		port->usedCommands &= ~(1 << op->commandIndex);
-		controller->usedBuffers &= ~(1 << op->bufferIndex);
-		controller->spinlock.Release();
-
 		// Tell the packet it's done.
 
 		IOPacket *packet = op->packet;
@@ -459,15 +465,44 @@ void AHCIFinish(AHCIOperation *op) {
 		request->mutex.Release();
 	}
 
-	// Unblock a packet, if one exists.
-	// This must be done on the AsyncTask thread.
+	// We're done!
 
-	if (!op->packet) {
-		scheduler.lock.Acquire();
-		RegisterAsyncTask((AsyncTaskCallback) AHCIUnblock, nullptr, nullptr, true);
-		scheduler.lock.Release();
-	} else {
-		AHCIUnblock(nullptr);
+	controller->spinlock.Acquire();
+	port->commands[op->commandIndex].state = AHCICommand::UNUSED;
+	controller->usedBuffers &= ~(1 << op->bufferIndex);
+	controller->spinlock.Release();
+
+	// Unblock a packet, if one exists.
+
+	ahciBlockedPacketsMutex.Acquire();
+	controller->semaphore.Return();
+
+	LinkedItem<AHCIBlockedOperation> *item = ahciBlockedOperations.firstItem;
+
+	if (item) {
+		ahciBlockedOperations.Remove(item);
+	}
+
+	ahciBlockedPacketsMutex.Release();
+
+	if (item) {
+		AHCIBlockedOperation *op = item->thisItem;
+
+		if (!op->packet) {
+			KernelPanic("AHCIFinish - Non-packet operation was blocked.\n");
+		}
+
+#ifdef AHCI_VERBOSE
+		OSPrint("unblock, %x\n", op->packet);
+#endif
+
+		if (!AHCIAccess(op->packet, op->drive, op->offset, op->_countBytes, op->operation, op->_buffer)) {
+			op->packet->request->mutex.Acquire();
+			op->packet->request->Cancel(OS_ERROR_UNKNOWN_OPERATION_FAILURE);
+			op->packet->request->mutex.Release();
+		}
+
+		OSHeapFree(op);
 	}
 }
 
@@ -490,6 +525,12 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 			
 			found = true;
 
+#ifdef AHCI_VERBOSE
+			if (error) {
+				OSPrint("Interrupt error\n");
+			}
+#endif
+
 			for (uintptr_t j = 0; j < AHCI_MAX_PORTS; j++) {
 				AHCIPort *port = controller->ports + j;
 
@@ -501,27 +542,35 @@ bool AHCIIRQHandler(uintptr_t interruptIndex) {
 				uint32_t runningCommands = device->ReadBAR32(controller->abar, AHCI_PORT(j) + AHCI_PORT_SACT)
 					| device->ReadBAR32(controller->abar, AHCI_PORT(j) + AHCI_PORT_CI);
 
-				uint32_t finishedCommands = port->runningCommands & ~runningCommands;
-
-				controller->spinlock.Acquire();
-				port->runningCommands &= ~finishedCommands;
-				controller->spinlock.Release();
-
 				for (uintptr_t k = 0; k < 32; k++) {
-					if (!(finishedCommands & (1 << k))) continue;
+					if (port->commands[k].state != AHCICommand::ISSUED || (runningCommands & (1 << k))) {
+						continue;
+					}
 
 					for (uintptr_t l = 0; l < AHCI_MAX_BUFFER_COUNT; l++) {
-						if (controller->operations[l].commandIndex != k 
-								|| controller->operations[l].portIndex != j) continue;
+						AHCIOperation *operation = controller->operations + l;
+						if (operation->commandIndex != k || operation->portIndex != j) continue;
+						if (error) operation->error = true;
+						bool ignore = false;
 
-						if (error) controller->operations[l].error = true;
+						controller->spinlock.Acquire();
 
-						if (controller->operations[l].packet) {
+						AHCIPort *port = controller->ports + operation->portIndex;
+						AHCICommand *command = port->commands + operation->commandIndex;
+
+						if (command->state == AHCICommand::ISSUED) {
+							command->finished.Set();
+							command->state = AHCICommand::FINISHED;
+						} else {
+							ignore = true;
+						}
+
+						controller->spinlock.Release();
+
+						if (operation->packet && !ignore) {
 							scheduler.lock.Acquire();
 							RegisterAsyncTask((AsyncTaskCallback) AHCIFinish, controller->operations + l, nullptr, true);
 							scheduler.lock.Release();
-						} else {
-							AHCIFinish(controller->operations + l);
 						}
 
 						break;
@@ -622,8 +671,6 @@ void AHCIRegisterController(PCIDevice *device) {
 		return;
 	}
 
-	// Defer(if (error) pmm.FreeContiguous(physical128KB, 65536));
-
 #ifdef ARCH_64
 	if (physical128KB > 0x100000000 && !(controller->capabilities & AHCI_CAP_S64A)) {
 		KernelLog(LOG_WARNING, "AHCIRegisterController - Controller does not support 64-bit addressing. (No contiguous low memory was available.)\n");
@@ -634,9 +681,8 @@ void AHCIRegisterController(PCIDevice *device) {
 
 	uintptr_t virtual128KB = (uintptr_t) kernelVMM.Allocate("AHCIPhys", 65536, VMM_MAP_ALL, VMM_REGION_PHYSICAL,
 			physical128KB, VMM_REGION_FLAG_NOT_CACHABLE);
-	Defer(if (error) kernelVMM.Free((void *) virtual128KB));
 
-	// Get 16 * 64KB buffers for data transfers.
+	// Allocate the buffers for data transfers.
 
 	for (uintptr_t i = 0; i < AHCI_MAX_BUFFER_COUNT; i++, controller->bufferCount++) {
 		uintptr_t physical64KB = pmm.AllocateContiguous64KB();
@@ -665,11 +711,16 @@ void AHCIRegisterController(PCIDevice *device) {
 
 		uintptr_t virtual64KB = (uintptr_t) kernelVMM.Allocate("AHCIPhys2", 65536, VMM_MAP_ALL, VMM_REGION_PHYSICAL,
 				physical64KB, VMM_REGION_FLAG_NOT_CACHABLE);
-		Defer(if (error) kernelVMM.Free((void *) virtual64KB));
 
 		controller->buffers[i] = (uint8_t *) virtual64KB;
 		controller->buffersBase[i] = physical64KB;
 	}
+
+	if (controller->bufferCount > AHCI_MAX_COMMANDS) {
+		KernelPanic("AHCIRegisterController - Too many buffers.\n");
+	}
+
+	controller->semaphore.Set(controller->bufferCount);
 
 	// Register the IRQ.
 
