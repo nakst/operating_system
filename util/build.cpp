@@ -182,7 +182,7 @@ void Compile(bool enableOptimisations) {
 	printf("-> Building " Color3 "Kernel" ColorNormal "...\n");
 
 	system("nasm -felf64 kernel/x86_64.s -o bin/OS/kernel_x86_64.o -Fdwarf");
-	sprintf(buffer, "x86_64-elf-g++ -c kernel/main.cpp -o bin/OS/kernel.o -mno-red-zone " BuildFlags "%s" " -DUSE_ACPICA -Wno-unused-function", OptimiseKernel);
+	sprintf(buffer, "x86_64-elf-g++ -c kernel/main.cpp -o bin/OS/kernel.o -mno-red-zone " BuildFlags "%s" " -Wno-unused-function", OptimiseKernel);
 	system(buffer);
 	system("x86_64-elf-gcc -T util/linker64.ld -o bin/OS/Kernel.esx bin/OS/kernel_x86_64.o bin/OS/kernel.o -mno-red-zone " KernelLinkFlags " -lacpica -Lports/acpica");
 	system("cp bin/OS/Kernel.esx bin/OS/Kernel.esx_symbols");
@@ -210,6 +210,10 @@ void Build(bool enableOptimisations, bool compile = true) {
 			installationIdentifier[i] = hex[rand() % 16];
 		}
 	}
+
+	FILE *iid = fopen("bin/OS/iid.dat", "wb");
+	fwrite(installationIdentifier, 1, 48, iid);
+	fclose(iid);
 
 	printf("Generating tags...\n");
 	system("ctags -R .");
@@ -250,10 +254,15 @@ void Build(bool enableOptimisations, bool compile = true) {
 	system("./esfs drive 2048 format 133169152 \"Essence HD\" bin/OS/Kernel.esx");
 	sprintf(buffer, "./esfs drive 2048 set-installation %s", installationIdentifier);
 	system(buffer);
+	// system("./esfs uefi_drive 133120 format 133169152 \"Essence HD\" bin/OS/Kernel.esx");
+	// sprintf(buffer, "./esfs uefi_drive 133120 set-installation %s", installationIdentifier);
+	// system(buffer);
 
 	printf("Copying files to the drive...\n");
 	system("./esfs drive 2048 import / bin/");
 	system("./esfs drive 2048 import /OS/ res/");
+	// system("./esfs uefi_drive 133120 import / bin/");
+	// system("./esfs uefi_drive 133120 import /OS/ res/");
 
 	printf("Build complete.\n");
 }

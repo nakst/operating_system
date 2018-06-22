@@ -72,6 +72,7 @@ processorGDTR:
 
 [global _start]
 _start:
+	cli
 	mov	rax,0x63
 	mov	fs,ax
 	mov	gs,ax

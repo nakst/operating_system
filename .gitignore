@@ -44,6 +44,7 @@ ports/tcc
 drive
 partition_table
 vbox.vdi
+uefi_drive
 
 # Misc
 log.txt

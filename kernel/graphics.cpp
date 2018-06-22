@@ -92,6 +92,7 @@ struct Graphics {
 
 	void UpdateScreen();
 	void UpdateScreen_VIDEO_COLOR_24_RGB();
+	void UpdateScreen_VIDEO_COLOR_32_XRGB();
 	void VGAUpdateScreen();
 	Mutex updateScreenMutex;
 
@@ -157,6 +158,55 @@ VESAVideoModeInformation *vesaMode = (VESAVideoModeInformation *) (LOW_MEMORY_MA
 Graphics graphics;
 
 #else
+
+void Graphics::UpdateScreen_VIDEO_COLOR_32_XRGB() {
+	volatile uint8_t *pixel = (volatile uint8_t *) linearBuffer;
+	volatile uint8_t *source = (volatile uint8_t *) frameBuffer.linearBuffer;
+
+	for (uintptr_t y_ = 0; y_ < resY / 8; y_++) {
+		if (frameBuffer.modifiedScanlineBitset[y_] == 0) {
+			pixel += strideY * 8;
+			source += frameBuffer.resX * 32;
+			continue;
+		}
+
+		for (uintptr_t y = 0; y < 8; y++) {
+			volatile uint8_t *scanlineStart = pixel;
+			volatile uint8_t *sourceStart = source;
+
+			if ((frameBuffer.modifiedScanlineBitset[y_] & (1 << y)) == 0) {
+				pixel = scanlineStart + strideY;
+				source += frameBuffer.resX * 4;
+				continue;
+			}
+
+			ModifiedScanline *scanline = frameBuffer.modifiedScanlines + y + (y_ << 3);
+
+			uintptr_t x = scanline->minimumX;
+			pixel += 4 * x;
+			source += 4 * x;
+
+			// uintptr_t total = scanline->maximumX - scanline->minimumX;
+
+			// TODO SIMD
+
+			while (x < scanline->maximumX) {
+				pixel[0] = source[0];
+				pixel[1] = source[1];
+				pixel[2] = source[2];
+
+				pixel += 4;
+				source += 4;
+				x++;
+			}
+
+			pixel = scanlineStart + strideY;
+			source = sourceStart + frameBuffer.resX * 4;
+		}
+	}
+
+	frameBuffer.ClearModifiedRegion();
+}
 
 void Graphics::UpdateScreen_VIDEO_COLOR_24_RGB() {
 	volatile uint8_t *pixel = (volatile uint8_t *) linearBuffer;
@@ -249,6 +299,10 @@ void Graphics::UpdateScreen() {
 			UpdateScreen_VIDEO_COLOR_24_RGB();
 		} break;
 
+		case VIDEO_COLOR_32_XRGB: {
+			UpdateScreen_VIDEO_COLOR_32_XRGB();
+		} break;
+
 		case VIDEO_COLOR_VGA_PLANES: {
 			VGAUpdateScreen();
 		} break;
@@ -273,7 +327,9 @@ void Graphics::Initialise() {
 		resY = vesaMode->heightPixels;
 		strideX = vesaMode->bitsPerPixel >> 3;
 		strideY = vesaMode->bytesPerScanlineLinear;
-		colorMode = VIDEO_COLOR_24_RGB; // TODO Other color modes.
+
+		// TODO Other color modes.
+		colorMode = vesaMode->bitsPerPixel == 32 ? VIDEO_COLOR_32_XRGB : VIDEO_COLOR_24_RGB; 
 	} else {
 		VGASetMode();
 		resX = 640;

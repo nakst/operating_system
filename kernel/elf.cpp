@@ -1,8 +1,8 @@
 #define MEMORY_MAPPED_EXECUTABLES
 
-#ifdef IMPLEMENTATION
+#ifndef IMPLEMENTATION
 
-typedef struct {
+typedef struct ElfHeader {
 	uint32_t magicNumber; // 0x7F followed by 'ELF'
 	uint8_t bits; // 1 = 32 bit, 2 = 64 bit
 	uint8_t endianness; // 1 = LE, 2 = BE
@@ -61,6 +61,8 @@ typedef struct {
 	uint64_t alignment;
 } ElfProgramHeader;
 #endif
+
+#else
 
 uintptr_t LoadELF(char *imageName, size_t imageNameLength) {
 	Process *thisProcess = GetCurrentThread()->process;

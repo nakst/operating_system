@@ -1619,8 +1619,12 @@ int main(int argc, char **argv) {
 
 		UniqueIdentifier identifier;
 
-		for (int i = 0; i < 16; i++) {
-			identifier.d[i] = argv[0][i * 3 + 0] - '0' + ((argv[0][i * 3 + 1] - '0') << 4);
+		for (uintptr_t i = 0; i < 16; i++) {
+			char c1 = argv[0][i * 3 + 0];
+			char c2 = argv[0][i * 3 + 1];
+			if (c1 >= '0' && c1 <= '9') c1 -= '0'; else c1 -= 'A' - 10;
+			if (c2 >= '0' && c2 <= '9') c2 -= '0'; else c2 -= 'A' - 10;
+			identifier.d[i] = (c2) | ((c1) << 4);
 		}
 
 		MountVolume();

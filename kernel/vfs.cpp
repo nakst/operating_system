@@ -607,12 +607,10 @@ Node *VFS::OpenNode(char *name, size_t nameLength, uint64_t flags, OSError *erro
 #endif
 
 		if (fastNode) {
-			// OSPrint("FAST PATH!!!!!!!!!!\n");
 			node = fastNode;
 			vfs.RegisterNodeHandle(node, isFinalNode ? flags : directoryAccess, 
 					node->identifier, parent, node->data.type, false, nullptr, 0);
 		} else {
-			// OSPrint("SLOW PATH :(:(:(\n");
 			switch (filesystem->type) {
 				case FILESYSTEM_ESFS: {
 					node = EsFSScan(entry, entryLength, parent, isFinalNode ? flags : directoryAccess);
@@ -911,7 +909,34 @@ void DetectFilesystem(Device *device) {
 	if (0) {
 	} else if (((uint32_t *) information)[2048] == 0x65737345) {
 		EsFSRegister(device);
+	} else if (((uint64_t *) information)[64] == 0x5452415020494645ULL && !device->block.sectorOffset) {
+		// GPT.
+		uint64_t partitionTable = ((uint64_t *) information)[64 + 9];
+		uint32_t partitionCount = ((uint32_t *) information)[128 + 20];
+		uint32_t partitionEntrySize = ((uint32_t *) information)[128 + 21];
+
+		for (uintptr_t i = 0; i < partitionCount; i++) {
+			uint64_t from = ((uint64_t *) information)[64 * partitionTable + partitionEntrySize / 8 * i + 4];
+			uint64_t to   = ((uint64_t *) information)[64 * partitionTable + partitionEntrySize / 8 * i + 5];
+
+			if (from && to) {
+#if 0
+				uint16_t *name = ((uint16_t *) information) + (256 * partitionTable + partitionEntrySize / 2 * i + 28);
+				for (uintptr_t j = 0; j < 36; j++) { if (!name[j]) break; OSPrint("%c", name[j]); }
+				OSPrint("\n");
+#endif
+
+				Device child;
+				CopyMemory(&child, device, sizeof(Device));
+				child.item = {};
+				child.parent = device;
+				child.block.sectorOffset += from;
+				child.block.sectorCount = to - from + 1;
+				deviceManager.Register(&child);
+			}
+		}
 	} else if (information[510] == 0x55 && information[511] == 0xAA && !device->block.sectorOffset /*Must be at start of drive*/) {
+		// MBR.
 		// Check each partition in the table.
 		for (uintptr_t i = 0; i < 4; i++) {
 			for (uintptr_t j = 0; j < 0x10; j++) {

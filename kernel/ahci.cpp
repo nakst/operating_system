@@ -1,6 +1,9 @@
 #ifndef IMPLEMENTATION
 
 // TODO Investigate AHCI timeouts.
+// 	- Possibly related to AHCI_SERIAL?
+// 	- Possibly related to NO_ASYNC_IO?
+// 	- Possibly a race condition with the timers?
 
 // #define AHCI_VERBOSE		
 #define AHCI_SERIAL

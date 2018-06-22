@@ -158,6 +158,24 @@ void DebugWriteCharacter(uintptr_t character) {
 					graphics.linearBuffer[(y + 1) * graphics.resX * 3 + (x + 1) * 3 + 1] = c;
 					graphics.linearBuffer[(y + 1) * graphics.resX * 3 + (x + 1) * 3 + 2] = c;
 				} break;
+
+				case VIDEO_COLOR_32_XRGB: {
+					uintptr_t y = row * 18 + j * 2;
+					uintptr_t x = column * 18 + i * 2;
+					uint8_t c = bit ? 0xEE : 0x44;
+					graphics.linearBuffer[y * graphics.resX * 4 + x * 4 + 0] = c;
+					graphics.linearBuffer[y * graphics.resX * 4 + x * 4 + 1] = c;
+					graphics.linearBuffer[y * graphics.resX * 4 + x * 4 + 2] = c;
+					graphics.linearBuffer[y * graphics.resX * 4 + (x + 1) * 4 + 0] = c;
+					graphics.linearBuffer[y * graphics.resX * 4 + (x + 1) * 4 + 1] = c;
+					graphics.linearBuffer[y * graphics.resX * 4 + (x + 1) * 4 + 2] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 4 + x * 4 + 0] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 4 + x * 4 + 1] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 4 + x * 4 + 2] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 4 + (x + 1) * 4 + 0] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 4 + (x + 1) * 4 + 1] = c;
+					graphics.linearBuffer[(y + 1) * graphics.resX * 4 + (x + 1) * 4 + 2] = c;
+				} break;
 			
 				default:;
 			}
@@ -185,9 +203,22 @@ void KernelPanic(const char *format, ...) {
 
 	printToTerminal = true;
 
-	for (uintptr_t i = 0; i < graphics.resX * graphics.resY * 3; i++) {
-		graphics.linearBuffer[i] = 0x44;
+	switch (graphics.colorMode) {
+		case VIDEO_COLOR_24_RGB: {
+			for (uintptr_t i = 0; i < graphics.resX * graphics.resY * 3; i++) {
+				graphics.linearBuffer[i] = 0x44;
+			}
+		} break;
+
+		case VIDEO_COLOR_32_XRGB: {
+			for (uintptr_t i = 0; i < graphics.resX * graphics.resY * 4; i++) {
+				graphics.linearBuffer[i] = 0x44;
+			}
+		} break;
+	
+		default:;
 	}
+
 
 	Print("\n--- KERNEL PANIC ---\n[Fatal] ");
 

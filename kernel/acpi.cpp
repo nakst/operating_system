@@ -1,5 +1,7 @@
 #ifdef IMPLEMENTATION
 
+#define USE_ACPICA
+
 #define SIGNATURE_RSDP 0x2052545020445352
 
 #define SIGNATURE_RSDT 0x54445352
@@ -447,6 +449,12 @@ void *ACPI::FindTable(uint32_t tableSignature, ACPIDescriptorTable **header) {
 	// The system does not have the ACPI table.
 	return nullptr;
 }
+
+#ifndef USE_ACPICA
+void ACPI::ShutdownComputer() {
+	KernelPanic("ACPI::ShutdownComputer - Attempt to shutdown computer without ACPI.\n");
+}
+#endif
 
 #ifdef USE_ACPICA
 
@@ -919,6 +927,8 @@ UINT32 ACPIPowerButtonPressed(void *context) {
 	return 0;
 }
 
+#endif
+
 void ACPI::Initialise2() {
 #ifdef USE_ACPICA
 	AcpiInitializeSubsystem();
@@ -932,7 +942,5 @@ void ACPI::Initialise2() {
 	}
 #endif
 }
-
-#endif
 
 #endif

@@ -33,6 +33,11 @@ extern "C" void KernelAPMain() {
 
 extern "C" void KernelMain() {
 	Print("---------------------------\n");
+
+	for (uintptr_t i = 0; i < 16; i++) {
+		OSPrint("%X ", installationID.d[i]);
+	}
+
 	kernelVMM.Initialise();
 	memoryManagerVMM.Initialise();
 	pmm.Initialise();
