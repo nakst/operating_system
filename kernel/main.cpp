@@ -32,10 +32,6 @@ extern "C" void KernelAPMain() {
 }
 
 extern "C" void KernelMain() {
-	vesaMode = (VESAVideoModeInformation *) (LOW_MEMORY_MAP_START + 0x7000 + bootloaderInformationOffset);
-	*((uint32_t *) (LOW_MEMORY_MAP_START + vesaMode->bufferPhysical + 10)) = 0xFFFFFF00;
-	while (true);
-
 	Print("---------------------------\n");
 	kernelVMM.Initialise();
 	memoryManagerVMM.Initialise();
