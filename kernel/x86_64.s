@@ -62,6 +62,10 @@ simdSSE3Support:
 simdSSSE3Support:
 	dd 1
 
+[global bootloaderInformationOffset]
+bootloaderInformationOffset:
+	dq 0
+
 align 16
 [global processorGDTR]
 processorGDTR:
@@ -77,12 +81,15 @@ _start:
 	mov	fs,ax
 	mov	gs,ax
 
+	mov	rax,bootloaderInformationOffset
+	mov	[rax],rdi
+
 	; Load the installation ID.
 [extern installationID]
 	mov	rbx,installationID
-	mov	rax,[0x7FF0]
+	mov	rax,[rdi + 0x7FF0]
 	mov	[rbx],rax
-	mov	rax,[0x7FF8]
+	mov	rax,[rdi + 0x7FF8]
 	mov	[rbx + 8],rax
 
 	; Unmap the identity paging the bootloader used
@@ -162,8 +169,14 @@ InstallIDT:
 
 MemoryCalculations:
 	; Work out basic information about the physical memory map we got from the bootloader
+	mov	rax,bootloaderInformationOffset
+	mov	rax,[rax]
+	mov	rbx,physicalMemoryRegions
+	add	[rbx],rax
 	mov	rdi,0xFFFFFF0000060000 - 0x10
+	add	rdi,rax
 	mov	rsi,0xFFFFFF0000060000
+	add	rsi,rax
 	xor	rax,rax
 	xor	r8,r8
 	.loop:

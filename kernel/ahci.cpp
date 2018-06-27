@@ -6,6 +6,7 @@
 // 	- Possibly a race condition with the timers?
 
 // #define AHCI_VERBOSE		
+#define AHCI_FATAL_TIMEOUT // The kernel doesn't handle IO errors properly yet.
 #define AHCI_SERIAL
 
 #define AHCI_DRIVE_IDENTIFY	(10)
@@ -229,6 +230,10 @@ void AHCITimeout(AHCIOperation *op) {
 	controller->spinlock.Acquire();
 
 	if (port->commands[op->commandIndex].state == AHCICommand::ISSUED) {
+#ifdef AHCI_FATAL_TIMEOUT 
+		KernelPanic("AHCITimeout - Fatal timeout.\n");
+#endif
+
 #ifdef AHCI_VERBOSE
 		OSPrint("AHCITimeout %x\n", op);
 #else
@@ -405,6 +410,10 @@ bool AHCIAccess(IOPacket *packet, uintptr_t _drive, uint64_t offset, size_t _cou
 
 		if (!port->commands[commandIndex].finished.Wait(AHCI_TIMEOUT)) {
 			op->error = true;
+
+#ifdef AHCI_FATAL_TIMEOUT 
+			KernelPanic("AHCIAccess - Fatal timeout.\n");
+#endif
 
 #ifdef AHCI_VERBOSE
 			OSPrint("AHCITimeout %x\n", op);
@@ -727,6 +736,8 @@ void AHCIRegisterController(PCIDevice *device) {
 
 	// Register the IRQ.
 
+	OSPrint("irq: %d, %d\n", device->interruptPin, device->interruptLine);
+	
 	if (!RegisterIRQHandler(device->interruptLine, AHCIIRQHandler)) {
 		KernelLog(LOG_WARNING, "AHCIRegisterController - Could not register IRQ %d.\n", device->interruptLine);
 		error = true;

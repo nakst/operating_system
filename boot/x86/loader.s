@@ -829,6 +829,7 @@ run_kernel64:
 	lgdt	[gdt_data.gdt]
 
 	; Execute the kernel's _start function
+	xor	rdi,rdi
 	jmp	rcx
 
 error_64:

@@ -1,6 +1,56 @@
 #ifndef IMPLEMENTATION
 
+struct VESAVideoModeInformation {
+	// Useful fields marked with /**/
+	uint16_t attributes;
+	uint8_t windowA, windowB;
+	uint16_t granularity;
+	uint16_t windowSize;
+	uint16_t segmentA, segmentB;
+	uint32_t farWindowMove;
+	uint16_t bytesPerScanline;
+/**/	uint16_t widthPixels;
+/**/	uint16_t heightPixels;
+	uint8_t characterWidth;
+	uint8_t characterHeight;
+	uint8_t memoryPlanes;
+/**/	uint8_t bitsPerPixel;
+	uint8_t bankCount;
+	uint8_t memoryModel;
+	uint8_t bankSizeKB;
+	uint8_t imagePages;
+	uint8_t reserved;
+	uint8_t redMaskSize;
+	uint8_t redMaskPosition;
+	uint8_t greenMaskSize;
+	uint8_t greenMaskPosition;
+	uint8_t blueMaskSize;
+	uint8_t blueMaskPosition;
+	uint8_t reservedMaskSize;
+	uint8_t reservedMaskPosition;
+	uint8_t directColorModeInfo;
+/**/	uint32_t bufferPhysical;
+	uint32_t offscreenMemoryPhysical;
+	uint16_t offscreenMemorySizeKB;
+/**/	uint16_t bytesPerScanlineLinear;
+	uint8_t imagesBanked;
+	uint8_t imagesLinear;
+/**/	uint8_t linearRedMaskSize;
+/**/	uint8_t linearRedMaskPosition;
+/**/	uint8_t linearGreenMaskSize;
+/**/	uint8_t linearGreenMaskPosition;
+/**/	uint8_t linearBlueMaskSize;
+/**/	uint8_t linearBlueMaskPosition;
+	uint8_t linearReservedMaskSize;
+	uint8_t linearReservedMaskPosition;
+	uint32_t maximumPixelClock;
+};
+
+#ifndef VESA_VM_INFO_ONLY
+
 enum VideoColorMode {
+	VIDEO_COLOR_INVALID,
+
 	// Little-endian.
 	VIDEO_COLOR_24_RGB, // byte[0] = blue, byte[1] = green, byte[2] = red
 	VIDEO_COLOR_32_XRGB,
@@ -108,54 +158,10 @@ struct Graphics {
 	Surface cursorSwap; // A surface for temporarily storing the pixels behind the cursor.
 };
 
-struct VESAVideoModeInformation {
-	// Useful fields marked with /**/
-	uint16_t attributes;
-	uint8_t windowA, windowB;
-	uint16_t granularity;
-	uint16_t windowSize;
-	uint16_t segmentA, segmentB;
-	uint32_t farWindowMove;
-	uint16_t bytesPerScanline;
-/**/	uint16_t widthPixels;
-/**/	uint16_t heightPixels;
-	uint8_t characterWidth;
-	uint8_t characterHeight;
-	uint8_t memoryPlanes;
-/**/	uint8_t bitsPerPixel;
-	uint8_t bankCount;
-	uint8_t memoryModel;
-	uint8_t bankSizeKB;
-	uint8_t imagePages;
-	uint8_t reserved;
-	uint8_t redMaskSize;
-	uint8_t redMaskPosition;
-	uint8_t greenMaskSize;
-	uint8_t greenMaskPosition;
-	uint8_t blueMaskSize;
-	uint8_t blueMaskPosition;
-	uint8_t reservedMaskSize;
-	uint8_t reservedMaskPosition;
-	uint8_t directColorModeInfo;
-/**/	uint32_t bufferPhysical;
-	uint32_t offscreenMemoryPhysical;
-	uint16_t offscreenMemorySizeKB;
-/**/	uint16_t bytesPerScanlineLinear;
-	uint8_t imagesBanked;
-	uint8_t imagesLinear;
-/**/	uint8_t linearRedMaskSize;
-/**/	uint8_t linearRedMaskPosition;
-/**/	uint8_t linearGreenMaskSize;
-/**/	uint8_t linearGreenMaskPosition;
-/**/	uint8_t linearBlueMaskSize;
-/**/	uint8_t linearBlueMaskPosition;
-	uint8_t linearReservedMaskSize;
-	uint8_t linearReservedMaskPosition;
-	uint32_t maximumPixelClock;
-};
-
-VESAVideoModeInformation *vesaMode = (VESAVideoModeInformation *) (LOW_MEMORY_MAP_START + 0x7000);
+VESAVideoModeInformation *vesaMode;
 Graphics graphics;
+
+#endif
 
 #else
 
@@ -321,6 +327,8 @@ void Graphics::UpdateScreen() {
 }
 
 void Graphics::Initialise() {
+	vesaMode = (VESAVideoModeInformation *) (LOW_MEMORY_MAP_START + 0x7000 + bootloaderInformationOffset);
+
 	if (vesaMode->widthPixels) {
 		linearBuffer = (uint8_t *) kernelVMM.Allocate("ScreenBuffer", vesaMode->bytesPerScanlineLinear * vesaMode->heightPixels, VMM_MAP_ALL, VMM_REGION_PHYSICAL, vesaMode->bufferPhysical, 0);
 		resX = vesaMode->widthPixels;

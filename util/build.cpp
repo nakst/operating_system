@@ -16,7 +16,7 @@
 #define MANIFEST_PARSER_UTIL
 #include "manifest_parser.cpp"
 
-bool acceptedLicense;
+bool acceptedLicense, uefiBuildEnabled;
 char compilerPath[4096];
 
 char firstProgram[128];
@@ -254,15 +254,21 @@ void Build(bool enableOptimisations, bool compile = true) {
 	system("./esfs drive 2048 format 133169152 \"Essence HD\" bin/OS/Kernel.esx");
 	sprintf(buffer, "./esfs drive 2048 set-installation %s", installationIdentifier);
 	system(buffer);
-	// system("./esfs uefi_drive 133120 format 133169152 \"Essence HD\" bin/OS/Kernel.esx");
-	// sprintf(buffer, "./esfs uefi_drive 133120 set-installation %s", installationIdentifier);
-	// system(buffer);
+
+	if (uefiBuildEnabled) {
+		system("./esfs uefi_drive 133120 format 133169152 \"Essence HD\" bin/OS/Kernel.esx");
+		sprintf(buffer, "./esfs uefi_drive 133120 set-installation %s", installationIdentifier);
+		system(buffer);
+	}
 
 	printf("Copying files to the drive...\n");
 	system("./esfs drive 2048 import / bin/");
 	system("./esfs drive 2048 import /OS/ res/");
-	// system("./esfs uefi_drive 133120 import / bin/");
-	// system("./esfs uefi_drive 133120 import /OS/ res/");
+
+	if (uefiBuildEnabled) {
+		system("./esfs uefi_drive 133120 import / bin/");
+		system("./esfs uefi_drive 133120 import /OS/ res/");
+	}
 
 	printf("Build complete.\n");
 }
@@ -492,6 +498,8 @@ void LoadConfig(Token attribute, Token section, Token name, Token value, int eve
 
 	if (CompareTokens(name, "accepted_license") && CompareTokens(value, "true")) {
 		acceptedLicense = true;
+	} else if (CompareTokens(name, "uefi_build_enabled") && CompareTokens(value, "true")) {
+		uefiBuildEnabled = true;
 	} else if (CompareTokens(name, "first_program")) {
 		value = RemoveQuotes(value);
 		memcpy(firstProgram, value.text, value.bytes);
@@ -515,13 +523,127 @@ void SaveConfig() {
 	FILE *file = fopen("build_system_config.dat", "w");
 	fprintf(file, "[build_system]\naccepted_license = true;\nfirst_program = \"%s\";\n", firstProgram);
 	if (strlen(compilerPath)) fprintf(file, "compiler_path = \"%s\";\n", compilerPath);
+	fprintf(file, "uefi_build_enabled = %s;\n", uefiBuildEnabled ? "true" : "false");
 	fclose(file);
 }
 
-int main(int argc, char **argv) {
-	(void) argc;
-	(void) argv;
+void DoCommand(char *l) {
+	if (0 == strcmp(l, "build") || 0 == strcmp(l, "b")) {
+		Build(false);
+	} else if (0 == strcmp(l, "optimise") || 0 == strcmp(l, "o")) {
+		Build(true);
+	} else if (0 == strcmp(l, "test") || 0 == strcmp(l, "t")) {
+		Build(false);
+		Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
+	} else if (0 == strcmp(l, "ata")) {
+		Build(false);
+		Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
+	} else if (0 == strcmp(l, "bochs")) {
+		Build(false);
+		Run(EMULATOR_BOCHS, 0, 0, 0, 0, false);
+	} else if (0 == strcmp(l, "test-without-smp") || 0 == strcmp(l, "t2")) {
+		Build(false);
+		Run(EMULATOR_QEMU, DRIVE_ATA, 64, 1, LOG_NORMAL, false);
+	} else if (0 == strcmp(l, "test-ahci") || 0 == strcmp(l, "t3")) {
+		Build(false);
+		Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
+	} else if (0 == strcmp(l, "test-opt") || 0 == strcmp(l, "t4")) {
+		Build(true);
+		Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
+	} else if (0 == strcmp(l, "low-memory")) {
+		Build(false);
+		Run(EMULATOR_QEMU, DRIVE_ATA, 32, 4, LOG_NORMAL, false);
+	} else if (0 == strcmp(l, "debug") || 0 == strcmp(l, "d")) {
+		Build(false);
+		Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, true);
+	} else if (0 == strcmp(l, "debug-without-compiling") || 0 == strcmp(l, "d2")) {
+		Build(false, false);
+		Run(EMULATOR_QEMU, DRIVE_ATA, 64, 1, LOG_NORMAL, true);
+	} else if (0 == strcmp(l, "debug-smp")) {
+		Build(false);
+		Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, true);
+	} else if (0 == strcmp(l, "vbox") || 0 == strcmp(l, "v")) {
+		Build(true);
+		Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
+	} else if (0 == strcmp(l, "v3")) {
+		Build(true, false);
+		Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
+	} else if (0 == strcmp(l, "vbox-without-opt") || 0 == strcmp(l, "v2")) {
+		Build(false);
+		Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
+	} else if (0 == strcmp(l, "exit") || 0 == strcmp(l, "x") || 0 == strcmp(l, "quit") || 0 == strcmp(l, "q")) {
+		exit(0);
+	} else if (0 == strcmp(l, "reset-config")) {
+		system("rm build_system_config.dat");
+		printf("Please restart the build system.\n");
+		exit(0);
+	} else if (0 == strcmp(l, "compile") || 0 == strcmp(l, "c")) {
+		Compile(false);
+	} else if (0 == memcmp(l, "lua ", 4) || 0 == memcmp(l, "l ", 2)) {
+		sprintf(buffer, "lua -e \"print(%s)\"", 1 + strchr(l, ' '));
+		system(buffer);
+	} else if (0 == memcmp(l, "python ", 7) || 0 == memcmp(l, "p ", 2)) {
+		sprintf(buffer, "python -c \"print(%s)\"", 1 + strchr(l, ' '));
+		system(buffer);
+	} else if (0 == memcmp(l, "git ", 4)) {
+		sprintf(buffer, "git %s", 1 + strchr(l, ' '));
+		system(buffer);
+	} else if (0 == strcmp(l, "build-cross")) {
+		BuildCrossCompiler(true);
+		SaveConfig();
+		printf("Please restart the build system.\n");
+		exit(0);
+	} else if (0 == strcmp(l, "clean")) {
+		system("rm -rf ports/musl/obj ports/musl/lib bin ports/lua/*.o ports/lua/src/*.o");
+	} else if (0 == strcmp(l, "first-program") || 0 == strcmp(l, "fp")) {
+		sprintf(buffer, "The current first program is " Color1 "%s" ColorNormal ".\nEnter the name of the new first program: ", firstProgram);
+		printf(buffer);
 
+		{
+			char *l2 = nullptr;
+			size_t pos;
+			getline(&l2, &pos, stdin);
+
+			if (strlen(l2) > 1) {
+				l2[strlen(l2) - 1] = 0;
+				strcpy(firstProgram, l2);
+				sprintf(buffer, "The new first program is " Color1 "%s" ColorNormal ".\n", firstProgram);
+				printf(buffer);
+				SaveConfig();
+			}
+
+			free(l2);
+		}
+	} else if (0 == strcmp(l, "help") || 0 == strcmp(l, "h") || 0 == strcmp(l, "?")) {
+		printf("(b ) build - Unoptimised build\n");
+		printf("(o ) optimise - Optimised build\n");
+		printf("(t ) test - Qemu (SMP/ATA/64MB)\n");
+		printf("(  ) ata - Qemu (SMP/ATA/64MB)\n");
+		printf("(t2) test-without-smp - Qemu (ATA/64MB)\n");
+		printf("(t3) test-ahci - Qemu (AHCI/64MB)\n");
+		printf("(t4) test-opt - Qemu (ATA/64MB/optimised)\n");
+		printf("(  ) bochs - Bochs\n");
+		printf("(  ) low-memory - Qemu (SMP/ATA/32MB)\n");
+		printf("(d ) debug - Qemu (AHCI/64MB/GDB)\n");
+		printf("(d2) debug-without-compiling - Qemu (ATA/64MB/GDB)\n");
+		printf("(  ) debug-smp - Qemu (ATA/64MB/GDB/SMP)\n");
+		printf("(v ) vbox - VirtualBox (optimised)\n");
+		printf("(  ) vbox-without-opt - VirtualBox (unoptimised)\n");
+		printf("(x ) exit - Exit the build system.\n");
+		printf("(h ) help - Show the help prompt.\n");
+		printf("(l ) lua - Execute a Lua expression.\n");
+		printf("(p ) python - Execute a Lua expression.\n");
+		printf("(c ) compile - Compile the kernel and programs.\n");
+		printf("(fp) first-program - Set the first program to run in the OS (local).\n");
+		printf("(  ) reset-config - Reset the build system's config file.\n");
+		printf("(  ) build-cross - Build a GCC cross compiler for building the OS.\n");
+		printf("(  ) clean - Remove all build files.\n");
+	} else {
+		printf("Unrecognised command '%s'. Enter 'help' to get a list of commands.\n", l);
+	}
+}
+
+int main(int argc, char **argv) {
 	strcpy(firstProgram, "File Manager");
 
 	char *prev = nullptr;
@@ -581,6 +703,11 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	if (argc == 2) {
+		DoCommand(argv[1]);
+		return 0;
+	}
+
 	printf("Enter 'help' to get a list of commands.\n");
 
 	while (true) {
@@ -600,119 +727,7 @@ int main(int argc, char **argv) {
 			l[strlen(l) - 1] = 0;
 		}
 
-		if (0 == strcmp(l, "build") || 0 == strcmp(l, "b")) {
-			Build(false);
-		} else if (0 == strcmp(l, "optimise") || 0 == strcmp(l, "o")) {
-			Build(true);
-		} else if (0 == strcmp(l, "test") || 0 == strcmp(l, "t")) {
-			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
-		} else if (0 == strcmp(l, "ata")) {
-			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
-		} else if (0 == strcmp(l, "bochs")) {
-			Build(false);
-			Run(EMULATOR_BOCHS, 0, 0, 0, 0, false);
-		} else if (0 == strcmp(l, "test-without-smp") || 0 == strcmp(l, "t2")) {
-			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 1, LOG_NORMAL, false);
-		} else if (0 == strcmp(l, "test-ahci") || 0 == strcmp(l, "t3")) {
-			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, false);
-		} else if (0 == strcmp(l, "test-opt") || 0 == strcmp(l, "t4")) {
-			Build(true);
-			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, false);
-		} else if (0 == strcmp(l, "low-memory")) {
-			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_ATA, 32, 4, LOG_NORMAL, false);
-		} else if (0 == strcmp(l, "debug") || 0 == strcmp(l, "d")) {
-			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_AHCI, 64, 1, LOG_NORMAL, true);
-		} else if (0 == strcmp(l, "debug-without-compiling") || 0 == strcmp(l, "d2")) {
-			Build(false, false);
-			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 1, LOG_NORMAL, true);
-		} else if (0 == strcmp(l, "debug-smp")) {
-			Build(false);
-			Run(EMULATOR_QEMU, DRIVE_ATA, 64, 4, LOG_NORMAL, true);
-		} else if (0 == strcmp(l, "vbox") || 0 == strcmp(l, "v")) {
-			Build(true);
-			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
-		} else if (0 == strcmp(l, "v3")) {
-			Build(true, false);
-			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
-		} else if (0 == strcmp(l, "vbox-without-opt") || 0 == strcmp(l, "v2")) {
-			Build(false);
-			Run(EMULATOR_VIRTUALBOX, 0, 0, 0, 0, false);
-		} else if (0 == strcmp(l, "exit") || 0 == strcmp(l, "x") || 0 == strcmp(l, "quit") || 0 == strcmp(l, "q")) {
-			break;
-		} else if (0 == strcmp(l, "reset-config")) {
-			system("rm build_system_config.dat");
-			printf("Please restart the build system.\n");
-			break;
-		} else if (0 == strcmp(l, "compile") || 0 == strcmp(l, "c")) {
-			Compile(false);
-		} else if (0 == memcmp(l, "lua ", 4) || 0 == memcmp(l, "l ", 2)) {
-			sprintf(buffer, "lua -e \"print(%s)\"", 1 + strchr(l, ' '));
-			system(buffer);
-		} else if (0 == memcmp(l, "python ", 7) || 0 == memcmp(l, "p ", 2)) {
-			sprintf(buffer, "python -c \"print(%s)\"", 1 + strchr(l, ' '));
-			system(buffer);
-		} else if (0 == memcmp(l, "git ", 4)) {
-			sprintf(buffer, "git %s", 1 + strchr(l, ' '));
-			system(buffer);
-		} else if (0 == strcmp(l, "build-cross")) {
-			BuildCrossCompiler(true);
-			SaveConfig();
-			printf("Please restart the build system.\n");
-			return 0;
-		} else if (0 == strcmp(l, "clean")) {
-			system("rm -rf ports/musl/obj ports/musl/lib bin ports/lua/*.o ports/lua/src/*.o");
-		} else if (0 == strcmp(l, "first-program") || 0 == strcmp(l, "fp")) {
-			sprintf(buffer, "The current first program is " Color1 "%s" ColorNormal ".\nEnter the name of the new first program: ", firstProgram);
-			printf(buffer);
-
-			{
-				char *l2 = nullptr;
-				size_t pos;
-				getline(&l2, &pos, stdin);
-
-				if (strlen(l2) > 1) {
-					l2[strlen(l2) - 1] = 0;
-					strcpy(firstProgram, l2);
-					sprintf(buffer, "The new first program is " Color1 "%s" ColorNormal ".\n", firstProgram);
-					printf(buffer);
-					SaveConfig();
-				}
-
-				free(l2);
-			}
-		} else if (0 == strcmp(l, "help") || 0 == strcmp(l, "h") || 0 == strcmp(l, "?")) {
-			printf("(b ) build - Unoptimised build\n");
-			printf("(o ) optimise - Optimised build\n");
-			printf("(t ) test - Qemu (SMP/ATA/64MB)\n");
-			printf("(  ) ata - Qemu (SMP/ATA/64MB)\n");
-			printf("(t2) test-without-smp - Qemu (ATA/64MB)\n");
-			printf("(t3) test-ahci - Qemu (AHCI/64MB)\n");
-			printf("(t4) test-opt - Qemu (ATA/64MB/optimised)\n");
-			printf("(  ) bochs - Bochs\n");
-			printf("(  ) low-memory - Qemu (SMP/ATA/32MB)\n");
-			printf("(d ) debug - Qemu (AHCI/64MB/GDB)\n");
-			printf("(d2) debug-without-compiling - Qemu (ATA/64MB/GDB)\n");
-			printf("(  ) debug-smp - Qemu (ATA/64MB/GDB/SMP)\n");
-			printf("(v ) vbox - VirtualBox (optimised)\n");
-			printf("(  ) vbox-without-opt - VirtualBox (unoptimised)\n");
-			printf("(x ) exit - Exit the build system.\n");
-			printf("(h ) help - Show the help prompt.\n");
-			printf("(l ) lua - Execute a Lua expression.\n");
-			printf("(p ) python - Execute a Lua expression.\n");
-			printf("(c ) compile - Compile the kernel and programs.\n");
-			printf("(fp) first-program - Set the first program to run in the OS (local).\n");
-			printf("(  ) reset-config - Reset the build system's config file.\n");
-			printf("(  ) build-cross - Build a GCC cross compiler for building the OS.\n");
-			printf("(  ) clean - Remove all build files.\n");
-		} else {
-			printf("Unrecognised command '%s'. Enter 'help' to get a list of commands.\n", l);
-		}
+		DoCommand(l);
 
 		if (prev != l) free(prev);
 		prev = l;

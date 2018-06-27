@@ -88,6 +88,8 @@ extern "C" uint64_t ProcessorReadMXCSR();
 volatile uintptr_t ipiVector;
 extern struct Spinlock ipiLock;
 
+extern uintptr_t bootloaderInformationOffset;
+
 #ifdef ARCH_X86_64
 extern "C" uint64_t ProcessorReadCR3();
 extern "C" void gdt_data();

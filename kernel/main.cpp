@@ -32,12 +32,11 @@ extern "C" void KernelAPMain() {
 }
 
 extern "C" void KernelMain() {
+	vesaMode = (VESAVideoModeInformation *) (LOW_MEMORY_MAP_START + 0x7000 + bootloaderInformationOffset);
+	*((uint32_t *) (LOW_MEMORY_MAP_START + vesaMode->bufferPhysical + 10)) = 0xFFFFFF00;
+	while (true);
+
 	Print("---------------------------\n");
-
-	for (uintptr_t i = 0; i < 16; i++) {
-		OSPrint("%X ", installationID.d[i]);
-	}
-
 	kernelVMM.Initialise();
 	memoryManagerVMM.Initialise();
 	pmm.Initialise();
