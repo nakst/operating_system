@@ -234,6 +234,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 		ElfProgramHeader *programHeaders = (ElfProgramHeader *) (kernelBuffer + header->programHeaderTable);
 		uintptr_t programHeaderEntrySize = header->programHeaderEntrySize;
 
+		// TODO This isn't working?
+
 		for (uintptr_t i = 0; i < header->programHeaderEntries; i++) {
 			ElfProgramHeader *header = (ElfProgramHeader *) ((uint8_t *) programHeaders + programHeaderEntrySize * i);
 			if (header->type != 1) continue;
@@ -311,7 +313,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 		}
 	}
 
-	*framebuffer = 0xFFFFFF;
+	*framebuffer = 0xFFFF;
 
 	// Start the kernel.
 	{

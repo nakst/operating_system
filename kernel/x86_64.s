@@ -81,6 +81,27 @@ _start:
 	mov	fs,ax
 	mov	gs,ax
 
+	; Install a stack
+	mov	rsp,stack + stack_size
+
+	; Test
+;mov	rax,0x1234567890ABCDEF
+;push	rax
+;pop	rbx
+;cmp	rbx,rax
+;jne	$
+;xor	rbx,rbx
+;div	rbx
+;call	.test
+;.destination:
+;mov	rbx,0
+;div	rbx
+;.test:
+;mov	rax,.destination
+;cmp	[rsp],rax
+;jne	$
+;ret
+
 	mov	rax,bootloaderInformationOffset
 	mov	[rax],rdi
 
@@ -97,9 +118,6 @@ _start:
 	mov	qword [rax],0
 	mov	rax,cr3
 	mov	cr3,rax
-
-	; Install a stack
-	mov	rsp,stack + stack_size
 
 SetupCOM1:
 	; Setup the serial COM1 port for debug output.
@@ -562,6 +580,7 @@ InstallInterruptHandler:
 	mov	word [rbx + 6],dx
 	shr	rdx,16
 	mov	qword [rbx + 8],rdx
+
 	ret
 
 %macro INTERRUPT_HANDLER 1
