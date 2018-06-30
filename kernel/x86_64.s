@@ -84,24 +84,7 @@ _start:
 	; Install a stack
 	mov	rsp,stack + stack_size
 
-	; Test
-;mov	rax,0x1234567890ABCDEF
-;push	rax
-;pop	rbx
-;cmp	rbx,rax
-;jne	$
-;xor	rbx,rbx
-;div	rbx
-;call	.test
-;.destination:
-;mov	rbx,0
-;div	rbx
-;.test:
-;mov	rax,.destination
-;cmp	[rsp],rax
-;jne	$
-;ret
-
+	; Save the bootloader information offset.
 	mov	rax,bootloaderInformationOffset
 	mov	[rax],rdi
 
@@ -766,6 +749,26 @@ ProcessorBreakpointHelper:
 [global ProcessorReadCR3]
 ProcessorReadCR3:
 	mov	rax,cr3
+	ret
+
+[global SpeakerBeep]
+SpeakerBeep:
+	; Beep!!!
+	mov	rdi,0x43
+	mov	rsi,0xB6
+	call	ProcessorOut8
+	mov	rdi,0x42
+	mov	rsi,0x97
+	call	ProcessorOut8
+	mov	rdi,0x42
+	mov	rsi,0x0A
+	call	ProcessorOut8
+	mov	rdi,0x61
+	call	ProcessorIn8
+	mov	rsi,rax
+	or	rsi,3
+	mov	rdi,0x61
+	call	ProcessorOut8
 	ret
 
 [global SSSE3Framebuffer32To24Copy]

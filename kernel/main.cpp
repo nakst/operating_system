@@ -37,6 +37,7 @@ extern "C" void KernelMain() {
 	memoryManagerVMM.Initialise();
 	pmm.Initialise();
 	scheduler.Initialise();
+	// TODO ACPI initilisation fails on my laptop.
 	acpi.Initialise(); // Initialises CPULocalStorage.
 	scheduler.SpawnThread((uintptr_t) KernelInitialisation, 0, kernelProcess, false);
 	KernelLog(LOG_VERBOSE, "Starting preemption...\n");

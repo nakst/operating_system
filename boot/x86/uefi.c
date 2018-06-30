@@ -25,23 +25,11 @@ typedef struct MemoryRegion {
 #define MAX_MEMORY_REGIONS (1024)
 MemoryRegion memoryRegions[1024];
 #define KERNEL_BUFFER_SIZE (1048576)
-char kernelBuffer[KERNEL_BUFFER_SIZE];
+#define kernelBuffer ((char *) 0x200000)
 #define IID_BUFFER_SIZE (64)
 char iidBuffer[IID_BUFFER_SIZE];
 #define MEMORY_MAP_BUFFER_SIZE (16384)
 char memoryMapBuffer[MEMORY_MAP_BUFFER_SIZE];
-
-uint64_t gdt[] = {0, 
-	0x00CF9A000000FFFF, 0x00CF92000000FFFF, // 32-bit
-	0x000F9A000000FFFF, 0x000F92000000FFFF, // 16-bit
-	0x00CFFA000000FFFF, 0x00CFF2000000FFFF, // 32-bit user
-	0x0000E90000000068, 0x0000000000000000, // TSS
-	0x00AF9A000000FFFF, 0x00AF92000000FFFF, // 64-bit
-	0x00AFFA000000FFFF, 0x00AFF2000000FFFF, 0x00AFFA000000FFFF, // 64-bit user
-};
-
-void LoadGDT(GDTData *gdtData);
-uint64_t *GetCR3();
 
 #define VESA_VM_INFO_ONLY
 #define ARCH_64
@@ -58,16 +46,16 @@ void ZeroMemory(void *pointer, uint64_t size) {
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable) {
 	UINTN mapKey;
-	ElfHeader *header;
 	uint32_t *framebuffer, horizontalResolution, verticalResolution;
 	InitializeLib(imageHandle, systemTable);
+	ElfHeader *header;
 	Print(L"Loading OS...\n");
 
-	// Make sure 0x100000 -> 0x180000 is identity mapped.
+	// Make sure 0x100000 -> 0x300000 is identity mapped.
 	{
 		EFI_PHYSICAL_ADDRESS address = 0x100000;
 
-		if (EFI_SUCCESS != uefi_call_wrapper(ST->BootServices->AllocatePages, 4, AllocateAddress, EfiLoaderData, 0x80, &address)) {
+		if (EFI_SUCCESS != uefi_call_wrapper(ST->BootServices->AllocatePages, 4, AllocateAddress, EfiLoaderData, 0x200, &address)) {
 			Print(L"Error: Could not map 0x100000 -> 0x180000.\n");
 			while (1);
 		}
@@ -88,7 +76,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 		verticalResolution = graphicsOutputProtocol->Mode->Info->VerticalResolution;
 	}
 
-	// Read the kernel and IID files.
+	// Read the kernel, IID and loader files.
 	{
 		EFI_GUID loadedImageProtocolGUID = LOADED_IMAGE_PROTOCOL;
 		EFI_GUID simpleFilesystemProtocolGUID = SIMPLE_FILE_SYSTEM_PROTOCOL;
@@ -96,7 +84,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 		EFI_LOADED_IMAGE_PROTOCOL *loadedImageProtocol;
 		EFI_SIMPLE_FILE_SYSTEM_PROTOCOL *simpleFilesystemProtocol;
 
-		EFI_FILE *filesystemRoot, *kernelFile, *iidFile;
+		EFI_FILE *filesystemRoot, *kernelFile, *iidFile, *loaderFile;
 
 		UINTN size;
 
@@ -129,6 +117,8 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 			while (1);
 		}
 
+		Print(L"Kernel size: %d bytes\n", size);
+
 		if (size == KERNEL_BUFFER_SIZE) {
 			Print(L"Kernel too large to fit into buffer.\n");
 			while (1);
@@ -145,7 +135,54 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 			Print(L"Error: Could not load EssenceIID.dat.\n");
 			while (1);
 		}
+
+		if (EFI_SUCCESS != uefi_call_wrapper(filesystemRoot->Open, 5, filesystemRoot, &loaderFile, L"EssenceLoader.bin", EFI_FILE_MODE_READ, 0)) {
+			Print(L"Error: Could not open EssenceLoader.bin.\n");
+			while (1);
+		}
+
+		size = 0x80000;
+
+		if (EFI_SUCCESS != uefi_call_wrapper(loaderFile->Read, 3, loaderFile, &size, (char *) 0x180000)) {
+			Print(L"Error: Could not load EssenceLoader.bin.\n");
+			while (1);
+		}
 	}
+
+#if 0
+	// Print the memory map.
+	{
+		UINTN descriptorSize, descriptorVersion, size = MEMORY_MAP_BUFFER_SIZE;
+
+		if (EFI_SUCCESS != uefi_call_wrapper(ST->BootServices->GetMemoryMap, 5, &size, (EFI_MEMORY_DESCRIPTOR *) memoryMapBuffer, &mapKey, &descriptorSize, &descriptorVersion)) {
+			Print(L"Error: Could not get memory map.\n");
+			while (1);
+		}
+
+		WCHAR *memoryTypes[] = {
+			L"EfiReservedMemoryType",
+			L"EfiLoaderCode",
+			L"EfiLoaderData",
+			L"EfiBootServicesCode",
+			L"EfiBootServicesData",
+			L"EfiRuntimeServicesCode",
+			L"EfiRuntimeServicesData",
+			L"EfiConventionalMemory",
+			L"EfiUnusableMemory",
+			L"EfiACPIReclaimMemory",
+			L"EfiACPIMemoryNVS",
+			L"EfiMemoryMappedIO",
+			L"EfiMemoryMappedIOPortSpace",
+			L"EfiPalCode",
+			L"EfiMaxMemoryType",
+		};
+
+		for (uintptr_t i = 0; i < size / descriptorSize; i++) {
+			EFI_MEMORY_DESCRIPTOR *descriptor = (EFI_MEMORY_DESCRIPTOR *) (memoryMapBuffer + i * descriptorSize);
+			Print(L"memory %s: %llx -> %llx\n", memoryTypes[descriptor->Type], descriptor->PhysicalStart, descriptor->PhysicalStart + descriptor->NumberOfPages * 0x1000 - 1);
+		}
+	}
+#endif
 
 	// Get the memory map.
 	{
@@ -161,7 +198,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 		for (uintptr_t i = 0; i < size / descriptorSize && memoryRegionCount != MAX_MEMORY_REGIONS - 1; i++) {
 			EFI_MEMORY_DESCRIPTOR *descriptor = (EFI_MEMORY_DESCRIPTOR *) (memoryMapBuffer + i * descriptorSize);
 
-			if (descriptor->Type == EfiConventionalMemory && descriptor->PhysicalStart >= 0x180000) {
+			if (descriptor->Type == EfiConventionalMemory && descriptor->PhysicalStart >= 0x300000) {
 				memoryRegions[memoryRegionCount].base = descriptor->PhysicalStart;
 				memoryRegions[memoryRegionCount].pages = descriptor->NumberOfPages;
 				memoryRegionCount++;
@@ -179,16 +216,25 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 		}
 	}
 
-	// Map low memory for the kernel.
+	// Identity map the first 3MB for the loader.
 	{
-		uint64_t *pageDirectory = GetCR3();
-		pageDirectory[0x1FF] = (uint64_t) pageDirectory | 3;
-		pageDirectory[0x1FE] = pageDirectory[0];
+		uint64_t *paging = (uint64_t *) 0x140000;
+		ZeroMemory(paging, 0x5000);
+
+		paging[0x1FF] = 0x140003;
+		paging[0x000] = 0x141003;
+		paging[0x200] = 0x142003;
+		paging[0x400] = 0x143003;
+		paging[0x401] = 0x144003;
+
+		for (uintptr_t i = 0; i < 0x400; i++) {
+			paging[0x600 + i] = (i * 0x1000) | 3;
+		}
 	}
 
 	// Copy the installation ID across.
 	{
-		uint8_t *destination = (uint8_t *) (LOW_MEMORY_MAP_START + 0x107FF0);
+		uint8_t *destination = (uint8_t *) (0x107FF0);
 
 		for (uintptr_t i = 0; i < 16; i++) {
 			char c1 = iidBuffer[i * 3 + 0];
@@ -201,7 +247,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 
 	// Copy the graphics information across.
 	{
-		struct VESAVideoModeInformation *destination = (struct VESAVideoModeInformation *) (LOW_MEMORY_MAP_START + 0x107000);
+		struct VESAVideoModeInformation *destination = (struct VESAVideoModeInformation *) (0x107000);
 		destination->widthPixels = horizontalResolution;
 		destination->heightPixels = verticalResolution;
 		destination->bufferPhysical = (uintptr_t) framebuffer; // TODO 64-bit framebuffers.
@@ -209,32 +255,13 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 		destination->bitsPerPixel = 32;
 	}
 
-	// Copy the GDT contents.
+	// Allocate and map memory for the kernel.
 	{
-		uint64_t *destination = (uint64_t *) (LOW_MEMORY_MAP_START + 0x100000);
-
-		for (uintptr_t i = 0; i < sizeof(gdt) / sizeof(uint64_t); i++) {
-			destination[i] = gdt[i];
-		}
-	}
-
-	// Load the GDT.
-	{
-		GDTData data;
-		data.length = sizeof(gdt) - 1;
-		data.address = LOW_MEMORY_MAP_START + 0x100000;
-		LoadGDT(&data);
-	}
-
-	// Map the kernel to the correct location.
-	{
-		uint64_t nextPageTable = 0x140000;
+		uint64_t nextPageTable = 0x1C0000;
 
 		header = (ElfHeader *) kernelBuffer;
 		ElfProgramHeader *programHeaders = (ElfProgramHeader *) (kernelBuffer + header->programHeaderTable);
 		uintptr_t programHeaderEntrySize = header->programHeaderEntrySize;
-
-		// TODO This isn't working?
 
 		for (uintptr_t i = 0; i < header->programHeaderEntries; i++) {
 			ElfProgramHeader *header = (ElfProgramHeader *) ((uint8_t *) programHeaders + programHeaderEntrySize * i);
@@ -265,41 +292,38 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 				physicalAddress &= 0xFFFFFFFFFFFFF000;
 				virtualAddress  &= 0x0000FFFFFFFFF000;
 
-				uintptr_t indexL4 = virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 3);
-				uintptr_t indexL3 = virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 2);
-				uintptr_t indexL2 = virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 1);
-				uintptr_t indexL1 = virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 0);
+				uintptr_t indexL4 = (virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 3)) & (ENTRIES_PER_PAGE_TABLE - 1);
+				uintptr_t indexL3 = (virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 2)) & (ENTRIES_PER_PAGE_TABLE - 1);
+				uintptr_t indexL2 = (virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 1)) & (ENTRIES_PER_PAGE_TABLE - 1);
+				uintptr_t indexL1 = (virtualAddress >> (PAGE_BITS + ENTRIES_PER_PAGE_TABLE_BITS * 0)) & (ENTRIES_PER_PAGE_TABLE - 1);
 
-				if ((PAGE_TABLE_L4[indexL4] & 1) == 0) {
-					PAGE_TABLE_L4[indexL4] = nextPageTable | 7;
-					ZeroMemory((void *) ((uintptr_t) (PAGE_TABLE_L3 + indexL3) & ~(PAGE_SIZE - 1)), PAGE_SIZE);
-					nextPageTable += 0x1000;
+				uint64_t *tableL4 = (uint64_t *) 0x140000;
+
+				if (!(tableL4[indexL4] & 1)) {
+					tableL4[indexL4] = nextPageTable | 7;
+					ZeroMemory((void *) nextPageTable, PAGE_SIZE);
+					nextPageTable += PAGE_SIZE;
 				}
 
-				if ((PAGE_TABLE_L3[indexL3] & 1) == 0) {
-					PAGE_TABLE_L3[indexL3] = nextPageTable | 7;
-					ZeroMemory((void *) ((uintptr_t) (PAGE_TABLE_L2 + indexL2) & ~(PAGE_SIZE - 1)), PAGE_SIZE);
-					nextPageTable += 0x1000;
+				uint64_t *tableL3 = (uint64_t *) (tableL4[indexL4] & ~(PAGE_SIZE - 1));
+
+				if (!(tableL3[indexL3] & 1)) {
+					tableL3[indexL3] = nextPageTable | 7;
+					ZeroMemory((void *) nextPageTable, PAGE_SIZE);
+					nextPageTable += PAGE_SIZE;
 				}
 
-				if ((PAGE_TABLE_L2[indexL2] & 1) == 0) {
-					PAGE_TABLE_L2[indexL2] = nextPageTable | 7;
-					ZeroMemory((void *) ((uintptr_t) (PAGE_TABLE_L1 + indexL1) & ~(PAGE_SIZE - 1)), PAGE_SIZE);
-					nextPageTable += 0x1000;
+				uint64_t *tableL2 = (uint64_t *) (tableL3[indexL3] & ~(PAGE_SIZE - 1));
+
+				if (!(tableL2[indexL2] & 1)) {
+					tableL2[indexL2] = nextPageTable | 7;
+					ZeroMemory((void *) nextPageTable, PAGE_SIZE);
+					nextPageTable += PAGE_SIZE;
 				}
 
+				uint64_t *tableL1 = (uint64_t *) (tableL2[indexL2] & ~(PAGE_SIZE - 1));
 				uintptr_t value = physicalAddress | 3;
-				PAGE_TABLE_L1[indexL1] = value;
-			}
-
-			uint8_t *data = (uint8_t *) header->virtualAddress;
-
-			for (uintptr_t j = 0; j < header->segmentSize; j++) {
-				if (j < header->dataInFile) {
-					data[j] = kernelBuffer[header->fileOffset + j];
-				} else {
-				     data[j] = 0;
-				}
+				tableL1[indexL1] = value;
 			}
 		}
 	}
@@ -315,9 +339,9 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 
 	*framebuffer = 0xFFFF;
 
-	// Start the kernel.
+	// Start the loader.
 	{
-		((void (*)(uintptr_t)) header->entry)(0x100000);
+		((void (*)()) 0x180000)();
 	}
 
 	while (1);

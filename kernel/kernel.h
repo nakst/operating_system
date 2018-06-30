@@ -85,6 +85,8 @@ extern "C" uintptr_t ProcessorGetRSP();
 extern "C" void ProcessorFlushCodeCache();
 extern "C" uint64_t ProcessorReadMXCSR();
 
+extern "C" void SpeakerBeep();
+
 volatile uintptr_t ipiVector;
 extern struct Spinlock ipiLock;
 

@@ -256,6 +256,7 @@ void KernelPanic(const char *format, ...) {
 		}
 	}
 
+	SpeakerBeep();
 	ProcessorHalt();
 }
 

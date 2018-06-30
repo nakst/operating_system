@@ -759,6 +759,7 @@ setup_elf_64:
 	; Go to the next frame
 	add	qword [.target_page],0x1000
 	dec	rcx
+	or	rcx,rcx
 	jnz	.frame_loop
 
 	; Restore the pointer to the segment
