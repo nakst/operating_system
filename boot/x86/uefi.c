@@ -61,6 +61,20 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 		}
 	}
 
+	// Find the RSDP.
+	{
+		for (uintptr_t i = 0; i < systemTable->NumberOfTableEntries; i++) {
+			EFI_CONFIGURATION_TABLE *entry = systemTable->ConfigurationTable + i;
+			if (entry->VendorGuid.Data1 == 0x8868E871 && entry->VendorGuid.Data2 == 0xE4F1 && entry->VendorGuid.Data3 == 0x11D3
+					&& entry->VendorGuid.Data4[0] == 0xBC && entry->VendorGuid.Data4[1] == 0x22 && entry->VendorGuid.Data4[2] == 0x00
+					&& entry->VendorGuid.Data4[3] == 0x80 && entry->VendorGuid.Data4[4] == 0xC7 && entry->VendorGuid.Data4[5] == 0x3C
+					&& entry->VendorGuid.Data4[6] == 0x88 && entry->VendorGuid.Data4[7] == 0x81) {
+				*((uint64_t *) 0x107FE8) = (uint64_t) entry->VendorTable;
+				Print(L"The RSDP can be found at 0x%x.\n", entry->VendorTable);
+			}
+		}
+	}
+
 	// Get the graphics mode information.
 	{
 		EFI_GRAPHICS_OUTPUT_PROTOCOL *graphicsOutputProtocol;

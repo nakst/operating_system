@@ -1,6 +1,7 @@
 #ifdef IMPLEMENTATION
 
-#define USE_ACPICA
+// #define USE_ACPICA
+// #define USE_SMP
 
 #define SIGNATURE_RSDP 0x2052545020445352
 
@@ -180,7 +181,14 @@ void ACPI::FindRootSystemDescriptorPointer() {
 
 void ACPI::Initialise() {
 	ZeroMemory(this, sizeof(ACPI));
-	FindRootSystemDescriptorPointer();
+
+	uint64_t uefiRSDP = *((uint64_t *) (LOW_MEMORY_MAP_START + bootloaderInformationOffset + 0x7FE8));
+
+	if (!uefiRSDP) {
+		FindRootSystemDescriptorPointer();
+	} else {
+		rsdp = (RootSystemDescriptorPointer *) kernelVMM.Allocate("ACPI", ACPI_MAX_TABLE_LENGTH, VMM_MAP_ALL, VMM_REGION_PHYSICAL, (uintptr_t) uefiRSDP);
+	}
 
 	if (rsdp) {
 		if (rsdp->revision == 2 && rsdp->xsdtAddress) {
@@ -320,8 +328,10 @@ void ACPI::Initialise() {
 			KernelPanic("ACPI::Initialise - Could not find the bootstrap processor\n");
 		}
 
+		// TODO Use bootloaderInformationOffset.
 #define AP_TRAMPOLINE 0x10000
 
+#ifdef USE_SMP
 		// Put the trampoline code in memory.
 		CopyMemory((void *) (LOW_MEMORY_MAP_START + AP_TRAMPOLINE),
 				(void *) ProcessorAPStartup,
@@ -342,6 +352,7 @@ void ACPI::Initialise() {
 
 		// Put the startup flag at AP_TRAMPOLINE + 0xFC0
 		uint8_t volatile *startupFlag = (uint8_t *) (LOW_MEMORY_MAP_START + AP_TRAMPOLINE + 0xFC0);
+#endif
 
 		// Temporarily identity map a 2 pages in at 0x10000.
 		{
@@ -353,6 +364,7 @@ void ACPI::Initialise() {
 
 		scheduler.processors = 1;
 
+#ifdef USE_SMP
 		for (uintptr_t i = 0; i < processorCount; i++) {
 			ACPIProcessor *processor = processors + i;
 
@@ -411,6 +423,7 @@ void ACPI::Initialise() {
 				}
 			}
 		}
+#endif
 
 		SetupProcessor2();
 		

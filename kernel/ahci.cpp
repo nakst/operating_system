@@ -5,12 +5,17 @@
 // 	- Possibly related to NO_ASYNC_IO?
 // 	- Possibly a race condition with the timers?
 
+// TODO We don't get interrupts on my laptop?
+// TODO Reduce AHCI timeouts and waits in BAR accesses.
+
 // #define AHCI_VERBOSE		
-#define AHCI_FATAL_TIMEOUT // The kernel doesn't handle IO errors properly yet.
+#define AHCI_FATAL_TIMEOUT 	// The kernel doesn't handle IO errors properly yet.
 #define AHCI_SERIAL
+#define AHCI_POLL		// Only works with NO_ASYNC_IO.
+#define AHCI_IGNORE_WRITES	// Only works with NO_ASYNC_IO.
 
 #define AHCI_DRIVE_IDENTIFY	(10)
-#define AHCI_TIMEOUT		(1000)
+#define AHCI_TIMEOUT		(10000)
 #define AHCI_BUFFER_SIZE 	(65536)
 #define AHCI_MAX_PORTS 		(32)
 
@@ -253,6 +258,12 @@ void AHCITimeout(AHCIOperation *op) {
 }
 
 bool AHCIAccess(IOPacket *packet, uintptr_t _drive, uint64_t offset, size_t _countBytes, int operation, uint8_t *_buffer) {
+#ifdef AHCI_IGNORE_WRITES
+	if (operation == DRIVE_ACCESS_WRITE) {
+		return true;
+	}
+#endif
+
 	uint64_t sector = offset / ATA_SECTOR_SIZE;
 	uint64_t offsetIntoSector = offset % ATA_SECTOR_SIZE;
 	size_t countBytes = (_countBytes + offsetIntoSector + ATA_SECTOR_SIZE - 1) & ~(ATA_SECTOR_SIZE - 1);
@@ -408,19 +419,29 @@ bool AHCIAccess(IOPacket *packet, uintptr_t _drive, uint64_t offset, size_t _cou
 	if (!packet) {
 		// Finish the operation.
 
+#ifdef AHCI_POLL
+		while (controller->device->ReadBAR32(controller->abar, AHCI_PORT(drive) + AHCI_PORT_CI) & (1 << commandIndex));
+		port->commands[commandIndex].state = AHCICommand::FINISHED;
+#else
 		if (!port->commands[commandIndex].finished.Wait(AHCI_TIMEOUT)) {
-			op->error = true;
+			if (controller->device->ReadBAR32(controller->abar, AHCI_PORT(drive) + AHCI_PORT_CI) & (1 << commandIndex)) {
+				op->error = true;
 
 #ifdef AHCI_FATAL_TIMEOUT 
-			KernelPanic("AHCIAccess - Fatal timeout.\n");
+				KernelPanic("AHCIAccess - Fatal timeout.\n");
 #endif
 
 #ifdef AHCI_VERBOSE
-			OSPrint("AHCITimeout %x\n", op);
+				OSPrint("AHCITimeout %x\n", op);
 #else
-			KernelLog(LOG_WARNING, "AHCIAccess - Request timed out.\n");
+				KernelLog(LOG_WARNING, "AHCIAccess - Request timed out.\n");
 #endif
+			} else {
+				OSPrint("We never got the interrupt, but the command finished?\n");
+				port->commands[commandIndex].state = AHCICommand::FINISHED;
+			}
 		}
+#endif
 
 		AHCIFinish(op);
 	}
@@ -601,6 +622,12 @@ void AHCIRegisterController(PCIDevice *device) {
 	bool error = false;
 	(void) error;
 
+#if 0
+	for (uintptr_t i = 0; i < acpi.ioapicCount; i++) {
+		OSPrint("%d: id(%d), address(%x), base(%d), count(%d)\n", i, acpi.ioApics[i].id, acpi.ioApics[i].address, acpi.ioApics[i].gsiBase, acpi.ioApics[i].ReadRegister(1) >> 16);
+	}
+#endif
+
 	if (ahciControllerCount == AHCI_MAX_CONTROLLERS) {
 		KernelLog(LOG_WARNING, "AHCIRegisterController - Maximum AHCI controller limit (%d) exceeded.\n", AHCI_MAX_CONTROLLERS);
 		error = true;
@@ -619,7 +646,7 @@ void AHCIRegisterController(PCIDevice *device) {
 	AHCIController *controller = ahciControllers + ahciControllerCount++;
 	
 	Timer timeout = {};
-	timeout.Set(100, false); // 100ms to initialise the controller.
+	timeout.Set(AHCI_TIMEOUT, false); 
 	Defer(timeout.Remove());
 
 	controller->abar = 5;
@@ -736,7 +763,9 @@ void AHCIRegisterController(PCIDevice *device) {
 
 	// Register the IRQ.
 
+#if 0
 	OSPrint("irq: %d, %d\n", device->interruptPin, device->interruptLine);
+#endif
 	
 	if (!RegisterIRQHandler(device->interruptLine, AHCIIRQHandler)) {
 		KernelLog(LOG_WARNING, "AHCIRegisterController - Could not register IRQ %d.\n", device->interruptLine);
@@ -760,6 +789,10 @@ void AHCIRegisterController(PCIDevice *device) {
 		if (!(availablePorts & i)) {
 			continue;
 		}
+
+#if 0
+		OSPrint("available port %d\n", j);
+#endif
 
 		AHCIPort *port = controller->ports + j;
 		
@@ -800,11 +833,19 @@ void AHCIRegisterController(PCIDevice *device) {
 		// Get the device type.
 
 		uint32_t status = device->ReadBAR32(controller->abar, AHCI_PORT(j) + AHCI_PORT_SSTS);
+#if 0
+		OSPrint("status %x\n", status);
+#endif
 
 		if ((status & 15) != 3) continue;
 		if (((status >> 8) & 15) != 1) continue;
 
+		// Check the signature.
+
 		uint32_t signature = device->ReadBAR32(controller->abar, AHCI_PORT(j) + AHCI_PORT_SIG);
+#if 0
+		OSPrint("signature %x\n", signature);
+#endif
 
 		if (signature != 0x101) continue;
 
@@ -827,17 +868,23 @@ void AHCIRegisterController(PCIDevice *device) {
 		port->present = true;
 		bool success = AHCIAccess(nullptr, j, 0, 512, AHCI_DRIVE_IDENTIFY, (uint8_t *) identifyData);
 		port->present = false;
+#if 0
+		OSPrint("sent identify, success = %d\n", success);
+#endif
 		if (!success) continue;
 
 		// Parse the IDENTIFY data.
 
+#if 0
+		OSPrint("identifyData[49] = %x\n", identifyData[49]);
+#endif
 		if (!(identifyData[49] & 0x200)) continue;
 		if (!(identifyData[49] & 0x100)) continue;
 
 		uint32_t lba28Sectors = ((uint32_t) identifyData[60] << 0) + ((uint32_t) identifyData[61] << 16);
 		uint64_t lba48Sectors = ((uint64_t) identifyData[100] << 0) + ((uint64_t) identifyData[101] << 16) +
 			((uint64_t) identifyData[102] << 32) + ((uint64_t) identifyData[103] << 48);
-		bool supportsLBA48 = lba48Sectors && (identifyData[83] & 0x40);
+		bool supportsLBA48 = lba48Sectors;
 		uint64_t sectors = supportsLBA48 ? lba48Sectors : lba28Sectors;
 
 		port->sectors = sectors;

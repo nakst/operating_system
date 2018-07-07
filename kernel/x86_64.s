@@ -81,6 +81,11 @@ _start:
 	mov	fs,ax
 	mov	gs,ax
 
+	cmp	rdi,0
+	jne	.standard_acpi
+	mov	[0x7FE8],rdi
+	.standard_acpi:
+
 	; Install a stack
 	mov	rsp,stack + stack_size
 

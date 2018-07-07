@@ -3,6 +3,7 @@
 [section .text]
 
 ; 0x107000          Graphics info
+; 0x107FE8	    RSDP address
 ; 0x107FF0	    Installation ID
 ; 0x140000-0x150000 Identity paging tables
 ; 0x160000-0x170000 Memory regions

@@ -120,6 +120,11 @@ void NextTimer(size_t ms) {
 	acpi.lapic.NextTimer(ms);
 }
 
+bool LogAndRejectInterrupt(uintptr_t index) {
+	KernelLog(LOG_VERBOSE, "interrupt: %d\n", index);
+	return false;
+}
+
 extern "C" void SetupProcessor2() {
 	// Find the processor for the current LAPIC.
 	
@@ -186,6 +191,12 @@ extern "C" void SetupProcessor2() {
 	// Create the idle thread for this processor.
 	scheduler.CreateProcessorThreads();
 	localStorage->acpiProcessor->kernelProcessorID = localStorage->processorID;
+
+#if 0
+	for (uintptr_t i = 0; i < 0x20; i++) {
+		RegisterIRQHandler(i, LogAndRejectInterrupt);
+	}
+#endif
 }
 
 const char *exceptionInformation[] = {

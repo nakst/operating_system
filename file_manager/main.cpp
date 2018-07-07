@@ -12,6 +12,8 @@
 #define OS_MANIFEST_DEFINITIONS
 #include "../bin/Programs/File Manager/manifest.h"
 
+// TODO Bug: Bookmark folder button not updated properly with multiple instances in the same folder.
+
 struct FolderChild {
 	OSDirectoryChild data;
 	uint16_t state;

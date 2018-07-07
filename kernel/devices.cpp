@@ -3,7 +3,7 @@
 // TODO Complete cancelled requests?
 // 	- Investigate with ATA and AHCI.
 
-// #define NO_ASYNC_IO
+#define NO_ASYNC_IO
 
 enum DeviceType {
 	DEVICE_TYPE_INVALID,
@@ -330,6 +330,7 @@ void DeviceManager::Initialise() {
 
 #ifdef ARCH_X86_64
 	InitialiseRandomSeed();
+
 	pci.Enumerate();
 	ps2.Initialise();
 #endif

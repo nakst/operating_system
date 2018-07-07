@@ -6,6 +6,9 @@
 
 #define DIRECTORY_ACCESS (OS_OPEN_NODE_DIRECTORY)
 
+// TODO Temporary.
+#define ASSUME_FIRST_ESFS_VOLUME_IS_BOOT_VOLUME
+
 enum FilesystemType {
 	FILESYSTEM_ESFS,
 };
@@ -866,10 +869,18 @@ Filesystem *VFS::RegisterFilesystem(Node *root, FilesystemType type, void *data,
 			goto end;
 		}
 
+#ifndef ASSUME_FIRST_ESFS_VOLUME_IS_BOOT_VOLUME
 		// This wasn't the boot volume.
 		if (CompareBytes(&fsInstallationID, &installationID, sizeof(UniqueIdentifier))) {
 			goto end;
 		}
+#else
+		(void) fsInstallationID;
+
+		if (foundBootFilesystem) {
+			goto end;
+		}
+#endif
 
 		foundBootFilesystem = true;
 
@@ -895,11 +906,11 @@ Filesystem *VFS::RegisterFilesystem(Node *root, FilesystemType type, void *data,
 }
 
 void DetectFilesystem(Device *device) {
-	uint8_t *information = (uint8_t *) OSHeapAllocate(device->block.sectorSize * 32, false);
+	uint8_t *information = (uint8_t *) OSHeapAllocate(32768, false);
 	Defer(OSHeapFree(information));
 
-	// Load the first 16KB of the drive to identify its filesystem.
-	bool success = device->block.Access(nullptr, 0, 16384, DRIVE_ACCESS_READ, information);
+	// Load the first 32KB of the drive to identify its filesystem.
+	bool success = device->block.Access(nullptr, 0, 32768, DRIVE_ACCESS_READ, information);
 
 	if (!success) {
 		// We could not access the block device.
@@ -916,12 +927,15 @@ void DetectFilesystem(Device *device) {
 		uint32_t partitionEntrySize = ((uint32_t *) information)[128 + 21];
 
 		for (uintptr_t i = 0; i < partitionCount; i++) {
+			uint64_t typeGUID1 = ((uint64_t *) information)[64 * partitionTable + partitionEntrySize / 8 * i + 0];
+			uint64_t typeGUID2 = ((uint64_t *) information)[64 * partitionTable + partitionEntrySize / 8 * i + 1];
 			uint64_t from = ((uint64_t *) information)[64 * partitionTable + partitionEntrySize / 8 * i + 4];
 			uint64_t to   = ((uint64_t *) information)[64 * partitionTable + partitionEntrySize / 8 * i + 5];
 
-			if (from && to) {
+			if (from && to && (typeGUID1 || typeGUID2)) {
 #if 0
 				uint16_t *name = ((uint16_t *) information) + (256 * partitionTable + partitionEntrySize / 2 * i + 28);
+				OSPrint("Partition %d: ", i + 1);
 				for (uintptr_t j = 0; j < 36; j++) { if (!name[j]) break; OSPrint("%c", name[j]); }
 				OSPrint("\n");
 #endif
@@ -971,8 +985,10 @@ void DetectFilesystem(Device *device) {
 			deviceManager.Register(&child);
 		}
 	} else {
-		unknownFilesystem:
+		unknownFilesystem:;
+#if 0
 		KernelLog(LOG_WARNING, "DeviceManager::Register - Could not detect filesystem or partition table on block device %d.\n", device->id);
+#endif
 	}
 }
 

@@ -32,9 +32,11 @@ struct PCIDevice {
 	PCIDeviceType type;
 };
 
-// TODO WaitMicroseconds(10) for each of these?
+#define PCI_BAR_ACCESS_DELAY (1000)
 
 uint8_t PCIDevice::ReadBAR8(uintptr_t index, uintptr_t offset) {
+	WaitMicroseconds(PCI_BAR_ACCESS_DELAY);
+
 	uint32_t baseAddress = baseAddresses[index];
 
 	if (baseAddress & 1) {
@@ -51,6 +53,8 @@ uint8_t PCIDevice::ReadBAR8(uintptr_t index, uintptr_t offset) {
 }
 
 void PCIDevice::WriteBAR8(uintptr_t index, uintptr_t offset, uint8_t value) {
+	WaitMicroseconds(PCI_BAR_ACCESS_DELAY);
+
 	uint32_t baseAddress = baseAddresses[index];
 
 	if (baseAddress & 1) {
@@ -65,6 +69,8 @@ void PCIDevice::WriteBAR8(uintptr_t index, uintptr_t offset, uint8_t value) {
 }
 
 uint32_t PCIDevice::ReadBAR32(uintptr_t index, uintptr_t offset) {
+	WaitMicroseconds(PCI_BAR_ACCESS_DELAY);
+
 	uint32_t baseAddress = baseAddresses[index];
 
 	if (baseAddress & 1) {
@@ -80,6 +86,8 @@ uint32_t PCIDevice::ReadBAR32(uintptr_t index, uintptr_t offset) {
 }
 
 void PCIDevice::WriteBAR32(uintptr_t index, uintptr_t offset, uint32_t value) {
+	WaitMicroseconds(PCI_BAR_ACCESS_DELAY);
+
 	uint32_t baseAddress = baseAddresses[index];
 
 	if (baseAddress & 1) {

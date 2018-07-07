@@ -192,16 +192,10 @@ void DebugWriteCharacter(uintptr_t character) {
 	}
 }
 
-void KernelPanic(const char *format, ...) {
+void StartDebugOutput() {
 	printToDebugger = true;
 	debugRows = graphics.resY / 18;
 	debugColumns = graphics.resX / 18;
-
-	ProcessorDisableInterrupts();
-	scheduler.panic = true;
-	ProcessorSendIPI(KERNEL_PANIC_IPI, true);
-
-	printToTerminal = true;
 
 	switch (graphics.colorMode) {
 		case VIDEO_COLOR_24_RGB: {
@@ -215,10 +209,21 @@ void KernelPanic(const char *format, ...) {
 				graphics.linearBuffer[i] = 0x44;
 			}
 		} break;
-	
-		default:;
-	}
 
+		default: {
+			// If there wasn't a video mode, use the speaker to indicate the error.
+			SpeakerBeep();
+		} break;
+	}
+}
+
+void KernelPanic(const char *format, ...) {
+	ProcessorDisableInterrupts();
+	scheduler.panic = true;
+	ProcessorSendIPI(KERNEL_PANIC_IPI, true);
+
+	printToTerminal = true;
+	if (!printToDebugger) StartDebugOutput();
 
 	Print("\n--- KERNEL PANIC ---\n[Fatal] ");
 
@@ -256,7 +261,6 @@ void KernelPanic(const char *format, ...) {
 		}
 	}
 
-	SpeakerBeep();
 	ProcessorHalt();
 }
 

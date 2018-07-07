@@ -9,7 +9,6 @@ void KernelInitialisation() {
 	pmm.Initialise2();
 	InitialiseObjectManager();
 	acpi.Initialise2();
-	graphics.Initialise(); 
 	vfs.Initialise();
 	deviceManager.Initialise();
 	windowManager.Initialise();
@@ -37,8 +36,8 @@ extern "C" void KernelMain() {
 	memoryManagerVMM.Initialise();
 	pmm.Initialise();
 	scheduler.Initialise();
-	// TODO ACPI initilisation fails on my laptop.
 	acpi.Initialise(); // Initialises CPULocalStorage.
+	graphics.Initialise(); 
 	scheduler.SpawnThread((uintptr_t) KernelInitialisation, 0, kernelProcess, false);
 	KernelLog(LOG_VERBOSE, "Starting preemption...\n");
 	scheduler.Start();
