@@ -13,6 +13,8 @@ void KernelInitialisation() {
 	deviceManager.Initialise();
 	windowManager.Initialise();
 
+	// KernelPanic("KernelInitialisation complete.\n");
+
 	char *desktop = (char *) "/OS/Desktop.esx";
 	desktopProcess = scheduler.SpawnProcess(desktop, CStringLength(desktop));
 

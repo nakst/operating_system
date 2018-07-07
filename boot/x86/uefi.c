@@ -46,7 +46,7 @@ void ZeroMemory(void *pointer, uint64_t size) {
 
 EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable) {
 	UINTN mapKey;
-	uint32_t *framebuffer, horizontalResolution, verticalResolution;
+	uint32_t *framebuffer, horizontalResolution, verticalResolution, pixelsPerScanline;
 	InitializeLib(imageHandle, systemTable);
 	ElfHeader *header;
 	Print(L"Loading OS...\n");
@@ -73,21 +73,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 				Print(L"The RSDP can be found at 0x%x.\n", entry->VendorTable);
 			}
 		}
-	}
-
-	// Get the graphics mode information.
-	{
-		EFI_GRAPHICS_OUTPUT_PROTOCOL *graphicsOutputProtocol;
-		EFI_GUID graphicsOutputProtocolGUID = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
-
-		if (EFI_SUCCESS != uefi_call_wrapper(ST->BootServices->LocateProtocol, 3, &graphicsOutputProtocolGUID, NULL, &graphicsOutputProtocol)) {
-			Print(L"Error: Could not open protocol 3.\n");
-			while (1);
-		}
-
-		framebuffer = (uint32_t *) graphicsOutputProtocol->Mode->FrameBufferBase;
-		horizontalResolution = graphicsOutputProtocol->Mode->Info->HorizontalResolution;
-		verticalResolution = graphicsOutputProtocol->Mode->Info->VerticalResolution;
 	}
 
 	// Read the kernel, IID and loader files.
@@ -198,6 +183,71 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 	}
 #endif
 
+	// Get the graphics mode information.
+	{
+		EFI_GRAPHICS_OUTPUT_PROTOCOL *graphicsOutputProtocol;
+		EFI_GUID graphicsOutputProtocolGUID = EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID;
+
+		if (EFI_SUCCESS != uefi_call_wrapper(ST->BootServices->LocateProtocol, 3, &graphicsOutputProtocolGUID, NULL, &graphicsOutputProtocol)) {
+			Print(L"Error: Could not open protocol 3.\n");
+			while (1);
+		}
+
+		int32_t desiredMode = -1;
+
+		Print(L"Select a graphics mode:\n");
+
+		for (uint32_t i = 0; i < graphicsOutputProtocol->Mode->MaxMode; i++) {
+			EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *modeInformation;
+			UINTN modeInformationSize;
+			uefi_call_wrapper(graphicsOutputProtocol->QueryMode, 4, graphicsOutputProtocol, i, &modeInformationSize, &modeInformation);
+
+			if (modeInformation->HorizontalResolution >= 800 && modeInformation->VerticalResolution >= 600) {
+				Print(L"  %d: %d by %d\n", i + 1, modeInformation->HorizontalResolution, modeInformation->VerticalResolution);
+			}
+		}
+
+		Print(L"> ");
+
+		while (1) {
+			UINTN index;
+			uefi_call_wrapper(ST->BootServices->WaitForEvent, 3, 1, &systemTable->ConIn->WaitForKey, &index);
+			EFI_INPUT_KEY key;
+			uefi_call_wrapper(systemTable->ConIn->ReadKeyStroke, 2, systemTable->ConIn, &key);
+
+			if (key.UnicodeChar >= '0' && key.UnicodeChar <= '9') {
+				if (desiredMode == -1) desiredMode = 0;
+				desiredMode = (desiredMode * 10) + key.UnicodeChar - '0';
+				Print(L"%c", key.UnicodeChar);
+			} else if (key.UnicodeChar == 13) {
+				break;
+			}
+		}
+
+		Print(L"\n");
+
+		if (desiredMode != -1) {
+			Print(L"Setting mode %d...\n", desiredMode);
+			desiredMode--;
+
+			EFI_GRAPHICS_OUTPUT_MODE_INFORMATION *modeInformation;
+			UINTN modeInformationSize;
+			uefi_call_wrapper(graphicsOutputProtocol->QueryMode, 4, graphicsOutputProtocol, desiredMode, &modeInformationSize, &modeInformation);
+
+			horizontalResolution = modeInformation->HorizontalResolution;
+			verticalResolution = modeInformation->VerticalResolution;
+			pixelsPerScanline = modeInformation->PixelsPerScanLine;
+
+			uefi_call_wrapper(graphicsOutputProtocol->SetMode, 2, graphicsOutputProtocol, desiredMode);
+		} else {
+			horizontalResolution = graphicsOutputProtocol->Mode->Info->HorizontalResolution;
+			verticalResolution = graphicsOutputProtocol->Mode->Info->VerticalResolution;
+			pixelsPerScanline = graphicsOutputProtocol->Mode->Info->PixelsPerScanLine;
+		}
+
+		framebuffer = (uint32_t *) graphicsOutputProtocol->Mode->FrameBufferBase;
+	}
+
 	// Get the memory map.
 	{
 		UINTN descriptorSize, descriptorVersion, size = MEMORY_MAP_BUFFER_SIZE;
@@ -265,7 +315,7 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 		destination->widthPixels = horizontalResolution;
 		destination->heightPixels = verticalResolution;
 		destination->bufferPhysical = (uintptr_t) framebuffer; // TODO 64-bit framebuffers.
-		destination->bytesPerScanlineLinear = horizontalResolution * 4;
+		destination->bytesPerScanlineLinear = pixelsPerScanline * 4;
 		destination->bitsPerPixel = 32;
 	}
 
@@ -350,8 +400,6 @@ EFI_STATUS EFIAPI efi_main(EFI_HANDLE imageHandle, EFI_SYSTEM_TABLE *systemTable
 			destination[i] = memoryRegions[i];
 		}
 	}
-
-	*framebuffer = 0xFFFF;
 
 	// Start the loader.
 	{
