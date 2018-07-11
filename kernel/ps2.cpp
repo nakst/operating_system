@@ -27,6 +27,7 @@ struct PS2 {
 	bool SetupKeyboard(Timer &timeout);
 	bool SetupMouse(Timer &timeout);
 	bool PollRead(uint8_t *value, bool forMouse);
+	void WaitInputBuffer();
 
 	uint8_t mouseType;
 	size_t channels;
@@ -100,6 +101,10 @@ void PS2MouseUpdated(void *_update) {
 void PS2KeyboardUpdated(void *_update) {
 	PS2Update *update = (PS2Update *) _update;
 	windowManager.PressKey(update->scancode);
+}
+
+void PS2::WaitInputBuffer() {
+	while (ProcessorIn8(PS2_PORT_STATUS) & PS2_INPUT_FULL);
 }
 
 bool PS2::PollRead(uint8_t *value, bool forMouse) {
@@ -224,12 +229,16 @@ bool PS2IRQHandler(uintptr_t interruptIndex) {
 }
 
 void PS2::DisableDevices(unsigned which) {
+	WaitInputBuffer();
 	if (which & 1) ProcessorOut8(PS2_PORT_COMMAND, PS2_DISABLE_FIRST);
+	WaitInputBuffer();
 	if (which & 2) ProcessorOut8(PS2_PORT_COMMAND, PS2_DISABLE_SECOND);
 }
 
 void PS2::EnableDevices(unsigned which) {
+	WaitInputBuffer();
 	if (which & 1) ProcessorOut8(PS2_PORT_COMMAND, PS2_ENABLE_FIRST);
+	WaitInputBuffer();
 	if (which & 2) ProcessorOut8(PS2_PORT_COMMAND, PS2_ENABLE_SECOND);
 }
 
@@ -240,6 +249,7 @@ void PS2::FlushOutputBuffer() {
 }
 
 void PS2::SendCommand(uint8_t command) {
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_COMMAND, command);
 }
 
@@ -250,14 +260,18 @@ uint8_t PS2::ReadByte(Timer &timeout) {
 
 void PS2::WriteByte(Timer &timeout, uint8_t value) {
 	while ((ProcessorIn8(PS2_PORT_STATUS) & PS2_INPUT_FULL) && !timeout.event.Poll());
+	if (timeout.event.Poll()) return;
 	ProcessorOut8(PS2_PORT_DATA, value);
 }
 
 bool PS2::SetupKeyboard(Timer &timeout) {
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_DATA, PS2_KEYBOARD_ENABLE);
 	if (ReadByte(timeout) != 0xFA) return false;
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_DATA, PS2_KEYBOARD_REPEAT);
 	if (ReadByte(timeout) != 0xFA) return false;
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_DATA, 0);
 	if (ReadByte(timeout) != 0xFA) return false;
 
@@ -267,24 +281,36 @@ bool PS2::SetupKeyboard(Timer &timeout) {
 bool PS2::SetupMouse(Timer &timeout) {
 	// TODO Mouse with scroll wheel detection.
 
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_COMMAND, PS2_WRITE_SECOND);
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_DATA, PS2_MOUSE_RESET);
 	if (ReadByte(timeout) != 0xFA) return false;
 	if (ReadByte(timeout) != 0xAA) return false;
 	if (ReadByte(timeout) != 0x00) return false;
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_COMMAND, PS2_WRITE_SECOND);
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_DATA, PS2_MOUSE_SAMPLE_RATE);
 	if (ReadByte(timeout) != 0xFA) return false;
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_COMMAND, PS2_WRITE_SECOND);
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_DATA, 100);
 	if (ReadByte(timeout) != 0xFA) return false;
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_COMMAND, PS2_WRITE_SECOND);
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_DATA, PS2_MOUSE_RESOLUTION);
 	if (ReadByte(timeout) != 0xFA) return false;
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_COMMAND, PS2_WRITE_SECOND);
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_DATA, 3);
 	if (ReadByte(timeout) != 0xFA) return false;
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_COMMAND, PS2_WRITE_SECOND);
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_DATA, PS2_MOUSE_ENABLE);
 	if (ReadByte(timeout) != 0xFA) return false;
 
@@ -293,13 +319,10 @@ bool PS2::SetupMouse(Timer &timeout) {
 
 void PS2::Initialise() {
 	Timer timeout = {};
-	timeout.Set(100, false);
+	timeout.Set(1000, false);
 	Defer(timeout.Remove());
 
 	FlushOutputBuffer();
-
-	RegisterIRQHandler(PS2_FIRST_IRQ, PS2IRQHandler);
-	RegisterIRQHandler(PS2_SECOND_IRQ, PS2IRQHandler);
 
 	// TODO USB initilisation.
 	// TODO PS/2 detection with ACPI.
@@ -307,10 +330,13 @@ void PS2::Initialise() {
 	DisableDevices(1 | 2);
 	FlushOutputBuffer();
 
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_COMMAND, PS2_READ_CONFIG);
 	uint8_t configurationByte = ReadByte(timeout);
+	WaitInputBuffer();
 	ProcessorOut8(PS2_PORT_COMMAND, PS2_WRITE_CONFIG);
 	WriteByte(timeout, configurationByte & ~(PS2_FIRST_IRQ_MASK | PS2_SECOND_IRQ_MASK | PS2_TRANSLATION));
+	if (timeout.event.Poll()) return;
 
 	SendCommand(PS2_TEST_CONTROLER);
 	if (ReadByte(timeout) != 0x55) return;
@@ -318,6 +344,7 @@ void PS2::Initialise() {
 	bool hasMouse = false;
 	if (configurationByte & PS2_SECOND_CLOCK) {
 		EnableDevices(2);
+		WaitInputBuffer();
 		ProcessorOut8(PS2_PORT_COMMAND, PS2_READ_CONFIG);
 		configurationByte = ReadByte(timeout);
 		if (!(configurationByte & PS2_SECOND_CLOCK)) {
@@ -327,13 +354,16 @@ void PS2::Initialise() {
 	}
 
 	{
+		WaitInputBuffer();
 		ProcessorOut8(PS2_PORT_COMMAND, PS2_TEST_FIRST);
-		if (ReadByte(timeout)) return;
+		uint8_t b = ReadByte(timeout);
+		if (b) return;
 		if (timeout.event.Poll()) return;
 		channels = 1;
 	}
 
 	if (hasMouse) {
+		WaitInputBuffer();
 		ProcessorOut8(PS2_PORT_COMMAND, PS2_TEST_SECOND);
 		if (!ReadByte(timeout) && !timeout.event.Poll()) channels = 2;
 	}
@@ -350,11 +380,16 @@ void PS2::Initialise() {
 	}
 
 	{
+		WaitInputBuffer();
 		ProcessorOut8(PS2_PORT_COMMAND, PS2_READ_CONFIG);
 		uint8_t configurationByte = ReadByte(timeout);
+		WaitInputBuffer();
 		ProcessorOut8(PS2_PORT_COMMAND, PS2_WRITE_CONFIG);
 		WriteByte(timeout, configurationByte | PS2_FIRST_IRQ_MASK | PS2_SECOND_IRQ_MASK);
 	}
+
+	RegisterIRQHandler(PS2_FIRST_IRQ, PS2IRQHandler);
+	RegisterIRQHandler(PS2_SECOND_IRQ, PS2IRQHandler);
 
 	KernelLog(LOG_VERBOSE, "Setup PS/2 controller%z.\n", channels == 2 ? ", with a mouse" : "");
 }

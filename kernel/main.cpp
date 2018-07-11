@@ -13,8 +13,6 @@ void KernelInitialisation() {
 	deviceManager.Initialise();
 	windowManager.Initialise();
 
-	// KernelPanic("KernelInitialisation complete.\n");
-
 	char *desktop = (char *) "/OS/Desktop.esx";
 	desktopProcess = scheduler.SpawnProcess(desktop, CStringLength(desktop));
 
@@ -40,6 +38,7 @@ extern "C" void KernelMain() {
 	scheduler.Initialise();
 	acpi.Initialise(); // Initialises CPULocalStorage.
 	graphics.Initialise(); 
+
 	scheduler.SpawnThread((uintptr_t) KernelInitialisation, 0, kernelProcess, false);
 	KernelLog(LOG_VERBOSE, "Starting preemption...\n");
 	scheduler.Start();

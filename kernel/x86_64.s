@@ -2,6 +2,9 @@
 
 [section .bss]
 
+[extern WaitMicroseconds]
+%define io_wait 10
+
 align 16
 
 %define stack_size 16384
@@ -484,6 +487,9 @@ ProcessorOut8:
 	mov	rdx,rdi
 	mov	rax,rsi
 	out	dx,al
+	mov	rdi,io_wait
+	mov	rsi,WaitMicroseconds
+	call 	rsi
 	ret
 
 [global ProcessorIn8]
@@ -491,6 +497,11 @@ ProcessorIn8:
 	mov	rdx,rdi
 	xor	rax,rax
 	in	al,dx
+	push	rax
+	mov	rdi,io_wait
+	mov	rsi,WaitMicroseconds
+	call 	rsi
+	pop	rax
 	ret
 
 [global ProcessorOut16]
@@ -498,6 +509,9 @@ ProcessorOut16:
 	mov	rdx,rdi
 	mov	rax,rsi
 	out	dx,ax
+	mov	rdi,io_wait
+	mov	rsi,WaitMicroseconds
+	call 	rsi
 	ret
 
 [global ProcessorIn16]
@@ -505,6 +519,11 @@ ProcessorIn16:
 	mov	rdx,rdi
 	xor	rax,rax
 	in	ax,dx
+	push	rax
+	mov	rdi,io_wait
+	mov	rsi,WaitMicroseconds
+	call 	rsi
+	pop	rax
 	ret
 
 [global ProcessorOut32]
@@ -512,6 +531,9 @@ ProcessorOut32:
 	mov	rdx,rdi
 	mov	rax,rsi
 	out	dx,eax
+	mov	rdi,io_wait
+	mov	rsi,WaitMicroseconds
+	call 	rsi
 	ret
 
 [global ProcessorIn32]
@@ -519,6 +541,11 @@ ProcessorIn32:
 	mov	rdx,rdi
 	xor	rax,rax
 	in	eax,dx
+	push	rax
+	mov	rdi,io_wait
+	mov	rsi,WaitMicroseconds
+	call 	rsi
+	pop	rax
 	ret
 
 [global ProcessorInvalidatePage]

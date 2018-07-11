@@ -207,7 +207,7 @@ UniqueIdentifier installationID; // The identifier of this OS installation, give
 
 struct Process *desktopProcess;
 
-void WaitMicroseconds(uint64_t mcs);
+extern "C" void WaitMicroseconds(uint64_t mcs);
 
 #endif
 
@@ -240,7 +240,8 @@ void WaitMicroseconds(uint64_t mcs);
 #include "syscall.cpp"
 
 #ifdef IMPLEMENTATION
-void WaitMicroseconds(uint64_t mcs) {
+extern "C" void WaitMicroseconds(uint64_t mcs) {
+	if (!acpi.timestampTicksPerMs) return;
 	uint64_t start = ProcessorReadTimeStamp();
 	uint64_t end = start + mcs * (acpi.timestampTicksPerMs / 1000);
 	while (ProcessorReadTimeStamp() < end);

@@ -56,7 +56,6 @@ bool RegisterIRQHandler(uintptr_t interrupt, IRQHandler handler) {
 	// Look for the IoApic to which this interrupt is sent.
 	for (uintptr_t i = 0; i < acpi.ioapicCount; i++) {
 		ioApic = acpi.ioApics + i;
-
 		if (interrupt >= ioApic->gsiBase 
 				&& interrupt < (ioApic->gsiBase + (0xFF & (ioApic->ReadRegister(1) >> 16)))) {
 			foundIoApic = true;
@@ -80,8 +79,18 @@ bool RegisterIRQHandler(uintptr_t interrupt, IRQHandler handler) {
 	ioApic->WriteRegister(redirectionTableIndex, 1 << 16);
 
 	// Send the interrupt to the processor that registered the interrupt.
-	ioApic->WriteRegister(redirectionTableIndex + 1, GetLocalStorage()->acpiProcessor->apicID); 
+	ioApic->WriteRegister(redirectionTableIndex + 1, GetLocalStorage()->acpiProcessor->apicID << 24); 
 	ioApic->WriteRegister(redirectionTableIndex, redirectionEntry);
+
+#if 0
+	{
+		StartDebugOutput();
+		for (uintptr_t i = 0; i < 0x40; i += 2) {
+			Print("%X %x  %X %x\n", i, ioApic->ReadRegister(i), i + 1, ioApic->ReadRegister(i + 1));
+		}
+		while (1);
+	}
+#endif
 
 	return true;
 }
@@ -101,7 +110,9 @@ void ProcessorSendIPI(uintptr_t interrupt, bool nmi, int processorID) {
 #endif
 
 	for (uintptr_t i = 0; i < acpi.processorCount; i++) {
-		if (acpi.processors + i == GetLocalStorage()->acpiProcessor || (processorID != -1 && processorID != acpi.processors[i].kernelProcessorID)) {
+		if (acpi.processors + i == GetLocalStorage()->acpiProcessor 
+				|| (processorID != -1 && processorID != acpi.processors[i].kernelProcessorID) 
+				|| !acpi.processors[i].started) {
 			// Don't send the IPI to this processor.
 			continue;
 		}
@@ -128,7 +139,7 @@ bool LogAndRejectInterrupt(uintptr_t index) {
 extern "C" void SetupProcessor2() {
 	// Find the processor for the current LAPIC.
 	
-	uint8_t lapicID = acpi.lapic.ReadRegister(0x20 >> 2) >> 24;
+	uint8_t lapicID = (acpi.lapic.ReadRegister(0x20 >> 2) >> 24);
 	ACPIProcessor *processor = nullptr;
 
 	for (uintptr_t i = 0; i < acpi.processorCount; i++) {
@@ -154,6 +165,12 @@ extern "C" void SetupProcessor2() {
 			acpi.lapic.WriteRegister(registerIndex, value);
 		}
 	}
+
+	acpi.lapic.WriteRegister(0x350 >> 2, acpi.lapic.ReadRegister(0x350 >> 2) & ~(1 << 16));
+	acpi.lapic.WriteRegister(0x360 >> 2, acpi.lapic.ReadRegister(0x360 >> 2) & ~(1 << 16));
+	acpi.lapic.WriteRegister(0x080 >> 2, 0);
+	if (acpi.lapic.ReadRegister(0x30 >> 2) & 0x80000000) acpi.lapic.WriteRegister(0x410 >> 2, 0);
+	acpi.lapic.EndOfInterrupt();
 
 	// Configure the LAPIC's timer.
 

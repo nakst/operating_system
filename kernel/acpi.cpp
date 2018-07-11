@@ -1,6 +1,6 @@
 #ifdef IMPLEMENTATION
 
-// #define USE_ACPICA
+#define USE_ACPICA
 // #define USE_SMP
 
 #define SIGNATURE_RSDP 0x2052545020445352
@@ -110,6 +110,8 @@ struct ACPI {
 	void FindRootSystemDescriptorPointer();
 	void *FindTable(uint32_t tableSignature, ACPIDescriptorTable **header = nullptr);
 
+	void PrintMADTContents();
+
 	void ShutdownComputer();
 
 	size_t processorCount;
@@ -178,6 +180,60 @@ void ACPI::FindRootSystemDescriptorPointer() {
 	rsdp = nullptr;
 }
 #endif
+
+void ACPI::PrintMADTContents() {
+	ACPIDescriptorTable *header;
+	MultipleAPICDescriptionTable *madt = (MultipleAPICDescriptionTable *) FindTable(SIGNATURE_MADT, &header);
+
+	if (!madt) {
+		KernelPanic("ACPI::Initialise - Could not find the MADT table.\nThis is required to use the APIC.\n");
+	}
+
+	uintptr_t length = header->length - ACPI_DESCRIPTOR_TABLE_HEADER_LENGTH - sizeof(MultipleAPICDescriptionTable);
+	uintptr_t startLength = length;
+	uint8_t *data = (uint8_t *) (madt + 1);
+
+	StartDebugOutput();
+	Print("LAPIC address: %x\n", lapic.address);
+	Print("Flags: %x\n", madt->flags);
+
+	while (length && length <= startLength) {
+		uint8_t entryType = data[0];
+		uint8_t entryLength = data[1];
+
+		switch (entryType) {
+			case 0: {
+				Print("Processor: id %d, apic ID %d\n", (int) data[2], (int) data[3]);
+				for (uintptr_t i = 0; i < processorCount; i++) {
+					if (processors[i].processorID == data[2]) {
+						Print("(started = %d\n)", processors[i].started);
+					}
+				}
+			} break;
+
+			case 1: {
+				Print("IOAPIC: id %d, address %x, base GSI %d\n", (int) data[2], ((uint32_t *) data)[1], ((uint32_t *) data)[2]);
+			} break;
+
+			case 2: {
+				Print("Interrupt source override: from %d to %d, flags = %X\n", (int) data[3], ((uint32_t *) data)[1], (int) data[8]);
+			} break;
+
+			case 4: {
+				Print("NMI: processor %d, lint %d, flags %X\n", (int) data[2], (int) data[5], (int) data[3]);
+			} break;
+
+			default: {
+				KernelLog(LOG_WARNING, "ACPI::Initialise - Found unknown entry of type %d in MADT\n", entryType);
+			} break;
+		}
+
+		length -= entryLength;
+		data += entryLength;
+	}
+
+	while (1);
+}
 
 void ACPI::Initialise() {
 	ZeroMemory(this, sizeof(ACPI));
@@ -312,7 +368,7 @@ void ACPI::Initialise() {
 				    processorCount, 256, ioapicCount, 16, interruptOverrideCount, 256, lapicNMICount, 32);
 		}
 
-		uint8_t bootstrapLapicID = lapic.ReadRegister(0x20 >> 2) >> 24;
+		uint8_t bootstrapLapicID = (lapic.ReadRegister(0x20 >> 2) >> 24); 
 
 		for (uintptr_t i = 0; i < processorCount; i++) {
 			if (processors[i].apicID == bootstrapLapicID) {
@@ -501,6 +557,13 @@ OS_EXTERN_C ACPI_STATUS AcpiOsTerminate() {
 
 OS_EXTERN_C ACPI_PHYSICAL_ADDRESS AcpiOsGetRootPointer() {
 	ACPI_PHYSICAL_ADDRESS address = 0;
+
+	uint64_t uefiRSDP = *((uint64_t *) (LOW_MEMORY_MAP_START + bootloaderInformationOffset + 0x7FE8));
+
+	if (uefiRSDP) {
+		return uefiRSDP;
+	}
+
 	AcpiFindRootPointer(&address);
 	return address;
 }
@@ -874,7 +937,7 @@ OS_EXTERN_C ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID *address, UINT32
 
 char acpiPrintf[65536];
 
-#if 0
+#if 1
 #define ENABLE_ACPICA_OUTPUT
 #endif
 
