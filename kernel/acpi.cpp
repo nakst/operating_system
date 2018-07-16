@@ -1,7 +1,7 @@
 #ifdef IMPLEMENTATION
 
 #define USE_ACPICA
-// #define USE_SMP
+#define USE_SMP
 
 #define SIGNATURE_RSDP 0x2052545020445352
 
@@ -937,7 +937,7 @@ OS_EXTERN_C ACPI_STATUS AcpiOsWritePciConfiguration(ACPI_PCI_ID *address, UINT32
 
 char acpiPrintf[65536];
 
-#if 1
+#if 0
 #define ENABLE_ACPICA_OUTPUT
 #endif
 

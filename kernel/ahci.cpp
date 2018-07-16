@@ -10,9 +10,9 @@
 
 // #define AHCI_VERBOSE		
 #define AHCI_FATAL_TIMEOUT 	// The kernel doesn't handle IO errors properly yet.
-#define AHCI_SERIAL
-#define AHCI_POLL		// Only works with NO_ASYNC_IO.
-#define AHCI_IGNORE_WRITES	// Only works with NO_ASYNC_IO.
+// #define AHCI_SERIAL
+// #define AHCI_POLL		// Only works with NO_ASYNC_IO.
+// #define AHCI_IGNORE_WRITES	// Only works with NO_ASYNC_IO.
 
 #define AHCI_DRIVE_IDENTIFY	(10)
 #define AHCI_TIMEOUT		(10000)

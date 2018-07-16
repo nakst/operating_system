@@ -99,6 +99,7 @@ void CF(ZeroMemory)(void *destination, size_t bytes) {
 void CF(MoveMemory)(void *_start, void *_end, intptr_t amount, bool zeroEmptySpace) {
 	uint8_t *start = (uint8_t *) _start;
 	uint8_t *end = (uint8_t *) _end;
+	if (end <= start) return;
 
 	if (amount > 0) {
 		CF(CopyMemoryReverse)(start + amount, start, end - start);

@@ -521,7 +521,7 @@ typedef struct OSString {
 } OSString;
 
 typedef struct OSCaret {
-	uintptr_t byte, character;
+	uintptr_t byte, character, line; // All relative to the start of the buffer.
 } OSCaret;
 
 typedef struct OSCrashReason {
@@ -569,6 +569,7 @@ typedef enum OSTextboxStyle {
 	OS_TEXTBOX_STYLE_NORMAL,
 	OS_TEXTBOX_STYLE_COMMAND,
 	OS_TEXTBOX_STYLE_LARGE,
+	OS_TEXTBOX_STYLE_MULTILINE,
 } OSTextboxStyle;
 
 typedef enum OSGridStyle {

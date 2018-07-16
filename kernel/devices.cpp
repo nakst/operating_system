@@ -3,7 +3,7 @@
 // TODO Complete cancelled requests?
 // 	- Investigate with ATA and AHCI.
 
-#define NO_ASYNC_IO
+// #define NO_ASYNC_IO
 
 enum DeviceType {
 	DEVICE_TYPE_INVALID,

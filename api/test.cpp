@@ -402,7 +402,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	(void) _object;
 
 	if (message->type != OS_MESSAGE_CREATE_INSTANCE) return OS_CALLBACK_NOT_HANDLED;
-#if 1
+#if 0
 	if (x != 5) OSCrashProcess(600);
 	if (y2.a != 1) OSCrashProcess(601);
 	if (y2.b != 2) OSCrashProcess(602);
@@ -848,6 +848,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 #endif
 	// OSCrashProcess(OS_FATAL_ERROR_INVALID_BUFFER);
 	
+#if 0
 	OSWindowSpecification ws = {};
 	ws.width = 900;
 	ws.height = 650;
@@ -919,6 +920,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 #endif
 
 	CreateList(content);
+#endif
 
 #if 0
 	OSPrint("%F, %F, %F, %F, %F, %F\n", floor(2.5), floor(-2.5), floor(3), ceil(2.5), ceil(-2.5), ceil(3));
@@ -951,29 +953,37 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 	}
 #endif
 
+#if 0
 	OSDisableCommand(instance, actionToggleEnabled, false);
 	OSDisableCommand(instance, actionOK, false);
+#endif
 
-#if 0
+#if 1
 	{
 		OSObject window = OSCreateWindow(windowTest2, nullptr);
-		OSObject content = OSCreateGrid(1, 1, OS_GRID_STYLE_CONTAINER);
+		OSObject content = OSCreateGrid(1, 2, OS_GRID_STYLE_CONTAINER);
 #if 1
 		OSObject scrollPane = OSCreateScrollPane(content, OS_CREATE_SCROLL_PANE_VERTICAL);
 		OSSetRootGrid(window, scrollPane);
 #else
 		OSSetRootGrid(window, content);
 #endif
-		const char *loremIpsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.";
+		const char *loremIpsum = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, \n"
+			"sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. \n"
+			"Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. \n"
+			"Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. \n"
+			"Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.\n";
 		// OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral(loremIpsum), true), OS_CELL_FILL);
 		// OSAddControl(content, 0, 0, OSCreateLabel(OSLiteral("Hello!"), false), 0);
 
-		OSObject textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL);
-		OSAddControl(content, 0, 0, textbox, OS_CELL_H_PUSH | OS_CELL_V_PUSH | OS_CELL_H_EXPAND);
+		OSObject textbox = OSCreateTextbox(OS_TEXTBOX_STYLE_MULTILINE);
+		OSAddControl(content, 0, 0, textbox, OS_CELL_H_PUSH | OS_CELL_V_PUSH | OS_CELL_V_EXPAND | OS_CELL_H_EXPAND);
 		OSSetText(textbox, OSLiteral(loremIpsum), OS_RESIZE_MODE_IGNORE);
+		OSAddControl(content, 0, 1, OSCreateTextbox(OS_TEXTBOX_STYLE_NORMAL), OS_CELL_H_PUSH | OS_CELL_H_EXPAND);
 	}
 #endif
 
+#if 0
 	{
 		calculator = OSCreateInstance(nullptr, nullptr);
 		OSError error = OSOpenInstance(calculator, instance, OSLiteral("calculator"), OS_OPEN_INSTANCE_HEADLESS);
@@ -987,6 +997,7 @@ OSCallbackResponse ProcessSystemMessage(OSObject _object, OSMessage *message) {
 		OSCloseHandle(OSIssueRequest(lua, OSLiteral("EXECUTE\fio.write(string.format(\"Another message!\\n\"))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
 		OSCloseHandle(OSIssueRequest(lua, OSLiteral("EXECUTE\fio.write(string.format(\"Another message 2!\\n\"))\f"), OS_WAIT_NO_TIMEOUT, nullptr));
 	}
+#endif
 
 	return OS_CALLBACK_HANDLED;
 }

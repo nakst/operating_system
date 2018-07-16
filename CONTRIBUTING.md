@@ -21,6 +21,7 @@
   - `stb_sprintf.h` Formatted output compatible with `printf`. From https://github.com/nothings/stb (public domain).
   - `syscall.cpp` System call stubs that call into `OSSyscall` from in `api.s`.
   - `test.cpp, test.manifest` A test program.
+  - `textbox.cpp` A textbox control for the GUI.
   - `utf8.h` UTF-8 functions.
 - `boot/` Contains files for booting the operating system.
   - `x86/` ...on x86.

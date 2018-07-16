@@ -104,6 +104,7 @@ bool ATADriver::AccessStart(int bus, int slave, uint64_t sector, uintptr_t offse
 
 	// Start a timeout.
 	Timer *timeout = timeouts + bus;
+	timeout->Remove();
 	timeout->Set(1000, false);
 	Defer(timeout->Remove());
 
