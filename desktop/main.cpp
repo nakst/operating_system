@@ -1,3 +1,5 @@
+// TODO Error handling is broken.
+
 #include "../api/os.h"
 
 #include <stdlib.h>

@@ -1,11 +1,12 @@
 // TODO:
 // 	- Undo/redo.
 // 	- Multi-line.
-// 		- FindCaret
 // 		- EnsureCaretVisible
 // 		- Vertical scrolling
 // 		- Word wrap
 // 	- Limit the length to 1024 characters?
+
+#define TEXTBOX_MARGIN (4)
 
 struct TextboxLine {
 	uintptr_t offsetBytes, offsetCharacters;
@@ -22,6 +23,7 @@ struct Textbox : Control {
 	OSTextboxStyle style;
 	TextboxLine *lines;
 	size_t lineCount;
+	int verticalMotionHorizontalDepth;
 };
 
 enum CharacterType {
@@ -48,12 +50,65 @@ static CharacterType GetCharacterType(int character) {
 	return CHARACTER_OTHER;
 }
 
-static void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, bool strongWhitespace = false) {
+#define MOVE_CARET_SINGLE (2)
+#define MOVE_CARET_WORD (3)
+#define MOVE_CARET_LINE (4)
+#define MOVE_CARET_VERTICAL (5)
+
+#define MOVE_CARET_BACKWARDS (false)
+#define MOVE_CARET_FORWARDS (true)
+
+static void MoveCaret(Textbox *textbox, OSString *string, OSCaret *caret, bool right, int moveType, bool strongWhitespace = false) {
 	if (!string->bytes) return;
 
 	CharacterType type = CHARACTER_INVALID;
 
-	if (word && right) goto checkCharacterType;
+	if (moveType == MOVE_CARET_WORD && right) goto checkCharacterType;
+
+	if (moveType == MOVE_CARET_LINE) {
+		if (right) {
+			TextboxLine *current = textbox->lines + caret->line;
+			caret->byte = current->offsetBytes + current->lengthBytes;
+			caret->character = current->offsetCharacters + current->lengthCharacters;
+		} else {
+			TextboxLine *current = textbox->lines + caret->line;
+			caret->byte = current->offsetBytes;
+			caret->character = current->offsetCharacters;
+		}
+
+		return;
+	} else if (moveType == MOVE_CARET_VERTICAL) {
+		TextboxLine *line = caret->line + textbox->lines;
+
+		if (!right && !caret->line) return;
+		if (right && caret->line == textbox->lineCount - 1) return;
+
+		int horizontalDepth;
+
+		if (textbox->verticalMotionHorizontalDepth == -1) {
+			horizontalDepth = MeasureStringWidth(string->buffer + line->offsetBytes, caret->byte - line->offsetBytes, textbox->textSize, fontRegular);
+			textbox->verticalMotionHorizontalDepth = horizontalDepth;
+		} else {
+			horizontalDepth = textbox->verticalMotionHorizontalDepth;
+		}
+
+		if (right) line++; else line--;
+
+		OSRectangle lineBounds = OS_MAKE_RECTANGLE(0, textbox->textBounds.right - textbox->textBounds.left, textbox->textBounds.top, textbox->textBounds.bottom);
+		OSString lineString = { line->offsetBytes + textbox->text.buffer, line->lengthBytes, line->lengthCharacters };
+
+		caret->byte = 0;
+		caret->character = 0;
+
+		OSFindCharacterAtCoordinate(lineBounds, OS_MAKE_POINT(horizontalDepth ? horizontalDepth - 1 : 0, 0), 
+				&lineString, textbox->textAlign, caret, textbox->textSize, 0);
+
+		caret->line = line - textbox->lines;
+		caret->byte += line->offsetBytes;
+		caret->character += line->offsetCharacters;
+
+		return;
+	}
 
 	while (true) {
 		if (!right) {
@@ -74,7 +129,7 @@ static void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, b
 			}
 		}
 
-		if (!word) {
+		if (moveType == MOVE_CARET_SINGLE) {
 			return;
 		}
 
@@ -89,7 +144,7 @@ static void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, b
 			if (newType != type) {
 				if (!right) {
 					// We've gone too far.
-					MoveCaret(string, caret, true, false);
+					MoveCaret(textbox, string, caret, true, MOVE_CARET_SINGLE);
 				}
 
 				break;
@@ -99,39 +154,75 @@ static void MoveCaret(OSString *string, OSCaret *caret, bool right, bool word, b
 }
 
 static void FindCaret(Textbox *control, int positionX, int positionY, bool secondCaret, unsigned clickChainCount) {
-	// TODO Assumes single line.
-
 	if (positionX < control->textBounds.left) {
 		positionX = control->textBounds.left;
-	} else if (positionX > control->textBounds.right) {
-		positionX = control->textBounds.right;
+	} else if (positionX >= control->textBounds.right) {
+		positionX = control->textBounds.right - 1;
 	}
 
-	if (clickChainCount >= 3) {
+	if (clickChainCount >= 4) {
 		control->caret.byte = 0;
 		control->caret.character = 0;
 		control->caret2.byte = control->text.bytes;
 		control->caret2.character = control->text.characters;
 	} else {
-		OSFindCharacterAtCoordinate(control->textBounds, OS_MAKE_POINT(positionX, positionY), 
-				&control->text, control->textAlign, &control->caret2, control->textSize, control->scrollX);
+		int lineHeight = GetLineHeight(fontRegular, control->textSize);
+
+		for (uintptr_t i = 0; i < control->lineCount; i++) {
+			TextboxLine *line = control->lines + i;
+
+			OSRectangle lineBounds = OS_MAKE_RECTANGLE(control->textBounds.left, 
+						control->textBounds.right, control->textBounds.top, control->textBounds.bottom);
+
+			if (control->style == OS_TEXTBOX_STYLE_MULTILINE) {
+				lineBounds.top += i * lineHeight + TEXTBOX_MARGIN;
+				lineBounds.bottom = lineBounds.top + lineHeight;
+			}
+
+			if (!((positionY >= lineBounds.top || i == 0) && (positionY < lineBounds.bottom || i == control->lineCount - 1))) {
+				continue;
+			}
+
+			OSString lineString = { line->offsetBytes + control->text.buffer, line->lengthBytes, line->lengthCharacters };
+			OSFindCharacterAtCoordinate(lineBounds, OS_MAKE_POINT(positionX, positionY), 
+					&lineString, control->textAlign, &control->caret2, control->textSize, control->scrollX);
+
+			control->caret2.line = i;
+			control->caret2.byte += line->offsetBytes;
+			control->caret2.character += line->offsetCharacters;
+
+			break;
+		}
 
 		if (!secondCaret) {
 			control->caret = control->caret2;
 
 			if (clickChainCount == 2) {
-				MoveCaret(&control->text, &control->caret, false, true, true);
-				MoveCaret(&control->text, &control->caret2, true, true, true);
+				MoveCaret(control, &control->text, &control->caret, MOVE_CARET_BACKWARDS, MOVE_CARET_WORD, true);
+				MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_FORWARDS, MOVE_CARET_WORD, true);
+				control->wordSelectionAnchor  = control->caret;
+				control->wordSelectionAnchor2 = control->caret2;
+			} else if (clickChainCount == 3) {
+				MoveCaret(control, &control->text, &control->caret, MOVE_CARET_BACKWARDS, MOVE_CARET_LINE, true);
+				MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_FORWARDS, MOVE_CARET_LINE, true);
 				control->wordSelectionAnchor  = control->caret;
 				control->wordSelectionAnchor2 = control->caret2;
 			}
 		} else {
 			if (clickChainCount == 2) {
 				if (control->caret2.byte < control->caret.byte) {
-					MoveCaret(&control->text, &control->caret2, false, true);
+					MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_BACKWARDS, MOVE_CARET_WORD);
 					control->caret = control->wordSelectionAnchor2;
 				} else {
-					MoveCaret(&control->text, &control->caret2, true, true);
+					MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_FORWARDS, MOVE_CARET_WORD);
+					control->caret = control->wordSelectionAnchor;
+				}
+			} else if (clickChainCount == 3) {
+				if (control->caret2.byte < control->caret.byte) {
+					MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_BACKWARDS, MOVE_CARET_LINE);
+					control->caret = control->wordSelectionAnchor2;
+				} else {
+					MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_FORWARDS, MOVE_CARET_LINE);
 					control->caret = control->wordSelectionAnchor;
 				}
 			}
@@ -368,8 +459,6 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 	bool ensureCaretVisible = false;
 
 	if (message->type == OS_MESSAGE_CUSTOM_PAINT) {
-#define TEXTBOX_MARGIN (4)
-
 		int lineHeight = GetLineHeight(fontRegular, control->textSize);
 
 		for (uintptr_t i = 0; i < control->lineCount; i++) {
@@ -385,7 +474,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 			OSString lineString = { line->offsetBytes + control->text.buffer, line->lengthBytes, line->lengthCharacters };
 			bool showSelection = (control->window->lastFocus == control && (control->style != OS_TEXTBOX_STYLE_COMMAND || control->window->focus == control)) && !control->disabled;
-			bool hideCaret = control->window->focus != control || control->caretBlink || control->disabled;
+			bool hideCaret = control->window->focus != control || control->caretBlink || control->disabled || i != control->caret2.line;
 			intptr_t caretIndex = control->caret.character - line->offsetCharacters;
 			intptr_t caretIndex2 = control->caret2.character - line->offsetCharacters;
 			if (!showSelection) caretIndex2 = caretIndex;
@@ -454,6 +543,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		GUIFree(control->previousString.buffer);
 		control->previousString.buffer = nullptr;
 	} else if (message->type == OS_MESSAGE_START_FOCUS) {
+		control->verticalMotionHorizontalDepth = -1;
 		ensureCaretVisible = true;
 
 		control->caretBlink = false;
@@ -502,15 +592,18 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		OSDisableCommand(control->window->instance, osCommandDelete, true);
 	} else if (message->type == OS_MESSAGE_MOUSE_LEFT_PRESSED) {
 		FindCaret(control, message->mousePressed.positionX, message->mousePressed.positionY, false, message->mousePressed.clickChainCount);
+		control->verticalMotionHorizontalDepth = -1;
 		lastClickChainCount = message->mousePressed.clickChainCount;
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_START_DRAG 
 			|| (message->type == OS_MESSAGE_MOUSE_RIGHT_PRESSED && control->caret.byte == control->caret2.byte)) {
 		ensureCaretVisible = true;
+		control->verticalMotionHorizontalDepth = -1;
 		FindCaret(control, message->mouseDragged.originalPositionX, message->mouseDragged.originalPositionY, true, lastClickChainCount);
 		control->caret = control->caret2;
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_MOUSE_DRAGGED) {
+		control->verticalMotionHorizontalDepth = -1;
 		FindCaret(control, message->mouseDragged.newPositionX, message->mouseDragged.newPositionY, true, lastClickChainCount);
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_CLICK_REPEAT) {
@@ -540,6 +633,8 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 		RepaintControl(control);
 	} else if (message->type == OS_MESSAGE_TEXT_UPDATED) {
+		control->verticalMotionHorizontalDepth = -1;
+
 		if (control->caret2.byte > control->text.bytes) {
 			control->caret2.byte = control->text.bytes;
 		}
@@ -584,6 +679,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 		GUIFree(control->previousString.buffer);
 		GUIFree(control->lines);
 	} else if (message->type == OS_MESSAGE_KEY_TYPED) {
+		bool verticalMotion = false;
 		ensureCaretVisible = true;
 
 		control->caretBlink = false;
@@ -646,7 +742,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 			case OS_SCANCODE_LEFT_ARROW: {
 				if (message->keyboard.shift) {
-					MoveCaret(&control->text, &control->caret2, false, message->keyboard.ctrl);
+					MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_BACKWARDS, message->keyboard.ctrl ? MOVE_CARET_WORD : MOVE_CARET_SINGLE);
 				} else {
 					bool move = control->caret2.byte == control->caret.byte;
 
@@ -654,7 +750,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 					else control->caret2 = control->caret;
 
 					if (move) {
-						MoveCaret(&control->text, &control->caret2, false, message->keyboard.ctrl);
+						MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_BACKWARDS, message->keyboard.ctrl ? MOVE_CARET_WORD : MOVE_CARET_SINGLE);
 						control->caret = control->caret2;
 					}
 				}
@@ -664,7 +760,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 			case OS_SCANCODE_RIGHT_ARROW: {
 				if (message->keyboard.shift) {
-					MoveCaret(&control->text, &control->caret2, true, message->keyboard.ctrl);
+					MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_FORWARDS, message->keyboard.ctrl ? MOVE_CARET_WORD : MOVE_CARET_SINGLE);
 				} else {
 					bool move = control->caret2.byte == control->caret.byte;
 
@@ -672,12 +768,72 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 					else control->caret2 = control->caret;
 
 					if (move) {
-						MoveCaret(&control->text, &control->caret2, true, message->keyboard.ctrl);
+						MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_FORWARDS, message->keyboard.ctrl ? MOVE_CARET_WORD : MOVE_CARET_SINGLE);
 						control->caret = control->caret2;
 					}
 				}
 
 				withAltOrCtrl = true;
+			} break;
+
+			case OS_SCANCODE_UP_ARROW: {
+				if (control->style == OS_TEXTBOX_STYLE_MULTILINE) {
+					verticalMotion = true;
+
+					if (message->keyboard.shift) {
+						MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_BACKWARDS, MOVE_CARET_VERTICAL, false);
+					} else {
+						bool move = control->caret2.byte == control->caret.byte;
+
+						if (control->caret2.byte > control->caret.byte) control->caret = control->caret2;
+						else control->caret2 = control->caret;
+
+						if (move) {
+							MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_BACKWARDS, MOVE_CARET_VERTICAL, false);
+							control->caret = control->caret2;
+						}
+					}
+				} else result = OS_CALLBACK_NOT_HANDLED;
+			} break;
+
+			case OS_SCANCODE_DOWN_ARROW: {
+				if (control->style == OS_TEXTBOX_STYLE_MULTILINE) {
+					verticalMotion = true;
+
+					if (message->keyboard.shift) {
+						MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_FORWARDS, MOVE_CARET_VERTICAL, false);
+					} else {
+						bool move = control->caret2.byte == control->caret.byte;
+
+						if (control->caret2.byte > control->caret.byte) control->caret = control->caret2;
+						else control->caret2 = control->caret;
+
+						if (move) {
+							MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_FORWARDS, MOVE_CARET_VERTICAL, false);
+							control->caret = control->caret2;
+						}
+					}
+				} else result = OS_CALLBACK_NOT_HANDLED;
+			} break;
+
+			case OS_SCANCODE_PAGE_UP: {
+				for (uintptr_t i = 0; i < 10; i++) {
+					MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_BACKWARDS, MOVE_CARET_VERTICAL);
+				}
+
+				if (!message->keyboard.shift) {
+					control->caret = control->caret2;
+				}
+			} break;
+
+			case OS_SCANCODE_PAGE_DOWN: {
+				for (uintptr_t i = 0; i < 10; i++) {
+					MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_FORWARDS, MOVE_CARET_VERTICAL);
+				}
+
+				if (!message->keyboard.shift) {
+					control->caret = control->caret2;
+				}
 			} break;
 
 			case OS_SCANCODE_HOME: {
@@ -718,7 +874,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 			case OS_SCANCODE_BACKSPACE: {
 				if (control->caret.byte == control->caret2.byte && control->caret.byte) {
-					MoveCaret(&control->text, &control->caret2, false, message->keyboard.ctrl);
+					MoveCaret(control, &control->text, &control->caret2, MOVE_CARET_BACKWARDS, message->keyboard.ctrl ? MOVE_CARET_WORD : MOVE_CARET_SINGLE);
 				}
 
 				TextboxRemoveSelectedText(control);
@@ -727,7 +883,7 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 
 			case OS_SCANCODE_DELETE: {
 				if (control->caret.byte == control->caret2.byte && control->caret.byte != control->text.bytes) {
-					MoveCaret(&control->text, &control->caret, true, message->keyboard.ctrl);
+					MoveCaret(control, &control->text, &control->caret, MOVE_CARET_FORWARDS, message->keyboard.ctrl ? MOVE_CARET_WORD : MOVE_CARET_SINGLE);
 				}
 
 				TextboxRemoveSelectedText(control);
@@ -767,6 +923,10 @@ OSCallbackResponse ProcessTextboxMessage(OSObject object, OSMessage *message) {
 			default: {
 				result = OS_CALLBACK_NOT_HANDLED;
 			} break;
+		}
+
+		if (!verticalMotion) {
+			control->verticalMotionHorizontalDepth = -1;
 		}
 
 		if ((message->keyboard.ctrl || message->keyboard.alt) && !withAltOrCtrl) {
@@ -818,6 +978,7 @@ OSObject OSCreateTextbox(OSTextboxStyle style) {
 	control->rightClickMenu = osMenuTextboxContext;
 	control->lineCount = 1;
 	control->lines = (TextboxLine *) GUIAllocate(sizeof(TextboxLine), true);
+	control->verticalMotionHorizontalDepth = -1;
 
 	OSSetMessageCallback(control, OS_MAKE_MESSAGE_CALLBACK(ProcessTextboxMessage, control));
 
