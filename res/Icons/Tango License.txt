@@ -1,2 +1,0 @@
-The Tango base icon theme is released to the Public Domain.
-See http://tango.freedesktop.org/Tango_Desktop_Project.
