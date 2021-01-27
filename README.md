@@ -1,2 +1,2 @@
 # We've moved.
-https://bitbucket.org/nakst/essence
+https://gitlab.com/nakst/essence
